@@ -1,0 +1,15 @@
+占位文件（不是可执行文件）。
+
+cmd/setup/main.go 用 `//go:embed payload/WeatherScr.scr` 把安装器的载荷嵌进
+setup 二进制，所以这个路径上必须存在一个文件，embed 模式才成立。
+
+真正的载荷是 Windows 屏保本体：GOOS=windows 构建 cmd/scr 得到的 PE 可执行文件，
+按屏保约定改名成 WeatherScr.scr，安装时装进 C:\Windows\System32。
+它是二进制产物，不入库；打包步骤（make payload）会生成真身并覆盖本文件：
+
+    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+      go build -ldflags="-s -w" -o cmd/setup/payload/WeatherScr.scr ./cmd/scr
+
+本文件的内容不参与运行逻辑：setup 只把 payload/WeatherScr.scr 按字节读出来、
+写到临时文件再装进 System32。把这段占位文本当载荷装出去是不能运行的 ——
+先跑上面的构建命令，再跑 setup。

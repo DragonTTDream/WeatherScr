@@ -1,0 +1,33 @@
+# Build artifacts
+*.exe
+*.dll
+*.log
+*.test
+*.prof
+/out/
+/bin/
+
+# Runtime files written next to the .scr
+scr.log
+scr.debug
+scr.layers
+scr.fps
+scr.cls
+weather-cache.json
+config.json
+
+# Local previews and scratch renders
+*.tmp.png
+/preview/
+
+# Editor
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# The installer payload is tracked as a placeholder so a fresh clone compiles.
+# `make payload` overwrites it with a real binary. Never commit that change.
+# The line below is deliberately commented out: git does not ignore tracked files,
+# and listing it here would only suggest that committing the binary is expected.
+# cmd/setup/payload/WeatherScr.scr

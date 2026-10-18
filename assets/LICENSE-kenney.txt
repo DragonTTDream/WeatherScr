@@ -1,0 +1,21 @@
+背景特效素材来源与许可
+======================
+
+1) Kenney "Background Elements"（云 cloud1..cloud9.png）
+   来源: https://kenney.nl/assets/background-elements
+   镜像: https://github.com/shorepine/kenney (commit 3694c6879e487c108f55677be7dd2ca75b07cc3b)
+   作者: Kenney (www.kenney.nl)
+   许可: Creative Commons Zero, CC0  http://creativecommons.org/publicdomain/zero/1.0/
+
+2) Kenney "Particle Pack"（fog1..fog4.png 取自 smoke_01/02/04/05，
+   glow.png 取自 light_01）
+   来源: https://kenney.nl/assets/particle-pack
+   作者: Kenney (www.kenney.nl)
+   许可: Creative Commons Zero, CC0  http://creativecommons.org/publicdomain/zero/1.0/
+
+CC0 = 公共领域贡献，无需署名、可商用、可修改。
+本文件仅作来源备案，不构成许可义务。
+
+3) 天气图标（天气框内，非背景）：basmilius weather-icons
+   上游 SRPSS 已使用并署名（upstream README.md:282），
+   索引 https://basmilius.github.io/weather-icons/index-fill.html

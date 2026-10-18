@@ -1,0 +1,14 @@
+{
+  "Hangzhou, China": {
+    "temperature": 25.2,
+    "condition": "Clear sky",
+    "location": "Hangzhou, China",
+    "humidity": 66.0,
+    "precipitation_probability": 39.0,
+    "windspeed": 4.0,
+    "forecast": "Tomorrow: 20\u00b0-25\u00b0C/Light Drizzle",
+    "is_day": 1,
+    "weather_code": 0,
+    "_cached_at": 1792047138.200494
+  }
+}
