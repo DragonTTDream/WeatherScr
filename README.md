@@ -10,6 +10,8 @@
 
 > Weather-driven Windows screensaver: live clock, current conditions, rain alert, and a sky that reacts to real weather.
 
+![Night, clear sky with a waxing crescent moon](docs/screenshots/night-clear.png)
+
 A Windows `.scr` screensaver whose background **is** the current weather. Clear,
 cloudy, fog, rain, snow, thunder and dust each drive their own animated sky, and the
 sun, the moon and the stars sit behind the clouds — a big cloud passing in front of
@@ -27,6 +29,7 @@ Pure Go, no cgo, Direct3D 11 through [gioui](https://gioui.org).
 - [Background](#background)
 - [Install](#install)
 - [Usage](#usage)
+- [Screenshots](#screenshots)
 - [Behaviour notes](#behaviour-notes)
 - [Performance budget](#performance-budget)
 - [Development](#development)
@@ -140,6 +143,67 @@ Tiers follow the Chinese national rainstorm warning thresholds
 
 The panel shows the tier, the probability, the millimetres expected in the window, and
 a plain-language action line.
+
+## Screenshots
+
+All frames below are rendered by `cmd/fxshot`, which runs the **production layout path**
+(`ui.Screen.Layout`) headlessly at 1080×1920 — the same code that draws on a real
+monitor, not a mock-up. The place name shown is the default example location
+`Hangzhou, China`. The night/clear frame uses real observations for Hangzhou from
+2026-10-18 (22.7 °C, 84 % humidity, 14 km/h wind, WMO code 1, moon phase 0.235);
+the other frames use sample values for their weather class.
+
+### All seven classes, day and night
+
+![Seven weather classes, day and night](docs/screenshots/classes-day-night.png)
+
+| Class | Day | Night |
+| --- | --- | --- |
+| `clear` | blue sky, analytic sun | star field, moon at its real phase |
+| `cloudy` | drifting cloud bands and clouds | same, over the night sky |
+| `fog` | low-contrast fog layers | fog over the star field |
+| `rain` | rain streaks over a dark sky | rain at night |
+| `snow` | falling flakes | flakes at night |
+| `thunder` | rain plus lightning | rain plus lightning at night |
+| `dust` | dust haze | dust at night |
+
+In every night frame the moon and the stars are in the sky layers, so clouds pass **in
+front of** them.
+
+### Rain-risk alert layouts
+
+The shipped layout is `panelrow`. The others are the layout variants kept in the
+renderer (`ui/alert.go`, `Alert.Style`); they are not exposed as a config key.
+
+![Alert layout variants](docs/screenshots/alert-styles.png)
+
+| Variant | Shape |
+| --- | --- |
+| `top` / `bottom` | full-width bar at the top / bottom edge |
+| `card` | solid card, top-right |
+| `leftbar` | vertical accent bar at the left edge plus a card |
+| `watermark` | text only, no background |
+| `fusion` / `fusion_glow` | text blended into the sky, with and without a glow |
+| `fusion_rule` / `fusion_tick` | blended text with an underline rule / a leading tick |
+| `panelrow` | **shipped** — pill with umbrella icon, tier colour, probability and millimetres |
+
+### Single frames
+
+|  |  |
+| --- | --- |
+| ![Night, clear](docs/screenshots/night-clear.png) | [Night, clear](docs/screenshots/night-clear.png) — real Hangzhou observations, waxing crescent at phase 0.235 |
+| ![Day, cloudy](docs/screenshots/day-cloudy.png) | [Day, cloudy](docs/screenshots/day-cloudy.png) — cloud bands crossing the sun |
+| ![Day, rain](docs/screenshots/rain-day.png) | [Day, rain](docs/screenshots/rain-day.png) — moderate rain |
+| ![Rain with alert](docs/screenshots/rain-alert-panelrow.png) | [Rain with the shipped alert](docs/screenshots/rain-alert-panelrow.png) — Yellow tier, 60 % over the next 3 h |
+
+Regenerate any frame with:
+
+```bash
+make fxshot
+FX_OUT=/tmp/shot FX_W=1080 FX_H=1920 FX_DAY=0 FX_MOON=0.235 \
+FX_T=22.7 FX_HU=84 FX_PP=4 FX_WS=14.0 FX_CODE=1 FX_COND="Mainly clear" \
+./fxshot clear
+```
 
 ## Behaviour notes
 
