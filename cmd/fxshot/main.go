@@ -74,10 +74,11 @@ func main() {
 		field.SetFlash(f)
 	}
 
-	// 降雨提醒：FX_ALERT=版式，FX_ALERT_PCT=概率，FX_ALERT_MM=毫米，
+	// 降雨提醒：FX_ALERT 是**存在开关** —— 非空 = 出预警（出厂 panelrow 版式），
+	// 不再接受版式名。FX_ALERT_PCT=概率，FX_ALERT_MM=毫米，
 	// FX_ALERT_PULSE=相位 0..1，FX_ALERT_STATIC=1 关掉脉动。
 	var alert *ui.Alert
-	if st := os.Getenv("FX_ALERT"); st != "" {
+	if os.Getenv("FX_ALERT") != "" {
 		pct := 78
 		if v := os.Getenv("FX_ALERT_PCT"); v != "" {
 			pct, _ = strconv.Atoi(v)
@@ -101,10 +102,10 @@ func main() {
 		if lang == "" {
 			lang = "zh"
 		}
-		alert = &ui.Alert{Pct: pct, MM: mm, Style: st, Pulse: ph, YOff: yoff, Lang: lang,
+		alert = &ui.Alert{Pct: pct, MM: mm, Pulse: ph, YOff: yoff, Lang: lang,
 			PulseOn: os.Getenv("FX_ALERT_STATIC") != "1"}
-		fmt.Printf("ALERT style=%s pct=%d tier=%s(%d) pulse=%.2f lang=%s\n",
-			st, pct, alert.TierName(lang), alert.Tier(), ph, lang)
+		fmt.Printf("ALERT pct=%d tier=%s(%d) pulse=%.2f lang=%s\n",
+			pct, alert.TierName(lang), alert.Tier(), ph, lang)
 	}
 
 	if v := os.Getenv("FX_BANDSPREAD"); v != "" {

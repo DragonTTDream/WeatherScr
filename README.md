@@ -170,23 +170,6 @@ the other frames use sample values for their weather class.
 In every night frame the moon and the stars are in the sky layers, so clouds pass **in
 front of** them.
 
-### Rain-risk alert layouts
-
-The shipped layout is `panelrow`. The others are the layout variants kept in the
-renderer (`ui/alert.go`, `Alert.Style`); they are not exposed as a config key.
-
-![Alert layout variants](docs/screenshots/alert-styles.png)
-
-| Variant | Shape |
-| --- | --- |
-| `top` / `bottom` | full-width bar at the top / bottom edge |
-| `card` | solid card, top-right |
-| `leftbar` | vertical accent bar at the left edge plus a card |
-| `watermark` | text only, no background |
-| `fusion` / `fusion_glow` | text blended into the sky, with and without a glow |
-| `fusion_rule` / `fusion_tick` | blended text with an underline rule / a leading tick |
-| `panelrow` | **shipped** — pill with umbrella icon, tier colour, probability and millimetres |
-
 ### Single frames
 
 |  |  |

@@ -1211,7 +1211,6 @@ func buildAlert(cfg config.Config, s *weather.Sample, now time.Time) *ui.Alert {
 		Pct:         pct,
 		MM:          mm,
 		WindowHours: hours, // 逐字进文案
-		Style:       "panelrow",
 		YOff:        cfg.AlertYOffset,
 		Pulse:       ph,
 		PulseOn:     pulseOn,

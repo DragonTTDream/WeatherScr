@@ -304,15 +304,11 @@ func (s *Screen) Layout(gtx layout.Context, f Frame) layout.Dimensions {
 		s.weatherBlock(gtx, size, f)
 	}
 	// 提醒画在最上层（sky → field → clock → weather → alert）。
-	// panelrow 走绝对屏幕坐标居中 + 画在天气面板下沿之内
+	// 出厂版式 panelrow：画在天气面板下沿之内 + 绝对屏幕坐标水平居中。
 	// 走 flex 行盒时实测 chip 中心 766 vs 屏幕中心 540，右偏 226 px。
 	if f.Layers.on(LayerAlert) {
-		if f.Alert != nil && f.Alert.Style == "panelrow" {
-			wpx := shiftY(WeatherRect.Px(size.X, size.Y), f.WeatherYOff)
-			DrawAlert3(gtx, size, f.Alert, s, panelRect(wpx, f.Panel.Margin).Max.Y)
-		} else {
-			DrawAlert(gtx, size, f.Alert, s, f)
-		}
+		wpx := shiftY(WeatherRect.Px(size.X, size.Y), f.WeatherYOff)
+		DrawAlertPanelRow(gtx, size, f.Alert, s, panelRect(wpx, f.Panel.Margin).Max.Y)
 	}
 
 	return layout.Dimensions{Size: size}

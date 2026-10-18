@@ -10,7 +10,7 @@ import (
 // + 正文内容（未来 N 小时滚动窗口）。
 func TestAlertTextFollowsLanguage(t *testing.T) {
 	// 橙警数据：窗口 88%、2.6 mm、窗口 3 小时（Tier()=3）
-	a := &Alert{Pct: 88, MM: 2.6, WindowHours: 3, Style: "panelrow"}
+	a := &Alert{Pct: 88, MM: 2.6, WindowHours: 3}
 
 	en := a.Line("en")
 	if !strings.Contains(en, "Alert") {
@@ -78,7 +78,7 @@ func TestAlertTextFollowsLanguage(t *testing.T) {
 		}
 	}
 
-	// tier 1–2 不带档位前缀（现状 drawFusion3/alertRow 的拼接口径）
+	// tier 1–2 不带档位前缀（出厂行 drawPanelRow / alertRow 的拼接口径）
 	low := &Alert{Pct: 55, WindowHours: 3}
 	if got, want := low.Line("en"), "Rain in next 3 h 55%"; got != want {
 		t.Errorf("tier2 en = %q，期望 %q", got, want)

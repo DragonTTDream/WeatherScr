@@ -3,6 +3,15 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+
+- The rain-alert layout variants that never shipped: seven drawing functions
+  (`drawStrip`, `drawCard`, `drawLeftBar`, `drawWatermark`, `drawFusion`, `drawFusion2`,
+  `drawFusion3`), the `switch a.Style` block and the `Alert.Style` field. The shipped
+  `panelrow` behaviour is unchanged, pixel for pixel.
+
 ## [1.0.0] - 2026-10-18
 
 First public release. A Go reimplementation of a subset of
@@ -50,4 +59,5 @@ ShittyRandomPhotoScreenSaver, targeting a low-power x86 mini host.
 - Resident memory is 121–142 MB, above the 120 MB budget during the class crossfade.
   Stated rather than smoothed.
 
+[Unreleased]: https://github.com/DragonTTDream/WeatherScr/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/DragonTTDream/WeatherScr/releases/tag/v1.0.0

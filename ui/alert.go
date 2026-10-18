@@ -55,10 +55,6 @@ type Alert struct {
 	// Tomorrow = 文案说的是明日而非今日（需求 3 的"明日"模板）。
 	// 生产路径不填（buildAlert 只用今日数据，口径）。
 	Tomorrow bool
-	// Style 版式（出渲染图供对比挑选）：
-	// top 顶部通栏 · bottom 底部通栏 · card 右上角圆角卡片
-	// leftbar 左侧竖条+文字板 · watermark 天空区大字（无底） · panel(默认) 天气面板内一行
-	Style string
 	// Pulse 0..1 脉动相位；PulseOn 是否做缓慢呼吸。
 	Pulse   float64
 	PulseOn bool
@@ -188,7 +184,7 @@ func (a *Alert) Text(lang string) string {
 
 // Line 完整一行 = 档位标签 " · " + 正文。
 //
-// 拼接口径照现状（drawFusion3 / alertRow / drawFusion2）：**只有 tier>=3 才带
+// 拼接口径照出厂行（drawPanelRow / alertRow）：**只有 tier>=3 才带
 // 档位前缀**，tier 1–2 只有正文。
 // zh 例："橙警 · 未来 3 小时降雨 88% · 预计 2.6 mm"
 // en 例："Orange Alert · Rain in next 3 h 88% · 2.6 mm expected"
@@ -198,22 +194,6 @@ func (a *Alert) Line(lang string) string {
 		txt = a.TierLabel(lang) + " · " + txt
 	}
 	return txt
-}
-
-// alertHeader 卡片 / 竖条版的头部标签。
-//
-// zh 逐字保持现状（drawCard 是 "降雨提醒 · 橙警"，drawLeftBar 是 "橙警 · 降雨提醒"，
-// tierFirst 就是用来保住这两种既有顺序的。
-// en 只有档位标签（"Orange Alert"）—— "降雨提醒" 这个说法的英文口径实测未覆盖，
-// 不自行发明：TODO(未取证)，偏差已记入工程记录。
-func alertHeader(a *Alert, tierFirst bool) string {
-	if a.Lang == "zh" {
-		if tierFirst {
-			return a.TierLabel("zh") + " · 降雨提醒"
-		}
-		return "降雨提醒 · " + a.TierLabel("zh")
-	}
-	return a.TierLabel("en")
 }
 
 // alphaScale 缓慢呼吸：0.75..1.0 的正弦（Pulse 给相位）。
@@ -241,29 +221,14 @@ var alertWhite = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 var alertWhiteSoft = color.NRGBA{R: 255, G: 255, B: 255, A: 235}
 
 // DrawAlert 画在最上层（sky → field → clock → weather → **alert**）。
+//
+// 出厂版式 panelrow 的语义 = **本函数不画任何东西**：提醒行画在天气面板下沿之内，
+// 由 DrawAlertPanelRow 出。证据：ui/render.go:309-312 的 LayerAlert 分支 —— 出厂
+// panelrow 一直走 DrawAlert3（现名 DrawAlertPanelRow，绘制代码逐字未动），
+// 从不走 DrawAlert。
 func DrawAlert(gtx layout.Context, size image.Point, a *Alert, s *Screen, f Frame) {
-	if a == nil || a.Pct < AlertThresholdPct {
-		return
-	}
-	switch a.Style {
-	case "top":
-		drawStrip(gtx, size, a, s, 0, 88)
-	case "bottom":
-		drawStrip(gtx, size, a, s, size.Y-88, 88)
-	case "card":
-		drawCard(gtx, size, a, s)
-	case "leftbar":
-		drawLeftBar(gtx, size, a, s)
-	case "watermark":
-		drawWatermark(gtx, size, a, s)
-	case "fusion", "fusion_glow", "fusion_rule", "fusion_tick":
-		drawFusion(gtx, size, a, s, a.Style)
-	case "panelrow":
-		// 只走天气面板内的那一行（DrawAlert 不画任何东西，行在 weatherBlock 里）
-		return
-	default:
-		drawInPanel(gtx, size, a, s, f)
-	}
+	// 出厂版式不在这里画（见上）。选型期的通栏/卡片/竖条/大字/融合分支已删。
+	return
 }
 
 // rectFill 实心矩形。
@@ -287,70 +252,6 @@ func rrectFill(gtx layout.Context, r image.Rectangle, rad int, c color.NRGBA) {
 	outer.Pop()
 }
 
-// drawStrip 顶部/底部通栏。底边 24 px 渐隐到 0（"降到 0 就没边界"的思路）。
-func drawStrip(gtx layout.Context, size image.Point, a *Alert, s *Screen, y0, hgt int) {
-	w := size.X
-	c := a.fill(215)
-	// **绝对矩形、不用 op.Affine**：探针实测 affine 平移 + 相对矩形 + paint.Fill
-	// 画不出东西（离屏探针 probeaffine：平移 x 的那块完全透明），
-	// 而生产里 fillPanel / gradAlpha 都是"绝对矩形 + clip"写法且已验证可用。
-	rectFill(gtx, image.Rect(0, y0, w, y0+hgt), c)
-	// 下缘 24 px 渐隐到 0（"降到 0 就没有边界"）
-	fh := 24
-	gradAlpha(gtx, image.Rect(0, y0+hgt-fh, w, y0+hgt), c, c.A, 0, true)
-	// 左侧 8 px 实色强调条
-	rectFill(gtx, image.Rect(0, y0, 8, y0+hgt), a.fill(255))
-	inPx(gtx, PxRect{X: 0, Y: y0, W: w, H: hgt}, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceEvenly}.Layout(gtx,
-			layout.Rigid(layout.Spacer{Width: unit.Dp(20)}.Layout),
-			layout.Rigid(s.label(a.TierLabel(a.Lang), unit.Sp(34), alertWhite, text.Start)),
-			layout.Flexed(1, s.label(a.Text(a.Lang), unit.Sp(34), alertWhite, text.Middle)),
-			layout.Rigid(layout.Spacer{Width: unit.Dp(20)}.Layout),
-		)
-	})
-}
-
-// drawCard 右上角圆角卡片。
-func drawCard(gtx layout.Context, size image.Point, a *Alert, s *Screen) {
-	cw, ch := 470, 104
-	x, y := size.X-cw-24, 24
-	r := image.Rect(x, y, x+cw, y+ch)
-	rrectFill(gtx, r, 18, a.fill(225))
-	rectFill(gtx, image.Rect(x, y, x+cw, y+6), a.fill(255))
-	inPx(gtx, PxRect{X: x, Y: y, W: cw, H: ch}, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle, Spacing: layout.SpaceEvenly}.Layout(gtx,
-			layout.Rigid(s.label(alertHeader(a, false), unit.Sp(24), alertWhiteSoft, text.Middle)),
-			layout.Rigid(s.label(a.Text(a.Lang), unit.Sp(30), alertWhite, text.Middle)),
-		)
-	})
-}
-
-// drawLeftBar 左侧竖条 + 半透明文字板。
-func drawLeftBar(gtx layout.Context, size image.Point, a *Alert, s *Screen) {
-	bw := 22
-	rectFill(gtx, image.Rect(0, 0, bw, size.Y), a.fill(235))
-	tw := 430
-	px := PxRect{X: bw + 16, Y: size.Y/2 - 60, W: tw, H: 120}
-	rrectFill(gtx, image.Rect(px.X, px.Y, px.X+tw, px.Y+px.H), 16, a.fill(190))
-	inPx(gtx, px, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle, Spacing: layout.SpaceEvenly}.Layout(gtx,
-			layout.Rigid(s.label(alertHeader(a, true), unit.Sp(24), alertWhiteSoft, text.Middle)),
-			layout.Rigid(s.label(a.Text(a.Lang), unit.Sp(32), alertWhite, text.Middle)),
-		)
-	})
-}
-
-// drawWatermark 天空区大字（无底）。
-func drawWatermark(gtx layout.Context, size image.Point, a *Alert, s *Screen) {
-	px := PxRect{X: 0, Y: int(float64(size.Y) * 0.06), W: size.X, H: 150}
-	inPx(gtx, px, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle, Spacing: layout.SpaceEvenly}.Layout(gtx,
-			layout.Rigid(s.label(a.TierLabel(a.Lang), unit.Sp(40), alertWhiteSoft, text.Middle)),
-			layout.Rigid(s.label(a.Text(a.Lang), unit.Sp(46), alertWhite, text.Middle)),
-		)
-	})
-}
-
 // drawInPanel 天气面板内加一行（贴在面板下沿之内）。
 func drawInPanel(gtx layout.Context, size image.Point, a *Alert, s *Screen, f Frame) {
 	px := shiftY(WeatherRect.Px(size.X, size.Y), f.WeatherYOff)
@@ -366,13 +267,6 @@ func drawInPanel(gtx layout.Context, size image.Point, a *Alert, s *Screen, f Fr
 		)
 	})
 }
-
-// ── 融合版（2026-10-16 反馈：色块太大、没色块又不显眼 ⇒ 颜色与文字融合）──
-//
-// 设计：文字本身用预警色 + 文字尺寸的光晕（不是通栏色块）+ 一条细色线。
-// 光晕用**嵌套圆角矩形叠加**做 —— v0.10.3 的 paint 只有 LinearGradientOp，
-// 没有 RadialGradientOp（实测 grep 确认），所以按暗角那套"分阶叠加"思路做。
-// 位置可调：AlertYOff（与 ClockYOff / WeatherYOff 同族）。
 
 // measureText 用一次性 op 缓冲区量文字尺寸（gioui 的字形缓存是线程级的，重复布局很便宜）。
 func measureText(gtx layout.Context, w layout.Widget) layout.Dimensions {
@@ -399,43 +293,6 @@ func softGlow(gtx layout.Context, r image.Rectangle, c color.NRGBA, rad int, n i
 		}
 		rrectFill(gtx, rr, rad+i*4, color.NRGBA{R: c.R, G: c.G, B: c.B, A: uint8(a)})
 	}
-}
-
-// drawFusion 融合版提醒。mode: fusion / fusion_glow / fusion_rule / fusion_tick
-func drawFusion(gtx layout.Context, size image.Point, a *Alert, s *Screen, mode string) {
-	tier := a.TierColor()
-	as := a.alphaScale()
-	// 先量文字尺寸
-	dims := measureText(gtx, s.label(a.Text(a.Lang), unit.Sp(34), tier, text.Middle))
-	tw, th := dims.Size.X, dims.Size.Y
-	if tw <= 0 || th <= 0 {
-		return
-	}
-	cx := size.X / 2
-	cy := int(float64(size.Y)*0.86) + a.YOff
-	padX, padY := 34, 18
-	glow := image.Rect(cx-tw/2-padX, cy-th/2-padY, cx+tw/2+padX, cy+th/2+padY)
-	switch mode {
-	case "fusion_glow":
-		softGlow(gtx, glow, tier, 26, 5, 26, as)
-	case "fusion_rule":
-		// 只画细色线
-		ruleH := 6
-		rrectFill(gtx, image.Rect(cx-tw/2, cy+th/2+10, cx+tw/2, cy+th/2+10+ruleH), ruleH/2,
-			color.NRGBA{R: tier.R, G: tier.G, B: tier.B, A: uint8(215 * as)})
-	case "fusion_tick":
-		// 左侧小色块标记（比通栏小得多）
-		tk := 26
-		rrectFill(gtx, image.Rect(cx-tw/2-padX, cy-tk/2, cx-tw/2-padX+tk, cy+tk/2), 6,
-			color.NRGBA{R: tier.R, G: tier.G, B: tier.B, A: uint8(225 * as)})
-	default: // fusion = 光晕 + 细线
-		softGlow(gtx, glow, tier, 26, 5, 24, as)
-		ruleH := 5
-		rrectFill(gtx, image.Rect(cx-tw/2+8, cy+th/2+12, cx+tw/2-8, cy+th/2+12+ruleH), ruleH/2,
-			color.NRGBA{R: tier.R, G: tier.G, B: tier.B, A: uint8(200 * as)})
-	}
-	inPx(gtx, PxRect{X: cx - tw/2, Y: cy - th/2, W: tw, H: th},
-		s.label(a.Text(a.Lang), unit.Sp(34), tier, text.Middle))
 }
 
 type glowCtx struct {
@@ -476,64 +333,16 @@ func (s *Screen) alertRow(f Frame) layout.Widget {
 	}
 }
 
-// ── fusion2：亮字 + 贴字暗底 + 颜色只做强调──
+// ── 出厂版式 panelrow 的胶囊：画在天气面板下沿之内，绝对屏幕坐标水平居中 ──
 //
-// 实测依据：预警黄 (242,187,5) 亮度只有 145，云背景亮度 166 ⇒ 文字比背景还暗（−14），
-// 原样版也只有 +9。 ⇒ 彩色文字在浅云上必然洗白"融合"不能靠彩色文字本身。
-// 方案：白字（任何背景都可读）+ 只包住文字的圆角暗底（保证对比，且不是大色块）
-// - 预警色只用在两处强调：左侧小色块、文字下的细线，外加一圈柔和色晕。
-func drawFusion2(gtx layout.Context, size image.Point, a *Alert, s *Screen, sp unit.Sp) layout.Dimensions {
-	tier := a.TierColor()
-	as := a.alphaScale()
-	txt := a.Line(a.Lang)
-	lbl := s.label(txt, sp, alertWhite, text.Middle)
-	d := measureText(gtx, lbl)
-	tw, th := d.Size.X, d.Size.Y
-	if tw <= 0 || th <= 0 {
-		return layout.Dimensions{}
-	}
-	padX, padY := 26, 14
-	bw, bh := tw+2*padX, th+2*padY
-	bx, by := size.X/2-bw/2, size.Y/2-bh/2
-	box := image.Rect(bx, by, bx+bw, by+bh)
-	// 外圈柔和色晕（分阶叠加，v0.10.3 无径向渐变）
-	softGlow(gtx, image.Rect(bx-26, by-22, bx+bw+26, by+bh+22), tier, 34, 5, 20, as)
-	// 贴字暗底
-	rrectFill(gtx, box, 16, color.NRGBA{R: 12, G: 12, B: 16, A: uint8(165 * as)})
-	// 左侧预警色小色块
-	tk := 14
-	rrectFill(gtx, image.Rect(bx+10, by+bh/2-tk/2, bx+10+tk, by+bh/2+tk/2), 4,
-		color.NRGBA{R: tier.R, G: tier.G, B: tier.B, A: uint8(235 * as)})
-	// 文字下细线
-	ruleH := 4
-	rrectFill(gtx, image.Rect(bx+padX, by+bh-10, bx+bw-padX, by+bh-10+ruleH), ruleH/2,
-		color.NRGBA{R: tier.R, G: tier.G, B: tier.B, A: uint8(215 * as)})
-	inPx(gtx, PxRect{X: bx, Y: by, W: bw, H: bh}, lbl)
-	return layout.Dimensions{Size: image.Point{X: bw, Y: bh}}
-}
-
-// alertRow2 天气面板内的融合行（fusion2 版）。
-func (s *Screen) alertRow2(f Frame) layout.Widget {
-	a := f.Alert
-	if a == nil || a.Pct < AlertThresholdPct {
-		return func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }
-	}
-	return func(gtx layout.Context) layout.Dimensions {
-		return drawFusion2(gtx, gtx.Constraints.Max, a, s, unit.Sp(WeatherFontSize))
-	}
-}
-
-// ── fusion3（2026-10-16 反馈后的定稿方向）──
+// 出厂画面口径（逐字保持，一个像素都不动）：
 //
-// 两条反馈：
-//
-//	1. 去掉颜色阴影（偏移后观感差）⇒ 去掉色晕。
-//	   实测原因：softGlow 是嵌套圆角矩形分阶叠加，暗底盖住内层后，
-//	   可见的只剩一圈**向外扩 26 px 的矩形环**，不贴文字 ⇒ 看着像偏移的脏影。
-//	2. 预警要左右居中。实测 chip 中心 x=766、屏幕中心 540，
-//	   **右偏 226 px**。根因：行盒在 flex 内的坐标基准与绝对绘制对不上。
-// ⇒ 改成**绝对屏幕坐标居中**绘制，不再走 flex 行盒。
-func drawFusion3(gtx layout.Context, size image.Point, a *Alert, s *Screen, cy int) {
+//	1. 无光晕。softGlow 是嵌套圆角矩形分阶叠加，暗底盖住内层后，可见的只剩
+//	   一圈**向外扩 26 px 的矩形环**，不贴文字 ⇒ 读成偏移的脏影 ⇒ 去掉。
+//	2. 左右居中走**绝对屏幕坐标**，不走 flex 行盒：行盒在 flex 内的坐标基准
+//	   与绝对绘制对不上（实测 chip 中心 x=766、屏幕中心 540 ⇒ 右偏 226 px）。
+//	3. 白字 + 只包住文字的圆角暗底 + 左侧预警色小色块 + 文字下细线。
+func drawPanelRow(gtx layout.Context, size image.Point, a *Alert, s *Screen, cy int) {
 	tier := a.TierColor()
 	as := a.alphaScale()
 	txt := a.Line(a.Lang)
@@ -559,11 +368,13 @@ func drawFusion3(gtx layout.Context, size image.Point, a *Alert, s *Screen, cy i
 	inPx(gtx, PxRect{X: bx, Y: cy - bh/2, W: bw, H: bh}, lbl)
 }
 
-// DrawAlert3 画在天气面板下沿之内（绝对坐标，水平居中）。
-// panelBottom = 天气面板矩形的下边界（像素）。
-func DrawAlert3(gtx layout.Context, size image.Point, a *Alert, s *Screen, panelBottom int) {
+// DrawAlertPanelRow 画出厂 panelrow 的提醒行：天气面板下沿之内（绝对坐标，水平居中）。
+// panelBottom = 天气面板矩形的下边界（像素）；行心 = panelBottom-52+Alert.YOff。
+//
+// 这就是出厂预警画面的全部绘制代码（原 fusion3 分支，改名 panelrow 胶囊，绘制逐字未动）。
+func DrawAlertPanelRow(gtx layout.Context, size image.Point, a *Alert, s *Screen, panelBottom int) {
 	if a == nil || a.Pct < AlertThresholdPct {
 		return
 	}
-	drawFusion3(gtx, size, a, s, panelBottom-52+a.YOff)
+	drawPanelRow(gtx, size, a, s, panelBottom-52+a.YOff)
 }
