@@ -1,11 +1,16 @@
 # Build artifacts
 *.exe
+*.scr
 *.dll
 *.log
 *.test
 *.prof
 /out/
 /bin/
+
+# The installer payload placeholder is tracked (see the note at the bottom of this
+# file), so it must survive the *.scr rule above.
+!cmd/setup/payload/WeatherScr.scr
 
 # Runtime files written next to the .scr
 scr.log
