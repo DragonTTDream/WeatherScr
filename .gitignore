@@ -8,6 +8,10 @@
 /out/
 /bin/
 
+# Extension-less binaries produced by `make fxshot` / `make wfetch` on Linux.
+/fxshot
+/wfetch
+
 # The installer payload placeholder is tracked (see the note at the bottom of this
 # file), so it must survive the *.scr rule above.
 !cmd/setup/payload/WeatherScr.scr
