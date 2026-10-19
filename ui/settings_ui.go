@@ -136,6 +136,21 @@ type SettingsPanel struct {
 // NewSettingsPanel 用当前配置建面板。
 func NewSettingsPanel(m PanelModel) *SettingsPanel {
 	p := &SettingsPanel{m: m}
+	// 列表主轴 = 竖排（cmd/setshot 离屏量化定案）。
+	//
+	// widget.List 的零值 Axis 是 Horizontal：gioui v0.10.3 layout/layout.go:69-70
+	// 把 Horizontal 排成 iota 的第一项（0），Vertical 是 1，
+	// 所以 `list widget.List` 这个零值字段是一条**横排**列表。
+	// 26 行沿窗口宽度方向排开、总长约 10600 px，视口只有窗口宽度：
+	// 640×1100 首屏只有第 1 行（标题）落在视口内
+	// （cmd/setshot 实测 bands=1/26 行、内容包围盒 x=[9,466]、
+	// 滚动条是贴底 6 px 高、沿 X 走的横条）。
+	// 本文件对 rows 的口径是"竖屏 1080×1920 上全部行放进可滚动的
+	// material.List"⇒ 主轴取 Vertical，行沿窗口高度方向排。
+	//
+	// Position 显式置零：打开面板时列表停在内容起始处。
+	p.list.Axis = layout.Vertical
+	p.list.Position = layout.Position{}
 	p.edLocation.SingleLine = true
 	p.edWallpaper.SingleLine = true
 	for _, ed := range []*widget.Editor{&p.edFontSize, &p.edIconSize, &p.edMargin,

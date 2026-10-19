@@ -9,7 +9,7 @@ WINENV  := GOOS=windows GOARCH=amd64 CGO_ENABLED=0
 LIBS    := ./ui ./config ./weather ./effect ./scrargs ./geo
 RSRC    ?= rsrc
 
-.PHONY: all scr payload setup fxshot wfetch winlist gate test vet fmt icon clean
+.PHONY: all scr payload setup fxshot setshot wfetch winlist gate test vet fmt icon clean
 
 all: scr setup
 
@@ -31,6 +31,11 @@ setup: payload
 fxshot:
 	GOFLAGS="-tags=novulkan" $(GO) build -o fxshot ./cmd/fxshot
 
+# Settings-panel probe: renders ui.SettingsPanel offscreen and prints the
+# per-frame panel geometry plus the share of non-background pixels.
+setshot:
+	GOFLAGS="-tags=novulkan" $(GO) build -o setshot ./cmd/setshot
+
 wfetch:
 	GOFLAGS="-tags=novulkan" $(GO) build -o wfetch ./cmd/wfetch
 
@@ -45,7 +50,7 @@ vet:
 	$(WINENV) GOFLAGS="-mod=mod" $(GO) vet ./cmd/...
 
 fmt:
-	$(GO) fmt $(LIBS) ./cmd/scr ./cmd/setup ./cmd/fxshot ./cmd/wfetch ./cmd/winlist
+	$(GO) fmt $(LIBS) ./cmd/scr ./cmd/setup ./cmd/fxshot ./cmd/setshot ./cmd/wfetch ./cmd/winlist
 
 # Regenerate the Windows icon resource from icons/WeatherScr.ico.
 # Needs rsrc: go install github.com/akavel/rsrc@latest
@@ -70,5 +75,5 @@ gate:
 	@echo "gate PASS"
 
 clean:
-	rm -f WeatherScr.scr WeatherScr_setup.exe fxshot wfetch winlist.exe
+	rm -f WeatherScr.scr WeatherScr_setup.exe fxshot setshot wfetch winlist.exe
 	rm -f $(LIBS:%=%/*.test)

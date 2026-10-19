@@ -240,6 +240,39 @@ func mkWindow(class, title string, style, x, y, w, h int32, parent windows.HWND,
 	return windows.HWND(r)
 }
 
+// fitToWorkArea 算安装向导窗口的尺寸：设计值收进主屏工作区。
+//
+// 上限 = 工作区 - 边距（40 px，给任务栏与窗口边框让位）。
+// 下限 = 三个按钮并排所需的宽度：14 + 150 + 10 + 150 + 10 + 150 + 14 = 498，
+// 再低就会把"卸载"与"关闭"挤到一起；高度下限 300 保证日志区可读
+// （日志区高 = H - 64 - 58）。
+// 工作区指标取不到（0）时退回整屏尺寸。
+// 只算尺寸，不碰安装逻辑。
+func fitToWorkArea(workw, workh, scrw, scrh, wantW, wantH int32) (int32, int32) {
+	const margin = 40
+	const minW, minH = 498, 300
+	if workw <= 0 {
+		workw = scrw
+	}
+	if workh <= 0 {
+		workh = scrh
+	}
+	W, H := wantW, wantH
+	if workw > 0 && workw-margin < W {
+		W = workw - margin
+	}
+	if workh > 0 && workh-margin < H {
+		H = workh - margin
+	}
+	if W < minW {
+		W = minW
+	}
+	if H < minH {
+		H = minH
+	}
+	return W, H
+}
+
 func runGUI() {
 	var wc wndClassExW
 	wc.cbSize = uint32(unsafe.Sizeof(wc))
@@ -253,11 +286,18 @@ func runGUI() {
 		os.Exit(2)
 	}
 
-	smw, _, _ := procGetSystemMetrics.Call(0) // SM_CXSCREEN
-	smh, _, _ := procGetSystemMetrics.Call(1) // SM_CYSCREEN
-	const W, H = 620, 460
-	x := (int32(smw) - W) / 2
-	y := (int32(smh) - H) / 2
+	smw, _, _ := procGetSystemMetrics.Call(0)    // SM_CXSCREEN
+	smh, _, _ := procGetSystemMetrics.Call(1)    // SM_CYSCREEN
+	workw, _, _ := procGetSystemMetrics.Call(76) // SM_CXWORKAREA
+	workh, _, _ := procGetSystemMetrics.Call(77) // SM_CYWORKAREA
+	// 尺寸口径：按主屏工作区（整屏去掉任务栏的可用区）自适应。
+	// 设计值 620×460 不变；工作区比设计值小的屏上自动收进
+	// "工作区 - 边距"，窗口不再超出可用区（同族缺陷：窗口要手动拉伸才显示全）。
+	// 竖屏 1080×1920 的工作区 1080×1880 ⇒ 620×460 原样保留。
+	// 只算尺寸与居中，安装逻辑、注册表操作、文件复制顺序一律不动。
+	W, H := fitToWorkArea(int32(workw), int32(workh), int32(smw), int32(smh), 620, 460)
+	x := (int32(workw) - W) / 2
+	y := (int32(workh) - H) / 2
 	if x < 0 {
 		x = 40
 	}
