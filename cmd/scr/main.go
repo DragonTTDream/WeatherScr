@@ -431,6 +431,8 @@ func runSettings(cfg config.Config, parent uintptr) {
 	th := ui.New()
 	var ops op.Ops
 	ownerDone := false
+	// 风格夺回的一次性守卫（与 ownerDone 同构）：只在第一帧执行一次。
+	styleDone := false
 
 	save := func() {
 		if err := saveModel(cfg, panel.Model()); err != nil {
@@ -449,6 +451,20 @@ func runSettings(cfg config.Config, parent uintptr) {
 				quit(0)
 
 			case app.FrameEvent:
+				// 设置窗口的风格与尺寸夺回：`.scr` 启动路径下 STARTUPINFO 带全屏
+				// 尺寸/位置，gioui 建窗的 CW_USEDEFAULT（app/os_windows.go:195-196）
+				// 被它接管，`app.Size` 的 SetWindowPos 只改尺寸不碰样式位 ⇒
+				// 窗口落成满屏无边框。这里显式把风格、扩展样式与尺寸定位夺回。
+				//
+				// 线程规则：SetWindowLong/SetWindowPos/ShowWindow 必须跑在创建该
+				// 窗口的线程上（app/window.go:321-326），所以放 `w.Run` 回调里；
+				// 从本 goroutine 直接调用会永久阻塞。第一帧只做一次。
+				if !styleDone {
+					styleDone = true
+					w.Run(func() {
+						normalizeDialog(findOwnWindow(windowClass), 640, 1100)
+					})
+				}
 				// 父窗口挂接必须在窗口线程上做（同一条正道）。
 				if parent != 0 && !ownerDone {
 					ownerDone = true

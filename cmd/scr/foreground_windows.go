@@ -46,6 +46,9 @@ var (
 	procSetFocus           = user32.NewProc("SetFocus")
 	procGetForegroundWndow = user32.NewProc("GetForegroundWindow")
 
+	// 主显示器工作区（扣掉任务栏）：SystemParametersInfoW(SPI_GETWORKAREA)。
+	procSystemParametersInfoW = user32.NewProc("SystemParametersInfoW")
+
 	// 样式位读写。gioui 自己用的就是 Get/SetWindowLongPtrW
 	// （app/internal/windows/windows.go:467,495），32 位下退回 ...W。
 	procSetWindowLongPtr = user32.NewProc("SetWindowLongPtrW")
@@ -523,4 +526,134 @@ func ensureCover(dbg bool) bool {
 	}
 	applySaverStyle(ownHwnd, dbg)
 	return true
+}
+
+// ---- 设置窗口（/c）的风格夺回 ----
+//
+// 为什么 `.scr` 启动路径需要显式夺回风格：
+//
+//	`.scr` 由系统的屏保加载路径启动，STARTUPINFO 里带的是**整块屏幕**的
+//	尺寸与位置；gioui 建窗时四个几何参数全用 `CW_USEDEFAULT`
+//	（app/os_windows.go:195-196），`CW_USEDEFAULT` 的取值被这份 STARTUPINFO
+//	接管 ⇒ 窗口落成满屏且无边框（STYLE 无 WS_CAPTION/WS_THICKFRAME，
+//	EXSTYLE 无 WS_EX_APPWINDOW）。同一份字节以 `.exe` 名义启动时
+//	STARTUPINFO 不带这些值 ⇒ 表现正常。`app.Size` 的 `SetWindowPos`
+//	（app/os_windows.go 约 900-940，经 UpdateConfig 落地）只改尺寸、
+//	不碰样式位，夺不回来。
+//
+// 因此设置窗口路径必须显式把风格、扩展样式与尺寸定位一并夺回。
+// 屏保窗口（/s）的风格不在本函数职责内：它按本文件头部记录的
+// 目标样式走 applySaverStyle，两者互不影响。
+//
+// 线程规则（同文件头）：本函数内部是 SetWindowLong/SetWindowPos/ShowWindow，
+// **只允许在 `app.Window.Run` 回调里调用**（app/window.go:321-326：
+// "Run f in the same thread as the native window event loop"）；
+// 从其它 goroutine 直接调用会永久阻塞在 ShowWindow 里。
+const (
+	// 普通对话框样式位（winuser.h；gioui app/internal/windows/windows.go:396-404 同值）。
+	// 六位置起来 = WS_OVERLAPPEDWINDOW|WS_VISIBLE（wsOverlappedwindow = 0x00CF0000）。
+	wsCaption     = 0x00C00000
+	wsSysmenu     = 0x00080000
+	wsThickframe  = 0x00040000
+	wsMinimizebox = 0x00020000
+	wsMaximizebox = 0x00010000
+
+	// WS_POPUP 在 winuser.h 里是 0x80000000。本文件既有 wsPopup = 0x00000000
+	// 取的是 WS_OVERLAPPED（gioui windows.go:397），清位用本值。
+	wsPopupBit = 0x80000000
+
+	// SPI_GETWORKAREA = 0x0030（winuser.h）
+	spiGetWorkarea = 0x0030
+
+	// SW_RESTORE = 9（gioui app/internal/windows/windows.go:268）
+	swRestore = 9
+
+	// SWP_NOZORDER = 0x0004（winuser.h；gioui windows.go:275 同值）。
+	// 注：本文件既有 swpNoZorder = 0x0040 在 winuser.h 里是 SWP_SHOWWINDOW；
+	// 屏保路径沿用不改，设置窗口用本值。
+	swpNoZorderReal = 0x0004
+
+	// 设置窗口的下限尺寸，与 app.MinSize(320, 480) 同口径（main.go runSettings）。
+	// 96 DPI（缩放 100%）下 gioui 的 dp 与物理像素 1:1。
+	// TODO(未取证)：高 DPI 缩放下 dp→px 的换算口径未取证，本函数按 px 处理。
+	dialogMinWpx = 320
+	dialogMinHpx = 480
+)
+
+// workAreaRect 主显示器工作区（SPI_GETWORKAREA，已扣掉任务栏）。
+func workAreaRect() (x, y, w, h int32, ok bool) {
+	var rc winRect
+	r, _, _ := procSystemParametersInfoW.Call(
+		uintptr(spiGetWorkarea), 0, uintptr(unsafe.Pointer(&rc)), 0)
+	if r == 0 {
+		return 0, 0, 0, 0, false
+	}
+	return rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, true
+}
+
+// normalizeDialog 把设置窗口恢复成带标题栏的普通对话框，并按主显示器
+// 工作区居中定位。**只允许在 `w.Run` 回调里调用**（见上方线程规则）。
+//
+// 执行顺序（固定）：
+//
+//  1. GetWindowLong(GWL_STYLE) 读原值（与改后值一起写进 CFG_STYLE 行）
+//  2. 样式置 WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|WS_MINIMIZEBOX|
+//     WS_MAXIMIZEBOX|WS_VISIBLE，清 WS_POPUP
+//  3. 扩展样式清 WS_EX_TOOLWINDOW、置 WS_EX_APPWINDOW（进任务栏）
+//  4. 尺寸 = wpx×hpx；位置 = 主显示器工作区居中；工作区小于目标尺寸时
+//     夹到不小于 MinSize 且不小于工作区可用尺寸
+//  5. SetWindowPos(0, x, y, wpx, hpx, SWP_NOZORDER|SWP_FRAMECHANGED)
+//  6. ShowWindow(SW_RESTORE)
+//
+// 样式位用"置位 + 清位"的写法：置上面列出的六个位、清 WS_POPUP，
+// 其余位保留（gioui 建窗时加的 WS_CLIPSIBLINGS|WS_CLIPCHILDREN，
+// app/os_windows.go:193，清掉会影响渲染裁剪）。
+func normalizeDialog(hwnd uintptr, wpx, hpx int) {
+	if hwnd == 0 {
+		logf("CFG_STYLE=skip hwnd=0")
+		return
+	}
+	styleBefore := getWindowLong(hwnd, gwlStyle)
+	exstyleBefore := getWindowLong(hwnd, gwlExstyle)
+
+	style := (styleBefore &^ uintptr(wsPopupBit)) |
+		wsCaption | wsSysmenu | wsThickframe | wsMinimizebox | wsMaximizebox | wsVisible
+	exstyle := (exstyleBefore &^ uintptr(wsExToolwindow)) | uintptr(wsExAppwindow)
+
+	// 尺寸与定位：目标尺寸按传入值；工作区装不下时夹到
+	// 不小于 MinSize 且不小于工作区可用尺寸的取值。
+	w, h := wpx, hpx
+	x, y := 0, 0
+	wx, wy, aw, ah, ok := workAreaRect()
+	if ok {
+		awa, ahh := int(aw), int(ah)
+		if awa > 0 && awa < w {
+			w = max(awa, dialogMinWpx)
+		}
+		if ahh > 0 && ahh < h {
+			h = max(ahh, dialogMinHpx)
+		}
+		x = int(wx) + (awa-w)/2
+		y = int(wy) + (ahh-h)/2
+		// 夹回工作区内（工作区小于目标尺寸时居中值为负）
+		if x < int(wx) {
+			x = int(wx)
+		}
+		if y < int(wy) {
+			y = int(wy)
+		}
+	}
+	// TODO(未取证)：SPI_GETWORKAREA 失败时的定位口径（此处按 0,0 左上角）。
+
+	setWindowLong(hwnd, gwlStyle, style)
+	setWindowLong(hwnd, gwlExstyle, exstyle)
+	procSetWindowPos.Call(hwnd, hwndTop,
+		uintptr(x), uintptr(y), uintptr(w), uintptr(h),
+		uintptr(swpNoZorderReal|swpFrameChanged))
+	procShowWindow.Call(hwnd, swRestore)
+
+	st, ex := getWindowLong(hwnd, gwlStyle), getWindowLong(hwnd, gwlExstyle)
+	logf("CFG_STYLE before=%08x after=%08x exstyle_before=%08x exstyle_after=%08x rect=%d,%d,%dx%d 工作区=%dx%d",
+		uint32(styleBefore), uint32(st), uint32(exstyleBefore), uint32(ex),
+		x, y, w, h, aw, ah)
 }

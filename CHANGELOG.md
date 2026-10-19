@@ -12,6 +12,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `drawFusion3`), the `switch a.Style` block and the `Alert.Style` field. The shipped
   `panelrow` behaviour is unchanged, pixel for pixel.
 
+### Fixed
+
+- The settings panel now lists its rows vertically. The list widget's zero-value main axis
+  is horizontal, so all rows were laid out in one row and clipped away: the window showed
+  nothing but its title.
+- The settings window opened from `WeatherScr.scr /c` is restored to a plain dialog with
+  a title bar, a resize frame and a taskbar button, sized and centred on the primary
+  monitor's work area; the `.scr` launch path used to hand it a full-screen, borderless
+  frame.
+- The installer wizard window is sized to the primary monitor's work area, so its buttons
+  are reachable without resizing the window by hand.
+
 ## [1.0.0] - 2026-10-18
 
 First public release. A Go reimplementation of a subset of
