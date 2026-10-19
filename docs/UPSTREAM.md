@@ -25,9 +25,12 @@ low-power x86 mini host.
 - **No source code.** SRPSS is Python 3 + PySide6 (Qt Quick), built with Nuitka into a
   `.scr`. WeatherScr is Go + gioui, no cgo, Direct3D 11. There is no shared code, no
   shared build step, no shared asset.
-- **No assets.** Cloud and smoke sprites come from Kenney (CC0), documented in
-  `assets/LICENSE-kenney.txt`. The weather icons, the moon phases and the sky are drawn
-  by this project.
+- **No upstream artwork is shipped.** Cloud and fog sprites come from Kenney (CC0),
+  documented in `assets/LICENSE-kenney.txt`; the three detail-row icons are recorded in
+  `ui/embed/ATTRIBUTION.md`. Upstream's condition-icon set and its moon-phase artwork
+  were consulted during asset development and are **not used**: the condition icon was
+  dropped from the layout and the moon is drawn by this project, so neither set is in
+  this repository and no code path loads it.
 - **No upstream files in this repository.** The upstream repository is not vendored, not
   mirrored, not included as a submodule.
 
@@ -45,7 +48,7 @@ wants to compare behaviour. They are citations of a public repository, not copie
 | Runtime | Python 3 + PySide6, Nuitka-compiled | Go, no cgo |
 | Install footprint | 156 MB `.scr` | 12.4 MB `.scr` |
 | Panel background | `bg_opacity 0.3`, border `1.0` | fully transparent, no border |
-| Condition icon | 96 px condition icon | dropped from the layout (implementation and assets kept, gated by `ui.WeatherShowIcon`) |
+| Condition icon | 96 px condition icon | dropped from the layout; the icon's assets and drawing path were removed, `show_condition_icon` is still accepted as a key |
 | Weather source | its own providers | Open-Meteo, keyless |
 
 ## License position

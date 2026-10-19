@@ -19,9 +19,16 @@ Relationship to that project, stated precisely:
 - What was referenced: its **design and observable behaviour** — the layout of the
   clock and weather panel, the panel transparency semantics, the settings keys, and
   the day/night and weather-driven visual behaviour.
-- What was **not** taken: no source code, no assets, no build system, no data.
+- What was **not** taken: no source code, no build system, no data.
   SRPSS is Python + PySide6 built with Nuitka; WeatherScr is Go + gioui with no cgo.
   The two share no code.
+- Asset provenance, stated precisely: the artwork shipped here is Kenney CC0
+  (`cloud1..cloud9.png`, `fog1..fog4.png`, `glow.png`) plus the three detail-row icons
+  `detail_umbrella.png` / `detail_humidity.png` / `detail_wind.png`, recorded in
+  `ui/embed/ATTRIBUTION.md`. Upstream's condition-icon set (`cond_*.png`) and its
+  moon-phase artwork (`moon_*.png`) were consulted during asset development and are
+  **not used**: those files are not in this repository, no code path loads them, and
+  the moon is drawn by this project.
 - Upstream source line references appear in comments (for example
   `default_settings.py:1523-1540`). Those are provenance notes recording which
   upstream default a value mirrors. They are citations, not copied code.

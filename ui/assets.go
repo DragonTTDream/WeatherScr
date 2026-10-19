@@ -7,7 +7,6 @@ import (
 	"image/color"
 	"image/png"
 	"math"
-	"strings"
 	"sync"
 
 	"gioui.org/op/paint"
@@ -461,84 +460,6 @@ func loadSprite(name string) (paint.ImageOp, image.Point, bool) {
 	return e.op, e.sz, true
 }
 
-// spriteRaw 返回某张嵌入精灵反预乘后的原始像素（供 CPU 烘焙逐像素采样，
-// 如 bakeMoon 把月相素材烘进天空纹理。走 loadSprite 的同一缓存与同一
-// readPNG 反预乘口径 ⇒ 只在加载时解码一次，不进每帧路径。
-// 先经 loadSprite 触发加载（缺失也负缓存），再取缓存里的原始像素。
-func spriteRaw(name string) (*image.NRGBA, bool) {
-	if _, _, ok := loadSprite(name); !ok {
-		return nil, false
-	}
-	spriteCache.mu.Lock()
-	defer spriteCache.mu.Unlock()
-	if e, ok := spriteCache.m[name]; ok {
-		return e.img, e.ok
-	}
-	return nil, false
-}
-
-// condIconName 把 WMO 码翻成状况图标素材名。
-//
-// 码集合逐字照抄上游 rendering/quick/widgets/weather.py:45-54 的
-// _WEATHER_CODE_ICON_MAP（9 组，28 码）：
-//
-//	{0}→clear-day  {1,2}→partly-cloudy-day  {3}→overcast-day  {45,48}→fog-day
-//	{51,53,55,56,57}→drizzle  {61,63,65,80,81,82}→rain  {66,67}→hail
-//	{71,73,75,77,85,86}→snow  {95,96,99}→thunderstorms-day
-//
-// 昼夜口径照上游 _condition_icon_source（同文件 :149-183）：夜间先把
-// "-day" 换成 "-night" 试一次，素材不存在时回落到 day 版；名字不含 "-day"
-// 的项（drizzle/rain/hail/snow）先试 "<name>-night.png"，上游没有这些文件
-// ⇒ 实际落到 day 版。上游的候选是**逐条试取存在的那条**，本函数按同一口径
-// 用 embedFS 的存在性判定实现回落（需求 2）。
-func condIconName(code int, isDay bool) string {
-	name := ""
-	for _, e := range condCodeIcons {
-		for _, c := range e.codes {
-			if code == c {
-				name = e.file
-				break
-			}
-		}
-		if name != "" {
-			break
-		}
-	}
-	if name == "" {
-		return ""
-	}
-	cands := []string{name}
-	if !isDay {
-		if strings.Contains(name, "-day") {
-			cands = append([]string{strings.Replace(name, "-day", "-night", 1)}, cands...)
-		} else if strings.HasSuffix(name, ".png") {
-			cands = append([]string{name[:len(name)-len(".png")] + "-night.png"}, cands...)
-		}
-	}
-	for _, c := range cands {
-		if embedHas("embed/cond_" + c) {
-			return "cond_" + c
-		}
-	}
-	return ""
-}
-
-// condCodeIcons 上游 _WEATHER_CODE_ICON_MAP 的逐字复刻（码集合不得改动）。
-var condCodeIcons = []struct {
-	codes []int
-	file  string
-}{
-	{[]int{0}, "clear-day.png"},
-	{[]int{1, 2}, "partly-cloudy-day.png"},
-	{[]int{3}, "overcast-day.png"},
-	{[]int{45, 48}, "fog-day.png"},
-	{[]int{51, 53, 55, 56, 57}, "drizzle.png"},
-	{[]int{61, 63, 65, 80, 81, 82}, "rain.png"},
-	{[]int{66, 67}, "hail.png"},
-	{[]int{71, 73, 75, 77, 85, 86}, "snow.png"},
-	{[]int{95, 96, 99}, "thunderstorms-day.png"},
-}
-
 // embedHas 判断嵌入素材是否存在（上游 _file_source 的"在不在"语义，
 // rendering/quick/widgets/weather.py:144-147。
 func embedHas(p string) bool {
@@ -548,16 +469,6 @@ func embedHas(p string) bool {
 	}
 	_ = f.Close()
 	return true
-}
-
-// condSprite 返回某 WMO 码在当前昼夜下的状况图标贴图与源尺寸。
-// 映射不到（码不在上游 9 组里）时返回 false ⇒ 调用方退化为纯文字列。
-func condSprite(code int, isDay bool) (paint.ImageOp, image.Point, bool) {
-	name := condIconName(code, isDay)
-	if name == "" {
-		return paint.ImageOp{}, image.Point{}, false
-	}
-	return loadSprite(name)
 }
 
 // detailSprite 返回详情行某一项的图标贴图与源尺寸（rain/humidity/wind）。
@@ -578,25 +489,14 @@ var detailIconFiles = map[string]string{
 	"wind":     "detail_wind.png",
 }
 
-// ── 月相素材──────────────────────────────
+// ── 月相──────────────────────────────
 //
-// 8 张月相图逐字节复制自上游 ui/assets/weather/source/（250×250，SRPSS MIT，
-// 署名见 ui/embed/ATTRIBUTION.md，前缀 moon_（如 moon_waxing-crescent.png）。
-// 素材是预乘编码，走 readPNG 的反预乘口径（与全部精灵同一解码口）。
+// 8 张月相素材（moon_*.png，250×250）已删除：月亮由独立层解析绘制
+// （ui/render.go 的 bakeMoonAt / moonLayerGet），素材在运行时没有调用者。
+// 相位到 8 等分序号的区间口径保留在下面 isMoonNew 里（新月不画月面的判据）。
 
-// moonSpriteNames 8 个标准相位的素材名（下标 = 相位序号，中心 0,0.125,…,0.875）。
-var moonSpriteNames = [8]string{
-	"moon_new.png",
-	"moon_waxing-crescent.png",
-	"moon_first-quarter.png",
-	"moon_waxing-gibbous.png",
-	"moon_full.png",
-	"moon_waning-gibbous.png",
-	"moon_waning-crescent.png",
-	"moon_last-quarter.png",
-}
-
-// moonPhaseIndex 把相位（0–1，可越界，先折回 [0,1）映射到 8 等分序号。
+// isMoonNew 相位是否落在 new 区间（新月无可见月面 ⇒ bakeMoon 不画月亮）。
+//
 // 8 等分每格宽 0.125，中心对齐 8 个标准相位 ⇒ 区间 = [中心−0.0625, 中心+0.0625：
 //
 //	[0.9375,1∪[0,0.0625)→new  [0.0625,0.1875)→waxing-crescent
@@ -604,8 +504,8 @@ var moonSpriteNames = [8]string{
 //	[0.4375,0.5625→full  [0.5625,0.6875)→waning-gibbous
 //	[0.6875,0.8125→waning-crescent  [0.8125,0.9375)→last-quarter
 //
-// 等价于 floor((p+0.0625)/0.125) mod 8（new 跨 0 界用 mod 收口）。
-func moonPhaseIndex(p float64) int {
+// 序号 = floor((p+0.0625)/0.125) mod 8（new 跨 0 界用 mod 收口），new = 序号 0。
+func isMoonNew(p float64) bool {
 	q := p - math.Floor(p) // 折回 [0,1
 	if q < 0 {
 		q += 1
@@ -615,22 +515,7 @@ func moonPhaseIndex(p float64) int {
 	if idx < 0 {
 		idx += 8
 	}
-	return idx
-}
-
-// isMoonNew 相位是否落在 new 区间（新月无可见月面 ⇒ bakeMoon 不画月亮）。
-func isMoonNew(p float64) bool {
-	return moonPhaseIndex(p) == 0
-}
-
-// moonSprite 返回某相位的月相贴图与源尺寸（按上表选）。
-func moonSprite(phase float64) (paint.ImageOp, image.Point, bool) {
-	return loadSprite(moonSpriteNames[moonPhaseIndex(phase)])
-}
-
-// moonSpriteRaw 返回某相位月相素材反预乘后的原始像素（供 bakeMoon CPU 烘焙）。
-func moonSpriteRaw(phase float64) (*image.NRGBA, bool) {
-	return spriteRaw(moonSpriteNames[moonPhaseIndex(phase)])
+	return idx == 0
 }
 
 // moonIllumination 照度 = (1 − cos(2π·phase)) / 2。

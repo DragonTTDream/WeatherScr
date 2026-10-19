@@ -646,10 +646,6 @@ func (s *Screen) weatherTextColumn(f Frame, temp string) layout.Widget {
 	}
 }
 
-// condIconGapPx 状况图标与文字列之间的间隙。
-// 证据：上游 WeatherPresentation.qml:110 块宽含 `iconSize + 12.0`。
-const condIconGapPx = 12
-
 // weatherBlock 逐行对齐原版 WeatherPresentation.qml 的 readyColumn：
 //
 //	locationText   粗体，fontSize            （原版有地名）
@@ -662,11 +658,12 @@ const condIconGapPx = 12
 // 字号口径来自 rendering/quick/widgets/weather.py:758-772
 // （temperatureFontSize = conditionFontSize * 0.81）。
 //
-// 状况图标：低性能 x86 小主机配置 icon_size 192、
-// show_condition_icon True、icon_alignment 'RIGHT'（低性能 x86 小主机 settings_v2.json）。
-// ⇒ 块内布局 = [文字列][12 px][192×192 图标]，图标靠右、垂直居中于文字列
-// （上游 WeatherPresentation.qml:328-338：anchors.right + anchors.verticalCenter）。
-// 映射不到图标时退化为纯文字列，不预留图标位（需求 4）。
+// 状况图标：上游配置是 icon_size 192、show_condition_icon True、
+// icon_alignment 'RIGHT'（上游 settings_v2.json），块内布局 =
+// [文字列][12 px][192×192 图标]（上游 WeatherPresentation.qml:328-338：
+// anchors.right + anchors.verticalCenter）。本实现按布局判读撤掉了该图标，
+// 块内只有纯文字列，宽度 = 块宽（不预留图标位）。
+// 对应的状况图标素材与绘制路径已删除，配置键 show_condition_icon 仍照原样接受。
 func (s *Screen) weatherBlock(gtx layout.Context, size image.Point, f Frame) {
 	w := f.Weather
 	if w == nil {
@@ -684,24 +681,7 @@ func (s *Screen) weatherBlock(gtx layout.Context, size image.Point, f Frame) {
 
 	inPx(gtx, px, func(gtx layout.Context) layout.Dimensions {
 		col := s.weatherTextColumn(f, temp)
-		if !WeatherShowIcon {
-			return col(gtx)
-		}
-		iop, isz, ok := condSprite(w.WeatherCode, f.IsDay)
-		if !ok {
-			return col(gtx)
-		}
-		return layout.Flex{
-			Axis:      layout.Horizontal,
-			Alignment: layout.Middle, // 图标垂直居中于文字列
-		}.Layout(gtx,
-			layout.Flexed(1, col), // 文字列宽 = 块宽 − 192 − 12
-			layout.Rigid(layout.Spacer{Width: unit.Dp(condIconGapPx)}.Layout),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				drawSprite(gtx, 0, 0, WeatherIconSize, WeatherIconSize, iop, isz)
-				return layout.Dimensions{Size: image.Pt(WeatherIconSize, WeatherIconSize)}
-			}),
-		)
+		return col(gtx)
 	})
 }
 

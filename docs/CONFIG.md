@@ -52,7 +52,7 @@ not flip day and night.
 | `font_size` | int | `25` | Weather panel text size. The clock uses its own fixed scale. |
 | `icon_size` | int | `96` | Detail-row icon size. |
 | `margin` | int | `30` | Panel margin. |
-| `show_condition_icon` | bool | `true` | **Currently inert for the 192 px condition icon.** The renderer gates that icon on the package constant `ui.WeatherShowIcon`, which ships `false` (the icon was dropped from the layout; the implementation and assets are kept). The key is read, stored and round-tripped through the panel for upstream settings-shape parity. |
+| `show_condition_icon` | bool | `true` | **Inert.** The key is read, stored and round-tripped through the panel for upstream settings-shape parity. There is no condition-icon asset and no condition-icon drawing: the 192 px icon was dropped from the layout (the weather card reads unbalanced with it), and its sprite files and drawing path were removed. The weather block renders the text column only. |
 | `show_details_row` | bool | `true` | Second row: wind, humidity, precipitation probability, and so on. |
 | `show_forecast` | bool | `true` | Forecast line. |
 | `show_five_day_forecast` | bool | `false` | Five-day line. |

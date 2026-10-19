@@ -38,7 +38,6 @@ const (
 
 	WeatherFontSize     = 40
 	WeatherIconSize     = 192
-	WeatherShowIcon     = false // 需求：撤 192px 状况图标（天气卡片布局失衡，只要求把文字描述改成图标）。实现与素材保留（weatherBlock 的 !WeatherShowIcon 分支 = 纯文字列），要加回来翻这一行即可。
 	WeatherShowDetails  = true
 	WeatherShowForecast = true
 )

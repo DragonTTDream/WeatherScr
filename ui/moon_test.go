@@ -8,60 +8,10 @@ import (
 	"github.com/DragonTTDream/WeatherScr/effect"
 )
 
-// TestMoonSpriteMap 对应需求 6：
-// moonSprite 映射表逐区间断言（含 0.9375/0.0625 跨界、0.5 落 full、0.174 落 waxing-crescent）。
-// 8 等分每格宽 0.125，中心对齐 8 个标准相位（相位→素材表）。
-func TestMoonSpriteMap(t *testing.T) {
-	cases := []struct {
-		phase float64
-		want  string
-	}{
-		// new 区间 = [0.9375,1 ∪ [0,0.0625)
-		{0.0, "moon_new.png"},
-		{0.0624, "moon_new.png"},
-		{0.9375, "moon_new.png"}, // 跨界：0.9375 落 new
-		{0.99, "moon_new.png"},
-		// waxing-crescent [0.0625,0.1875
-		{0.0625, "moon_waxing-crescent.png"}, // 跨界：0.0625 落 waxing-crescent
-		{0.174, "moon_waxing-crescent.png"},  // 实测值 0.174
-		{0.1874, "moon_waxing-crescent.png"},
-		// first-quarter [0.1875,0.3125
-		{0.1875, "moon_first-quarter.png"},
-		{0.25, "moon_first-quarter.png"},
-		// waxing-gibbous [0.3125,0.4375
-		{0.3125, "moon_waxing-gibbous.png"},
-		{0.4, "moon_waxing-gibbous.png"},
-		// full [0.4375,0.5625
-		{0.4375, "moon_full.png"},
-		{0.5, "moon_full.png"}, // 0.5 落 full
-		{0.5624, "moon_full.png"},
-		// waning-gibbous [0.5625,0.6875
-		{0.5625, "moon_waning-gibbous.png"},
-		{0.625, "moon_waning-gibbous.png"},
-		// waning-crescent [0.6875,0.8125
-		{0.6875, "moon_waning-crescent.png"},
-		{0.75, "moon_waning-crescent.png"},
-		// last-quarter [0.8125,0.9375
-		{0.8125, "moon_last-quarter.png"},
-		{0.875, "moon_last-quarter.png"},
-		{0.9374, "moon_last-quarter.png"},
-	}
-	for _, c := range cases {
-		iop, sz, ok := moonSprite(c.phase)
-		if !ok {
-			t.Errorf("phase=%.4f 取不到素材", c.phase)
-			continue
-		}
-		if sz.X != 250 || sz.Y != 250 {
-			t.Errorf("phase=%.4f 源尺寸 = %v，期望 250×250", c.phase, sz)
-		}
-		if iop.Size().X == 0 {
-			t.Errorf("phase=%.4f 的 ImageOp 尺寸为 0", c.phase)
-		}
-		if got := moonSpriteNames[moonPhaseIndex(c.phase)]; got != c.want {
-			t.Errorf("phase=%.4f 落 %q，期望 %q", c.phase, got, c.want)
-		}
-	}
+// TestMoonNewInterval 月相 8 等分的 new 区间判据。
+// 8 等分每格宽 0.125，中心对齐 8 个标准相位 ⇒ new = [0.9375,1 ∪ [0,0.0625)。
+// 月相素材与素材映射表已删除（月亮由解析绘制），这里保留 bakeMoon 不画月面的判据。
+func TestMoonNewInterval(t *testing.T) {
 	// new 区间判定（bakeMoon 据此不画月亮）：[0.9375,1 ∪ [0,0.0625)
 	for _, p := range []float64{0.0, 0.03, 0.9375, 0.95, 0.9999} {
 		if !isMoonNew(p) {

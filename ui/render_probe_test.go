@@ -124,15 +124,18 @@ func TestConditionIconDrawsRightBox(t *testing.T) {
 	tot := box.Dx() * box.Dy()
 	pct := 100.0 * float64(n) / float64(tot)
 	t.Logf("状况图标盒 %v 差异像素 = %d/%d = %.2f%%", box, n, tot, pct)
-	// 上线态钉"图标不画"：天气卡片布局失衡 ⇒ WeatherShowIcon = false。
-	// 本测试因此反向实测：码 61（映射得到图标）与码 4（映射不到）两帧在图标盒内
+	// 上线态钉"图标不画"：天气卡片布局失衡 ⇒ 状况图标已从块内布局撤掉，
+	// 对应的素材与绘制路径也已删除（块内只有纯文字列，宽度 = 块宽）。
+	// 本测试因此反向实测：码 61（上游映射得到图标）与码 4（映射不到）两帧在图标盒内
 	// 必须**逐像素相同**，即图标确实没画。将来要把图标加回来，先取得需求确认再翻这条。
 	if pct > 0.5 {
 		t.Errorf("状况图标盒内差异 %.2f%%，期望 ≤0.5%%（上线态不画状况图标）", pct)
 	}
 	// 图标位右侧留白：块宽 − 192 − 12 之外的文字列区域应基本不变
 	// （文字列变宽会让文字重排，故只要求差异远小于图标盒）
-	left := image.Rect(px.X, px.Y, px.X+px.W-WeatherIconSize-condIconGapPx, px.Y+px.H)
+	// 12 = 上游 WeatherPresentation.qml:110 块宽含的 iconSize + 12.0 间隙，
+	// 该常量随图标分支一并删除，此处按同一数值内联。
+	left := image.Rect(px.X, px.Y, px.X+px.W-WeatherIconSize-12, px.Y+px.H)
 	nl := diffCount(with, without, left)
 	t.Logf("文字列区域差异像素 = %d（图标盒 %d）", nl, n)
 }
