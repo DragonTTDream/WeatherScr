@@ -41,16 +41,9 @@ func TestCloudYDistribution(t *testing.T) {
 			if p.kind != pkCloud {
 				continue
 			}
-			// **真实尺寸口径**：云走 spriteScale 常量 0.5/spriteSupersample = 0.25，
-			// 与 p.sc 无关（实测 p.sc=12 零变化）。贴图尺寸按 p.spr 取。
-			sp := spritesOnce()
-			sz := sp.cloudSz[0]
-			if p.spr >= 0 && p.spr < len(sp.cloudSz) {
-				sz = sp.cloudSz[p.spr]
-			}
-			sc := 0.5 / float64(spriteSupersample)
-			hh := float64(sz.Y) * sc / 2 / float64(PortraitH)
-			hw := float64(sz.X) * sc / 2 / float64(PortraitW)
+			// **真实尺寸口径**：直接取绘制同口径的半宽/半高（airHalfN），
+			// 与 p.sc 无关（实测 p.sc=12 零变化：云走 spriteScale 的净倍率常量）。
+			hw, hh := f.airHalfN(p)
 			if p.x+hw > 0.72-dR && p.x-hw < 0.72+dR && p.y+hh > 0.095-dRy && p.y-hh < 0.095+dRy {
 				hit++
 				break

@@ -10,8 +10,8 @@ func TestWMO(t *testing.T) {
 	want := map[int]string{
 		0:  "clear",
 		1:  "clear",
-		2:  "cloudy",
-		3:  "cloudy",
+		2:  "partly-cloudy",
+		3:  "overcast",
 		45: "fog",
 		48: "fog",
 
@@ -88,20 +88,29 @@ func TestDustNotInCore(t *testing.T) {
 	}
 }
 
-// TestSevenClasses：类总数必须是 7（定案口径）。
+// TestSevenClasses：类总数必须是 9（原 7 类 + 云量两档 PartlyCloudy/Overcast）。
+// 判据从 7 改到 9 的依据 = 云量分档把 Cloudy 拆成两档（取证 34.16.2）。
+// 枚举口径 = 核心码 + 扩展码经 ClassifyByCloudCover（带云量与不带云量各一次）：
+// Cloudy 只由逐小时云量分档产出（WMO 2/3 已让给 PartlyCloudy/Overcast），
+// 只枚举 Classify 会漏掉它。
 func TestSevenClasses(t *testing.T) {
 	set := map[Class]bool{}
+	cc30, cc90 := 30, 90
 	for _, c := range append(CoreCodes(), 101, 110) {
 		cl, _ := Classify(c)
 		set[cl] = true
+		cl, _ = ClassifyByCloudCover(c, &cc30)
+		set[cl] = true
+		cl, _ = ClassifyByCloudCover(c, &cc90)
+		set[cl] = true
 	}
-	if len(set) != 7 {
+	if len(set) != 9 {
 		names := make([]string, 0, len(set))
 		for k := range set {
 			names = append(names, string(k))
 		}
 		sort.Strings(names)
-		t.Fatalf("类数 = %d（%v），期望 7", len(set), names)
+		t.Fatalf("类数 = %d（%v），期望 9", len(set), names)
 	}
 }
 

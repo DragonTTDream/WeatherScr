@@ -10,6 +10,8 @@ import (
 	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/layout"
+	"gioui.org/op/clip"
+	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -363,6 +365,13 @@ func (p *SettingsPanel) Layout(gtx layout.Context, th *material.Theme) layout.Di
 	}
 
 	rows := p.rows(th)
+	// 面板底色：gioui 的 Windows 后端每帧把窗口清成不透明白
+	// （gioui.org v0.10.3 app/window.go:216），面板自身不画底 ⇒ 深色模式下
+	// 浅字会落在白底上（等于没跟随）。这里按 palette.Bg 铺一层，
+	// 配色才真正落到画面上。约束无界时跳过（不画越界矩形）。
+	if max := gtx.Constraints.Max; max.X > 0 && max.Y > 0 {
+		paint.FillShape(gtx.Ops, th.Palette.Bg, clip.Rect{Max: max}.Op())
+	}
 	dims := material.List(th, &p.list).LayoutWidgets(wgtx, rows...)
 
 	// 按钮点击（点击后由调用方执行动作）
@@ -446,31 +455,37 @@ func (p *SettingsPanel) rows(th *material.Theme) []layout.Widget {
 func (p *SettingsPanel) titleRow(th *material.Theme, txt string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		l := material.H5(th, txt)
+		l.TextSize = panelTitleSp // 标题行比正文大一号（spec §1.2）
 		l.Color = th.Palette.Fg
-		return layout.UniformInset(unit.Dp(8)).Layout(gtx, l.Layout)
+		return layout.UniformInset(panelTitleInsetDp).Layout(gtx, l.Layout)
 	}
 }
 
 func (p *SettingsPanel) plainRow(th *material.Theme, txt string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		l := material.Body2(th, txt)
+		l.TextSize = panelTextSp
 		l.Color = th.Palette.ContrastFg
-		return layout.UniformInset(unit.Dp(6)).Layout(gtx, l.Layout)
+		return layout.UniformInset(panelRowInsetDp).Layout(gtx, l.Layout)
 	}
 }
 
 func (p *SettingsPanel) fieldRow(th *material.Theme, label string, ed *widget.Editor) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.UniformInset(panelRowInsetDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					l := material.Caption(th, label)
+					l.TextSize = panelCaptionSp
 					l.Color = th.Palette.ContrastFg
 					return l.Layout(gtx)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					e := material.Editor(th, ed, "")
-					e.TextSize = unit.Sp(th.TextSize)
+					// 面板局部字号：这里原先取主题的 th.TextSize，
+					// 而它继承自屏保的 WeatherFontSize=40（spec §0 的根因链）
+					// ⇒ 换成 panelTextSp。
+					e.TextSize = panelTextSp
 					e.Font.Weight = font.Normal
 					return e.Layout(gtx)
 				}),
@@ -494,8 +509,9 @@ func (p *SettingsPanel) row2(th *material.Theme, a, b fieldSpec) layout.Widget {
 			cells = append(cells, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				if sp.ed == nil {
 					l := material.Caption(th, sp.label)
+					l.TextSize = panelCaptionSp
 					l.Color = th.Palette.ContrastFg
-					return layout.UniformInset(unit.Dp(6)).Layout(gtx, l.Layout)
+					return layout.UniformInset(panelRowInsetDp).Layout(gtx, l.Layout)
 				}
 				return p.fieldRow(th, sp.label, sp.ed)(gtx)
 			}))
@@ -513,10 +529,11 @@ func (p *SettingsPanel) row2(th *material.Theme, a, b fieldSpec) layout.Widget {
 // unitsRow 公制/英制单选（units 键）。
 func (p *SettingsPanel) unitsRow(th *material.Theme) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.UniformInset(panelRowInsetDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					l := material.Body2(th, "units 单位")
+					l.TextSize = panelTextSp
 					l.Color = th.Palette.Fg
 					return l.Layout(gtx)
 				}),
@@ -536,10 +553,11 @@ func (p *SettingsPanel) unitsRow(th *material.Theme) layout.Widget {
 // 与上游 bg_opacity 同口径，直接对接。
 func (p *SettingsPanel) sliderRow(th *material.Theme, label string, f *widget.Float) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.UniformInset(panelRowInsetDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					l := material.Body2(th, label)
+					l.TextSize = panelTextSp
 					l.Color = th.Palette.Fg
 					return l.Layout(gtx)
 				}),
@@ -549,6 +567,7 @@ func (p *SettingsPanel) sliderRow(th *material.Theme, label string, f *widget.Fl
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					l := material.Body2(th, formatNum(float64(f.Value)))
+					l.TextSize = panelTextSp
 					l.Color = th.Palette.Fg
 					return l.Layout(gtx)
 				}),
@@ -559,7 +578,7 @@ func (p *SettingsPanel) sliderRow(th *material.Theme, label string, f *widget.Fl
 
 func (p *SettingsPanel) checkRow(th *material.Theme, label string, b *widget.Bool) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		return layout.UniformInset(unit.Dp(4)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.UniformInset(panelRowInsetDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return material.CheckBox(th, b, label).Layout(gtx)
 		})
 	}
@@ -601,11 +620,11 @@ func (p *SettingsPanel) buttonRow(th *material.Theme) layout.Widget {
 // 按钮走 widget.Clickable，与面板里已验证的保存/取消按钮同一套机制。
 func (p *SettingsPanel) locSearchRow(th *material.Theme) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.UniformInset(panelRowInsetDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					ed := material.Editor(th, &p.edLocSearch, "地名（中文：绵阳 / 拉丁：Mianyang）")
-					ed.TextSize = unit.Sp(14)
+					ed.TextSize = panelTextSp
 					return ed.Layout(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Width: unit.Dp(10)}.Layout),
@@ -635,17 +654,17 @@ func (p *SettingsPanel) locCandidateRows(th *material.Theme) []layout.Widget {
 			// 下一行的 p.locPlaces 就变成 widget.Clickable 的字段了（实测编译错）。
 			ck := &p.locClicks[i]
 			place := p.locPlaces[i]
-			return layout.UniformInset(unit.Dp(4)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.UniformInset(panelRowInsetDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						l := material.Body2(th, place.Label())
-						l.TextSize = unit.Sp(14)
+						l.TextSize = panelTextSp
 						l.Color = th.Palette.Fg
 						return l.Layout(gtx)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						l := material.Caption(th, fmt.Sprintf("%.3f,%.3f", place.Lat, place.Lon))
-						l.TextSize = unit.Sp(12)
+						l.TextSize = panelCaptionSp
 						l.Color = th.Palette.ContrastFg
 						return l.Layout(gtx)
 					}),
@@ -660,26 +679,50 @@ func (p *SettingsPanel) locCandidateRows(th *material.Theme) []layout.Widget {
 	return out
 }
 
-// langRow 显示语言单选（display_language，默认 en = 当前样式不改）。
-func (p *SettingsPanel) langRow(th *material.Theme) layout.Widget {
+// radioOpt 是竖排单选组的一项（key = widget.Enum 的值，label = 显示文本）。
+type radioOpt struct {
+	key   string
+	label string
+}
+
+// radioGroupRow 单选组排版：标签独占一行，每个 radio 独占一行（spec §1.3）。
+//
+// 为什么竖排：横排时 radio 标签在 layout.Flex 的 Rigid 链里被挤到很窄的可用
+// 宽度，gioui 的 widget.Label 按可用宽度换行 ⇒ 中文标签逐字竖排
+// （"英/文/(/e/n/)"），行高炸开（spec §0 的取证）。竖排后每个 radio 拿到
+// 整行宽度；640 px 下不截断由 ui/panel_radio_b2_test.go 量化断言。
+func (p *SettingsPanel) radioGroupRow(th *material.Theme, label string, group *widget.Enum, opts []radioOpt) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					l := material.Body2(th, "display_language 地名显示")
-					l.Color = th.Palette.Fg
-					return l.Layout(gtx)
-				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(12)}.Layout),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return material.RadioButton(th, &p.langSel, "en", "英文 (en)").Layout(gtx)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return material.RadioButton(th, &p.langSel, "zh", "中文 (zh)").Layout(gtx)
-				}),
-			)
+		children := []layout.FlexChild{
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				l := material.Body2(th, label)
+				l.TextSize = panelTextSp
+				l.Color = th.Palette.Fg
+				return l.Layout(gtx)
+			}),
+		}
+		for _, o := range opts {
+			o := o
+			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: panelRadioIndent, Top: panelRadioGapDp}.Layout(gtx,
+					func(gtx layout.Context) layout.Dimensions {
+						return material.RadioButton(th, group, o.key, o.label).Layout(gtx)
+					})
+			}))
+		}
+		return layout.UniformInset(panelRowInsetDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 		})
 	}
+}
+
+// langRow 显示语言单选（display_language，默认 en = 当前样式不改）。
+// 竖排：标签一行，"英文 (en)" 与 "中文 (zh)" 各占一行。
+func (p *SettingsPanel) langRow(th *material.Theme) layout.Widget {
+	return p.radioGroupRow(th, "display_language 地名显示", &p.langSel, []radioOpt{
+		{key: "en", label: "英文 (en)"},
+		{key: "zh", label: "中文 (zh)"},
+	})
 }
 
 // windowRow 预警滚动窗口长度单选（alert_window_hours）。
@@ -688,24 +731,10 @@ func (p *SettingsPanel) langRow(th *material.Theme) layout.Widget {
 // ⇒ 只给 3 与 6 两个 RadioButton，样式照上面语言单选那一组（widget.Enum + material.RadioButton）。
 // 读写的是 PanelModel.AlertWindowHours（与 config.Config 的 alert_window_hours 一一对应）。
 func (p *SettingsPanel) windowRow(th *material.Theme) layout.Widget {
-	return func(gtx layout.Context) layout.Dimensions {
-		return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					l := material.Body2(th, "alert_window_hours 预警窗口")
-					l.Color = th.Palette.Fg
-					return l.Layout(gtx)
-				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(12)}.Layout),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return material.RadioButton(th, &p.winSel, "3", "3 小时").Layout(gtx)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return material.RadioButton(th, &p.winSel, "6", "6 小时").Layout(gtx)
-				}),
-			)
-		})
-	}
+	return p.radioGroupRow(th, "alert_window_hours 预警窗口", &p.winSel, []radioOpt{
+		{key: "3", label: "3 小时"},
+		{key: "6", label: "6 小时"},
+	})
 }
 
 // LocSearchClicked 报告是否点了"搜索"（调用方据此发起后台搜索）。

@@ -10,8 +10,11 @@ import (
 // TestAirEntryPlacement 证明进场落位的两条不变量：
 //
 //	需求 2：云整只都要在屏内（不得只有下半部分在屏幕内）
+//
 // ⇒ 回收后云中心 y ∈ [半高, 1−半高]，整只在屏内
+//
 //	需求 1：云不得突然刷新出来，要在屏幕外慢慢进场
+//
 // ⇒ 回收后云中心 x 在屏幕外（vx>0 → x=−半宽；vx<0 → x=1+半宽）
 func TestAirEntryPlacement(t *testing.T) {
 	for _, cls := range []effect.Class{effect.Cloudy, effect.Fog, effect.Clear, effect.Rain} {
@@ -35,6 +38,11 @@ func TestAirEntryPlacement(t *testing.T) {
 
 // TestAirEntryRecycleIsOffscreen 强制走回收路径（fresh=false）：
 // 把云推到出界后回收，断言新粒子在屏幕外。
+//
+// 出界口径 = **整朵完全出屏**（回收判据 x − hw > 1.0，见 Step 的 pkCloud 分支）：
+// 粒子云改大后 hw = 0.267–0.681 屏宽，旧口径的"推到 x=1.3"（中心出界 1.25）
+// 根本还没出屏（左沿在 1.3−hw = 0.62…1.03，压着屏幕右沿）⇒ 不该被回收。
+// 故把云推到 1 + hw + 0.01（左沿也在屏幕外），断言不变：回收后 x ≤ −hw。
 func TestAirEntryRecycleIsOffscreen(t *testing.T) {
 	f := NewField(effect.Cloudy, true, 23)
 	f.Step(time.Second, 1080, 1920)
@@ -45,7 +53,8 @@ func TestAirEntryRecycleIsOffscreen(t *testing.T) {
 			continue
 		}
 		n++
-		p.x = 1.3 // 推到右出界 ⇒ 下一帧回收走 placeAirEntry
+		hw, _ := f.airHalfN(p)
+		p.x = 1.0 + hw + 0.01 // 推到"整朵完全出屏"⇒ 下一帧回收走 placeAirEntry
 	}
 	if n == 0 {
 		t.Skip("本场无云粒子")

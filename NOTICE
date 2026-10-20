@@ -22,13 +22,18 @@ Relationship to that project, stated precisely:
 - What was **not** taken: no source code, no build system, no data.
   SRPSS is Python + PySide6 built with Nuitka; WeatherScr is Go + gioui with no cgo.
   The two share no code.
-- Asset provenance, stated precisely: the artwork shipped here is Kenney CC0
-  (`cloud1..cloud9.png`, `fog1..fog4.png`, `glow.png`) plus the three detail-row icons
+- Asset provenance, stated precisely: the artwork shipped here is OpenGameArt CC0
+  volume clouds (`cloud1..cloud9.png`) and OpenGameArt CC0 fog (`fog1..fog4.png`,
+  alpha channel scaled to 0.60), a NASA public-domain moon surface texture
+  (`moon.png`), a rain streak texture drawn by this project (`rain.png`), the Kenney
+  CC0 glow sprite (`glow.png`), the Kenney CC0 light masks (`sunglow.png`,
+  `flashglow.png`) and the Kenney CC0 smoke-particle ray burst (`sunrays.png`),
+  plus the three detail-row icons
   `detail_umbrella.png` / `detail_humidity.png` / `detail_wind.png`, recorded in
   `ui/embed/ATTRIBUTION.md`. Upstream's condition-icon set (`cond_*.png`) and its
   moon-phase artwork (`moon_*.png`) were consulted during asset development and are
   **not used**: those files are not in this repository, no code path loads them, and
-  the moon is drawn by this project.
+  the moon is drawn by this project around the NASA surface texture.
 - Upstream source line references appear in comments (for example
   `default_settings.py:1523-1540`). Those are provenance notes recording which
   upstream default a value mirrors. They are citations, not copied code.
@@ -46,8 +51,21 @@ attribution above is given as credit, which is the convention this project follo
 | --- | --- | --- |
 | [gioui.org](https://gioui.org) v0.10.3 | UI toolkit, Direct3D 11 rendering | Unlicense OR MIT |
 | [golang.org/x/sys](https://pkg.go.dev/golang.org/x/sys) | Win32 system calls | BSD-3-Clause |
-| [Kenney "Background Elements"](https://kenney.nl/assets/background-elements) | cloud sprites `cloud1..cloud9.png` | CC0 1.0 |
-| [Kenney "Particle Pack"](https://kenney.nl/assets/particle-pack) | fog/smoke sprites `fog1..fog4.png` | CC0 1.0 |
+| [Kenney "Background Elements"](https://kenney.nl/assets/background-elements) | earlier cloud sprites (superseded, see below) | CC0 1.0 |
+| [Kenney "Particle Pack"](https://kenney.nl/assets/particle-pack) | glow sprite `glow.png` (light_01) | CC0 1.0 |
+| [Kenney "Light Masks"](https://kenney.nl/assets/light-masks) | soft light masks `sunglow.png` (1024 px wide) and `flashglow.png` (512 px wide), both from `circle_a.png` | CC0 1.0 |
+| [Kenney "Smoke Particles"](https://kenney.nl/assets/smoke-particles) | sun ray burst `sunrays.png` (512 px wide), from `flash05.png` | CC0 1.0 |
+| [OpenGameArt "Clouds with Transparency", WickedInsignia](https://opengameart.org/content/clouds-with-transparency) | cloud sprites `cloud1..cloud9.png` | CC0 1.0 |
+| [OpenGameArt "Thick Fog", lfa](https://opengameart.org/content/thick-fog) | fog sprites `fog1..fog4.png` (alpha scaled to 0.60) | CC0 1.0 |
+| [NASA SVS CGI Moon Kit](https://svs.gsfc.nasa.gov/4720) | moon surface texture `moon.png` (LRO data, rendered by Ernie Wright / USRA, scientist Noah Petro / NASA GSFC) | Public domain (U.S. government work) |
+| Rain streak texture `rain.png` | drawn by this project | MIT (this project) |
 | [Open-Meteo](https://open-meteo.com) | weather and moon-phase data | free API, attribution requested |
 
-Kenney asset provenance is recorded in `assets/LICENSE-kenney.txt`.
+Asset provenance is recorded per file in `ui/embed/ATTRIBUTION.md`, and per source in
+`assets/LICENSE-ogazoo.txt` (OpenGameArt CC0 + NASA), `assets/LICENSE-kenney.txt`.
+
+The Kenney cloud set shipped in earlier revisions was replaced by the OpenGameArt
+volume-cloud set; the Kenney smoke sprites were replaced by the OpenGameArt "Thick Fog"
+texture (its alpha channel scaled to 0.60). `glow.png` is still Kenney light_01.
+The replacement is recorded in `assets/LICENSE-kenney.txt` so the Kenney provenance
+stays accurate about what is actually shipped.

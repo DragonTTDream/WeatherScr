@@ -115,7 +115,7 @@ func TestRequestShape(t *testing.T) {
 
 	wantKeys := []string{
 		"current", "daily", "forecast_days", "forecast_hours",
-		"hourly", "latitude", "longitude", "timezone",
+		"hourly", "latitude", "longitude", "models", "timezone",
 	}
 	got := make([]string, 0, len(v))
 	for k := range v {
@@ -138,7 +138,11 @@ func TestRequestShape(t *testing.T) {
 		"current": "temperature_2m,weather_code,wind_speed_10m,is_day,relative_humidity_2m,precipitation,rain,cloud_cover,precipitation_probability",
 		// hourly + **precipitation**（mm）：预警改"未来 N 小时滚动窗口"要逐小时毫米数求和
 		// （实测接受，units % 与 mm，需求 1）。
-		"hourly": "precipitation_probability,precipitation",
+		// + **cloud_cover**（规格 1.6）：与 models= 配对，实测响应给出逐模型键
+		// cloud_cover_gfs_seamless / cloud_cover_icon_seamless / cloud_cover_ecmwf_ifs025。
+		"hourly": "precipitation_probability,precipitation,cloud_cover",
+		// models（规格 1.6）：三家模型逐字，多模型云量的开关。
+		"models": "gfs_seamless,icon_seamless,ecmwf_ifs025",
 		// daily 与上游逐字 + **precipitation_probability_max / precipitation_sum / moon_phase**：
 		// 降雨提醒的数据源+ 今日月相。
 		// 上游无任何预警功能、daily 只有三键

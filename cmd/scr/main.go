@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -160,7 +161,37 @@ func scrLogOnly() bool {
 	return err == nil
 }
 
+// ── 内存硬闸与 GC 触发阈值 ─────────────────────────
+//
+// 依据（分层阶梯实测，180 s 窗口、单层掩码，取证记录见 out/notes-textcache.md）：
+//
+//	单层 RSS 底数：sky/depth 52–57 MB
+//	field +6~9 MB、weather +6 MB
+//	全开（新构建）52 s = 单核 28.9% / 整机 7.2%，RSS 96.0 → 102.2 MB
+//
+// 常驻内存预算 120 MB ⇒ 硬闸取 **110 MB**，留 10 MB 余量给峰值
+// （类别切换时新旧两个粒子场并存、纹理上传、GC 还没收走的垃圾）。
+//
+// 两者的分工：**SetMemoryLimit 是硬闸，SetGCPercent 是主导。**
+// GCPercent 决定"堆涨多少触发一次 GC"（默认 100 ⇒ 堆翻倍触发一次），
+// 提到 200 ⇒ 触发次数减少 ⇒ 每帧花在 GC 上的 CPU 下降，代价是堆峰值上升；
+// 堆峰值涨到多少由 GCPercent 说话，limit 只兜底 —— 逼近硬闸时 runtime
+// 会无视 GCPercent 强行回收（CPU 又花回 GC 上）。
+// 所以"提高 GCPercent"只有在 limit 已经压住上限的前提下才安全。
+// 实测峰值 102.2 MB 离 110 MB 还有 7.8 MB ⇒ 余量够，不会长期顶着硬闸跑。
+const (
+	// memLimitBytes 进程内存硬闸 = 120 MB 预算 − 10 MB 余量。
+	memLimitBytes = 110 << 20
+	// gcPercent GC 触发阈值：堆涨 200% 触发一次（默认 100）。
+	gcPercent = 200
+)
+
 func main() {
+	// 进程启动早期就定死内存口径：硬闸 110 MB + 触发阈值 200%。
+	// 不读环境变量、不加配置键（与 config 的 34 个键无关）。
+	debug.SetMemoryLimit(memLimitBytes)
+	debug.SetGCPercent(gcPercent)
+
 	app.ID = windowClass
 	args := os.Args[1:]
 	sa := scrargs.Parse(args)
@@ -428,7 +459,12 @@ func runSettings(cfg config.Config, parent uintptr) {
 		app.Size(640, 1100),
 		app.MinSize(320, 480),
 	)
-	th := ui.New()
+	// 面板主题（B2）：配色跟随 Windows 深浅色 + 面板局部字号 panelTextSp。
+	// 与屏保侧的 ui.New() 是两份互不相干的 Theme ⇒ 屏保画面零影响
+	// （Screen.Theme 的消费点只有这里与 cmd/setshot，spec §0）。
+	// 深浅色在构建面板时读一次注册表，面板开着期间不跟系统变
+	// （取舍见 ui/theme.go 顶部注释）。
+	th := ui.NewPanelTheme()
 	var ops op.Ops
 	ownerDone := false
 	// 风格夺回的一次性守卫（与 ownerDone 同构）：只在第一帧执行一次。
@@ -474,7 +510,7 @@ func runSettings(cfg config.Config, parent uintptr) {
 				}
 				gtx := app.NewContext(&ops, e)
 				act := panel.HandleKeys(gtx)
-				panel.Layout(gtx, th.Theme)
+				panel.Layout(gtx, th)
 				if panel.SaveClicked(gtx) {
 					act = "save"
 				}
@@ -615,6 +651,10 @@ func run() {
 		snap := st.snapshot()
 		field := ui.NewField(snap.Class, snap.IsDay, time.Now().UnixNano())
 		field.SetSpeedScale(speedFromBudget(frameBudget))
+		// 闪现间隔按码分级（D4）：建场就把码传进去。
+		if snap.Sample != nil {
+			field.SetWeatherCode(snap.Sample.WeatherCode)
+		}
 		// 类别切换交叉淡入淡出状态（需求：类别切换不得整片突现，云要缓慢进场）：
 		// 旧场淡出 + 新场淡入同时做，新场的云从屏外左侧错峰进场。
 		// 代价如实记录：淡出期间**两个场同时绘制**，粒子层填充翻倍，
@@ -708,6 +748,13 @@ func run() {
 					lastTick = time.Now()
 				}
 
+				// 闪现间隔按码分级（D4）：每帧把码传进粒子场（值变了才生效，零成本）。
+				if snap.Sample != nil {
+					field.SetWeatherCode(snap.Sample.WeatherCode)
+					if prevField != nil {
+						prevField.SetWeatherCode(snap.Sample.WeatherCode)
+					}
+				}
 				dt := time.Since(last)
 				last = time.Now()
 				field.Step(dt, size.X, size.Y)
@@ -741,6 +788,9 @@ func run() {
 					field = ui.NewFieldEntering(snap.Class, snap.IsDay, time.Now().UnixNano())
 					field.SetSpeedScale(speedFromBudget(frameBudget))
 					field.SetFade(0)
+					if snap.Sample != nil {
+						field.SetWeatherCode(snap.Sample.WeatherCode)
+					}
 					fadeT = 0
 					lastActive = field.ActiveCount()
 					logf("SCR_WEATHER=class=%s isDay=%v fade=%ds", snap.Class, snap.IsDay, int(fadeDur/time.Second))
@@ -992,12 +1042,14 @@ type snapshot struct {
 	IsDay  bool
 }
 
-// moonPhaseOf 从 Sample 取今日月相，nil-safe（Sample 为 nil 时返回 nil ⇒ 
-// 月亮回落到 bakeMoonCrisp 画法。需求 5。
+// moonPhaseOf 从 Sample 取今日月相，nil-safe（Sample 为 nil 时返回 nil ⇒
+// 月亮层不画月亮，与新月一致，规格 2.3）。需求 5。
 // lastMoonPhase 记住**上一次取到的有效月相**。
-// 缺陷：取不到月相时返回 nil，而月亮层对 nil 的画法是 p=0.5 = **满月**
+// 缺陷：取不到月相时返回 nil，而月亮层旧口径对 nil 画的是 p=0.5 = **满月**
 // ⇒ 老机器上一次抓取打嗝（网络延迟/超时）就让残月当场变满月，抓到了又变回来
 // ⇒ 读图发现残月和满月竟然在眼前切换了。
+// （nil 的画法已改为"不画月亮"，这条沿用上一次的口径照旧保留：一天只走 0.034 的量，
+// 没有理由在两次抓取之间从"有月"跳到"无月"。）
 // 口径：月相一天只走约 1/29.5 ≈ 0.034，**没有理由在两次抓取之间跳变**
 // ⇒ 取不到就沿用上一次的，绝不回落成满月。
 var lastMoonPhase float64
@@ -1016,8 +1068,14 @@ func moonPhaseOf(s *weather.Sample) *float64 {
 }
 
 func (st *weatherState) set(s *weather.Sample) {
-	// 分档口径 = 云量优先（定案）；云量缺失时退回 WMO 码。
-	cls, _ := effect.ClassifyByCloudCover(s.WeatherCode, s.CloudCover)
+	// 分档口径 = **三模型云量的中位数**（规格 1.6）：
+	// <30 晴、30–70 多云见日、>70 阴；降水类（雨/雪/雷/雾/尘）仍由天气码决定。
+	// 中位数取不到（三家都没给 / 当前小时不在 hourly 里）⇒ 退回既有口径
+	// （current.cloud_cover + 天气码），不空不崩。
+	cls, _ := weather.ClassFromCloud(s.WeatherCode, s.CloudMedian)
+	if s.CloudMedian == nil {
+		cls, _ = effect.ClassifyByCloudCover(s.WeatherCode, s.CloudCover)
+	}
 	// 天气类覆盖：实测云/雨/雾这些类时，低性能 x86 小主机当时的真实天气
 	// 往往就是晴天（实测杭州"Mainly clear"），
 	// 看不到云就无从判断。exe 旁放 scr.cls 写类名即强制该类。

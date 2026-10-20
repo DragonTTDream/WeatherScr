@@ -116,7 +116,9 @@ func main() {
 		}
 	}
 
-	th := ui.New().Theme
+	// 面板主题（B2）：与设置窗口同一份（配色跟随 + 面板字号），
+	// 这样量出来的行高/包围盒与 Windows 上设置窗口的观感同口径。
+	th := ui.NewPanelTheme()
 	fmt.Printf("THEME textsize=%.1f fg=%s bg=%s contrastbg=%s contrastfg=%s clear=%s density=%.2f\n",
 		th.TextSize, fmtColor(th.Palette.Fg), fmtColor(th.Palette.Bg),
 		fmtColor(th.Palette.ContrastBg), fmtColor(th.Palette.ContrastFg),

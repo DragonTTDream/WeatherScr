@@ -1,0 +1,45 @@
+OpenGameArt 素材来源与许可
+========================
+
+1) Clouds with Transparency（云 cloud1..cloud9.png）
+   来源: https://opengameart.org/content/clouds-with-transparency
+   作者: WickedInsignia
+   许可: CC0 1.0  http://creativecommons.org/publicdomain/zero/1.0/legalcode
+   上游原文（作者自述）:
+     "I hereby release these assets into the public domain under the CC0 license.
+      You are free to use them commercially or non-commercially."
+   上游原始文件: fx_cloudalphas.zip（2048x2048 一张，PNG 带 alpha）
+   本仓库的改动: 等比缩到 448 宽（高 310..474），LANCZOS 重采样；
+                 像素内容未做调色、未裁剪、未拼接。
+
+2) Thick Fog（雾 fog1..fog4.png）
+   来源: https://opengameart.org/content/thick-fog
+   作者: LFA (www.lfa.com)
+   许可: CC0 1.0  http://creativecommons.org/publicdomain/zero/1.0/legalcode
+   上游原始文件: fog01.png（1024x512，可横向平铺的雾/烟纹理）
+   本仓库的改动: 缩到 896x448（LANCZOS），并把 alpha 通道整体 ×0.60
+                 （浓淡对比后的选定档：白天雾变薄且太阳可见、夜间雾团变软且月亮清晰）。
+
+CC0 要点（对上面两项都适用）:
+  - 作者把作品贡献进公共领域；
+  - 无需署名、无需申请，可商用、可修改、可再分发；
+  - 本文件仅作来源备案，不构成许可义务；列作者与 URL 是礼貌署名（attribution），
+    不是 CC0 的要求。
+
+NASA 月面（moon.png）
+====================
+   来源: NASA SVS "CGI Moon Kit", https://svs.gsfc.nasa.gov/4720
+         （Visualization ID 4720，Released 2019-09-06，持续更新）
+   数据: Lunar Reconnaissance Orbiter (LRO) 的 LROC 彩色镶嵌图与 LOLA 高程数据
+   制作: Ernie Wright (USRA) 制可视化，Noah Petro (NASA GSFC) 为科学家
+   许可: 公有领域。NASA 生成内容按其内容使用政策（https://www.nasa.gov/multimedia/nasares/）
+         对公众免费开放，不主张版权（美国联邦政府作品）；
+         LROC 经 PDS 归档的数据产品同样在公有领域
+         （https://lroc.im-ldi.com/about/terms 第 1 条）。
+   本仓库的改动: 取月面区域缩到 384x384（LANCZOS），转 RGBA 且 alpha 全 255。
+   引用惯例: NASA 要求"引用来源"（citation），本文件与 NOTICE 中的署名即按此惯例给出。
+
+本项目自绘素材
+==============
+   rain.png（雨丝贴图，192x192）：本项目自绘，随代码同许可（MIT，见 LICENSE）。
+   不含任何第三方素材。

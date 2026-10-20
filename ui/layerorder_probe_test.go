@@ -45,7 +45,7 @@ func TestMoonLayerOrder(t *testing.T) {
 		return img
 	}
 
-	count := func(img *image.RGBA) int {
+	count := func(img *image.RGBA, thr int) int {
 		fw, fh := float64(PortraitW), float64(PortraitH)
 		cx, cy := int(0.72*fw), int(0.095*fh)
 		rc := int(moonRcFrac * fw)
@@ -53,13 +53,34 @@ func TestMoonLayerOrder(t *testing.T) {
 		for y := cy - rc; y <= cy+rc; y++ {
 			for x := cx - rc; x <= cx+rc; x++ {
 				i := img.PixOffset(x, y)
-				if (int(img.Pix[i])+int(img.Pix[i+1])+int(img.Pix[i+2]))/3 > 235 { // 云体最亮 ~225，进不来
+				if (int(img.Pix[i])+int(img.Pix[i+1])+int(img.Pix[i+2]))/3 > thr {
 					n++
 				}
 			}
 		}
 		return n
 	}
+	// 阈值取自**基线帧月面峰值 − 20**，不写死数字：
+	// 旧口径写死 235，是按程序化月核（246,244,230，均值 240）定的；
+	// 月面换成内嵌的 NASA 月面贴图后峰值落到 215 一档（月海更暗），
+	// 写死的 235 会让两帧都数到 0 个像素 ⇒ 判据本身失效。
+	peak := 0
+	{
+		fw, fh := float64(PortraitW), float64(PortraitH)
+		cx, cy := int(0.72*fw), int(0.095*fh)
+		rc := int(moonRcFrac * fw)
+		base := render(nil, LayerSky|LayerDepth)
+		for y := cy - rc; y <= cy+rc; y++ {
+			for x := cx - rc; x <= cx+rc; x++ {
+				i := base.PixOffset(x, y)
+				if v := (int(base.Pix[i]) + int(base.Pix[i+1]) + int(base.Pix[i+2])) / 3; v > peak {
+					peak = v
+				}
+			}
+		}
+	}
+	thr := peak - 20
+	t.Logf("基线月面峰值 = %d ⇒ 阈值 = %d", peak, thr)
 
 	f := NewField(effect.Cloudy, false, 20261015)
 	for i := 0; i < 40; i++ {
@@ -79,8 +100,8 @@ func TestMoonLayerOrder(t *testing.T) {
 	}
 	t.Logf("全部 %d 个粒子种类=%v（pkCloud=4 pkGlow=6 pkStar=0）ActiveCount=%d",
 		len(f.parts), kinds, f.ActiveCount())
-	withField := count(render(f, LayerSky|LayerDepth|LayerField))
-	noField := count(render(nil, LayerSky|LayerDepth))
+	withField := count(render(f, LayerSky|LayerDepth|LayerField), thr)
+	noField := count(render(nil, LayerSky|LayerDepth), thr)
 	t.Logf("月核亮像素(>235)：带粒子层=%d  无粒子层=%d", withField, noField)
 	if withField == noField {
 		t.Errorf("粒子层对月亮零影响（%d == %d）⇒ 月亮画在云之上，图层顺序错", withField, noField)

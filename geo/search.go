@@ -17,6 +17,7 @@
 //	  只在 en 数据集里** ⇒ zh 数据集是有损的部分翻译层
 //	Nominatim(OSM)：绵阳→绵阳市/四川省(31.460,104.716 正确)、本市短名也能命中全名、
 //	  成都/拉萨/义乌 全对 ⇒ **中文查询走 Nominatim**
+//
 // ⇒ 拉丁/拼音走 Open-Meteo（en + zh 两份合并），中文走 Nominatim。
 package geo
 

@@ -6,9 +6,11 @@
 // 1. 装到 C:\Windows\System32\WeatherScr.scr
 // 2. 自提权（弹 UAC）
 // 3. **不改 ScreenSaveTimeOut**（保留机器现有等待时间）
-// 4. **无静默参数，只有图形界面**
+// 4. **无静默参数，只有图形界面**（B3 起为 4 页向导：欢迎 → 说明与准备 → 安装 → 完成）
 //
-// 桌面两个快捷方式："天气屏保 · 设置"→ WeatherScr.scr /c"天气屏保 · 启动"→ WeatherScr.scr /s
+// 桌面两个快捷方式："天气屏保 · 设置"→ WeatherScr_setup.exe --settings
+// （安装器用直接 CreateProcess 起 WeatherScr.scr /c，不经 shell 关联）
+// "天气屏保 · 启动"→ WeatherScr.scr /s
 // 卸载：恢复安装前的 SCRNSAVE.EXE（本机现值 = SRPSS.scr），删快捷方式，删 Add/Remove Programs 项。
 //
 // 提权顺序（关键）：HKCU 与桌面快捷方式**必须以登录账户身份写**，
@@ -51,25 +53,35 @@ const (
 
 var (
 	user32  = windows.NewLazySystemDLL("user32.dll")
+	gdi32   = windows.NewLazySystemDLL("gdi32.dll")
 	shell32 = windows.NewLazySystemDLL("shell32.dll")
 
-	procRegisterClassExW   = user32.NewProc("RegisterClassExW")
-	procCreateWindowExW    = user32.NewProc("CreateWindowExW")
-	procShowWindow         = user32.NewProc("ShowWindow")
-	procUpdateWindow       = user32.NewProc("UpdateWindow")
-	procGetMessageW        = user32.NewProc("GetMessageW")
-	procTranslateMessage   = user32.NewProc("TranslateMessage")
-	procDispatchMessageW   = user32.NewProc("DispatchMessageW")
-	procPostMessageW       = user32.NewProc("PostMessageW")
-	procSendMessageW       = user32.NewProc("SendMessageW")
-	procDestroyWindow      = user32.NewProc("DestroyWindow")
-	procPostQuitMessage    = user32.NewProc("PostQuitMessage")
-	procDefWindowProcW     = user32.NewProc("DefWindowProcW")
-	procSetWindowTextW     = user32.NewProc("SetWindowTextW")
-	procGetSystemMetrics   = user32.NewProc("GetSystemMetrics")
-	procLoadCursorW        = user32.NewProc("LoadCursorW")
-	procGetStockObject     = user32.NewProc("GetStockObject")
-	procSendNotifyMessageW = user32.NewProc("SendNotifyMessageW")
+	procRegisterClassExW = user32.NewProc("RegisterClassExW")
+	procCreateWindowExW  = user32.NewProc("CreateWindowExW")
+	procShowWindow       = user32.NewProc("ShowWindow")
+	procUpdateWindow     = user32.NewProc("UpdateWindow")
+	procGetMessageW      = user32.NewProc("GetMessageW")
+	procTranslateMessage = user32.NewProc("TranslateMessage")
+	procDispatchMessageW = user32.NewProc("DispatchMessageW")
+	procPostMessageW     = user32.NewProc("PostMessageW")
+	procSendMessageW     = user32.NewProc("SendMessageW")
+	procDestroyWindow    = user32.NewProc("DestroyWindow")
+	procPostQuitMessage  = user32.NewProc("PostQuitMessage")
+	procDefWindowProcW   = user32.NewProc("DefWindowProcW")
+	procSetWindowTextW   = user32.NewProc("SetWindowTextW")
+	procGetSystemMetrics = user32.NewProc("GetSystemMetrics")
+	procLoadCursorW      = user32.NewProc("LoadCursorW")
+	// GetStockObject 由 **gdi32.dll** 导出，不在 user32.dll。挂在 user32 上时
+	// x/sys 的 LazyProc 在首次调用处直接 panic（实机取证：
+	// `panic: Failed to find GetStockObject procedure in user32.dll`，
+	// 栈帧 main.wndProc cmd/setup/main.go:264 ← showPage:537 的 UpdateWindow 触发绘制）。
+	procGetStockObject        = gdi32.NewProc("GetStockObject")
+	procAdjustWindowRectEx    = user32.NewProc("AdjustWindowRectEx") // 证据 E3：客户区 ⇄ 窗口尺寸换算
+	procGetWindowLongW        = user32.NewProc("GetWindowLongW")     // 取 GWL_STYLE / GWL_EXSTYLE（64 位即 GetWindowLongPtrW 的 32 位形态）
+	procEnableWindow          = user32.NewProc("EnableWindow")       // 证据 E4：禁用按钮必须用 EnableWindow
+	procSetWindowPos          = user32.NewProc("SetWindowPos")
+	procSendNotifyMessageW    = user32.NewProc("SendNotifyMessageW")
+	procSystemParametersInfoW = user32.NewProc("SystemParametersInfoW")
 
 	procShellExecuteW = shell32.NewProc("ShellExecuteW")
 )
@@ -84,8 +96,13 @@ const (
 	wmSize          = 0x0005
 	wmNotify        = 0x004E
 	wmSettingChange = 0x001A
+	// 证据 E1（spec §0.2）：STATIC 控件自带 COLOR_BTNFACE 灰底 ⇒ 截图里正文区是一整块灰面板。
+	// WM_CTLCOLORSTATIC 返回 GetStockObject(WHITE_BRUSH) 后，正文底色与窗口白底（hbrBackground=1）一致。
+	wmCtlColorStatic = 0x0138
 
 	bnClicked = 1
+
+	whiteBrush = 0 // GetStockObject 的 WHITE_BRUSH 索引
 
 	wsOverlappedWindow = 0x00CF0000
 	wsVisible          = 0x10000000
@@ -99,26 +116,57 @@ const (
 
 	// 控件 id
 	idBtnInstall = 101
-	idBtnUninst  = 102
-	idBtnQuit    = 103
+	idBtnBack    = 104
+	idBtnNext    = 105
+	idBtnFinish  = 106
+	idBtnCancel  = 107
 	idLog        = 110
 	idStatus     = 111
+
+	// 向导页（固定页序：欢迎 → 说明与准备 → 安装（日志+进度）→ 完成）
+	pageWelcome  = 0
+	pageIntro    = 1
+	pageProgress = 2
+	pageFinish   = 3
+
+	// SystemParametersInfoW 取当前显示器工作区（窗口尺寸自适应用）
+	SPI_GETWORKAREA = 0x0030
+
+	// 向导主窗口样式：wizardWindowSize 与 CreateWindowExW 必须用同一个值，
+	// 这样 AdjustWindowRectEx 算出的非客户区才是这个窗口真正的非客户区（证据 E3）。
+	wizardStyle = wsOverlappedWindow
+
+	// GetWindowLongW 的索引（nIndex）
+	gwlStyle      int32 = -16 // GWL_STYLE
+	gwlExStyle    int32 = -20 // GWL_EXSTYLE
+	swpNoZorder         = 0x0040
+	swpNoActivate       = 0x0010
 
 	// 自定义消息：工作线程请 GUI 线程追加一行日志 / 结束
 	wmAppLog    = 0x0400
 	wmAppDone   = 0x0401
 	wmAppStatus = 0x0402
+	// 证据 E4：禁用/恢复按钮必须在 GUI 线程做（EnableWindow 是窗口所属线程的调用），
+	// 工作线程用这条消息请 GUI 线程代做。
+	wmAppButtons = 0x0403
 )
 
 var (
-	hInst    windows.Handle
-	hMain    windows.HWND
-	hLog     windows.HWND
-	hStatus  windows.HWND
-	hBtnIns  windows.HWND
-	hBtnUn   windows.HWND
-	hBtnQuit windows.HWND
-	fontH    windows.Handle
+	hInst      windows.Handle
+	hMain      windows.HWND
+	hLog       windows.HWND
+	hStatus    windows.HWND
+	hBtnCancel windows.HWND
+	fontH      windows.Handle
+
+	// 向导状态：页状态机 + 页内控件（每页独立创建销毁）+ **客户区**尺寸（控件坐标是客户区坐标，见证据 E3）
+	currentPage      int32
+	startPage        int32 = pageWelcome
+	pageChildren     []windows.HWND
+	pageBtns         []windows.HWND
+	clientW, clientH int32
+	installing       bool
+	uninstalling     bool
 
 	logLines []string
 )
@@ -136,6 +184,26 @@ type winMsg struct {
 }
 
 type winPoint struct{ x, y int32 }
+
+// winRect = Win32 RECT（winuser.h），AdjustWindowRectEx / SPI_GETWORKAREA 的入参布局
+type winRect struct{ left, top, right, bottom int32 }
+
+// getWindowLong 取窗口的 GWL_STYLE / GWL_EXSTYLE（证据 E3：换算前要知道窗口真正的样式）。
+// 64 位下 GetWindowLongPtrW 是规范名，GetWindowLongW 对 GWL_STYLE/GWL_EXSTYLE 同样可用
+// （样式位是 32 位，取低 32 位即可）。
+func getWindowLong(h windows.HWND, idx int32) uint32 {
+	r, _, _ := procGetWindowLongW.Call(uintptr(h), uintptr(idx))
+	return uint32(r)
+}
+
+// nonClientSize 用 user32.AdjustWindowRectEx 求某样式下的非客户区尺寸：
+// 对空矩形 {0,0,0,0} 调用，返回的就是标题栏 + 边框 + 菜单的总尺寸。
+// 窗口尺寸 = 客户区尺寸 + 该尺寸（AdjustWindowRectEx 只做加法，减法即取反）。
+func nonClientSize(style, exStyle uint32) (int32, int32) {
+	rc := winRect{}
+	procAdjustWindowRectEx.Call(uintptr(unsafe.Pointer(&rc)), uintptr(style), 0, uintptr(exStyle))
+	return rc.right - rc.left, rc.bottom - rc.top
+}
 
 type wndClassExW struct {
 	cbSize        uint32
@@ -186,25 +254,44 @@ func logf(format string, a ...any) {
 }
 
 const (
-	btnInstallLabel = "安装屏保"
-	btnUninstLabel  = "卸载"
-	btnQuitLabel    = "关闭"
+	btnInstallLabel = "安装"
+	btnBackLabel    = "上一步"
+	btnNextLabel    = "下一步"
+	btnFinishLabel  = "完成"
+	btnCancelLabel  = "取消"
 )
 
 func wndProc(hwnd windows.HWND, msg uint32, wp, lp uintptr) uintptr {
 	switch msg {
+	case wmCtlColorStatic:
+		// 证据 E1（spec §0.2 / §1.1）：STATIC 默认灰底（COLOR_BTNFACE）⇒ 正文区在截图里是一整块灰面板。
+		// 返回 GetStockObject(WHITE_BRUSH) 的句柄 ⇒ 正文底色与窗口白底一致。
+		brush, _, _ := procGetStockObject.Call(whiteBrush)
+		return brush
+	case wmAppButtons:
+		setButtonsEnabled(wp != 0)
+		return 0
 	case wmCommand:
 		id := wp & 0xffff
 		switch id {
+		case idBtnNext:
+			if currentPage < pageProgress {
+				showPage(currentPage + 1)
+			}
+		case idBtnBack:
+			if currentPage > pageWelcome && currentPage < pageFinish {
+				showPage(currentPage - 1)
+			}
 		case idBtnInstall:
-			setButtonsEnabled(false)
+			// 证据 E4（spec §0.4）：安装进行中第二次点最右按钮又跑了一遍 runInstall，
+			// 把 PreviousScr 覆盖成"安装后的值"。安装中直接忽略安装按钮。
+			if installing {
+				return 0
+			}
+			installing = true
 			setStatus("安装中…")
 			go runInstall()
-		case idBtnUninst:
-			setButtonsEnabled(false)
-			setStatus("卸载中…")
-			go runUninstall()
-		case idBtnQuit:
+		case idBtnFinish, idBtnCancel:
 			procPostQuitMessage.Call(0)
 		}
 		return 0
@@ -212,21 +299,33 @@ func wndProc(hwnd windows.HWND, msg uint32, wp, lp uintptr) uintptr {
 		procPostQuitMessage.Call(0)
 		return 0
 	case wmAppDone:
-		setButtonsEnabled(true)
+		if installing {
+			installing = false
+			showPage(pageFinish)
+		} else if !uninstalling {
+			// --uninstall 模式下安装按钮在本页创建时就已禁用（证据 E4），卸载结束后不恢复它
+			setButtonsEnabled(true)
+		}
 		return 0
 	}
 	r, _, _ := procDefWindowProcW.Call(uintptr(hwnd), uintptr(msg), wp, lp)
 	return r
 }
 
+// setButtonsEnabled 安装/卸载进行中禁用页内导航按钮（安装/上一步/下一步），"取消"保持可用。
+//
+// 证据 E4（spec §0.4）：旧实现发的是 `SendMessageW(h, 0x00C7 /*WM_ENABLE*/)` —— Win32 没有
+// WM_ENABLE 这条消息，控件走 DefWindowProc 直接忽略 ⇒ 实机上安装进行中按钮仍可点，
+// 第二次点击又跑了一遍 runInstall，把 PreviousScr 覆盖成安装后的值。
+// 正确做法是 user32!EnableWindow（必须在窗口所属线程调用，工作线程经 wmAppButtons 转投）。
 func setButtonsEnabled(on bool) {
 	var en uintptr
 	if on {
 		en = 1
 	}
-	for _, h := range []windows.HWND{hBtnIns, hBtnUn} {
-		if h != 0 {
-			procSendMessageW.Call(uintptr(h), 0x00C7 /*WM_ENABLE*/, en, 0)
+	for _, h := range pageBtns {
+		if h != 0 && h != hBtnCancel {
+			procEnableWindow.Call(uintptr(h), en)
 		}
 	}
 }
@@ -240,29 +339,45 @@ func mkWindow(class, title string, style, x, y, w, h int32, parent windows.HWND,
 	return windows.HWND(r)
 }
 
-// fitToWorkArea 算安装向导窗口的尺寸：设计值收进主屏工作区。
+// wizardWindowSize 向导窗口尺寸：**入参是期望的客户区尺寸**，返回客户区尺寸 + 窗口尺寸 + 左上角。
 //
-// 上限 = 工作区 - 边距（40 px，给任务栏与窗口边框让位）。
-// 下限 = 三个按钮并排所需的宽度：14 + 150 + 10 + 150 + 10 + 150 + 14 = 498，
-// 再低就会把"卸载"与"关闭"挤到一起；高度下限 300 保证日志区可读
-// （日志区高 = H - 64 - 58）。
-// 工作区指标取不到（0）时退回整屏尺寸。
-// 只算尺寸，不碰安装逻辑。
-func fitToWorkArea(workw, workh, scrw, scrh, wantW, wantH int32) (int32, int32) {
-	const margin = 40
-	const minW, minH = 498, 300
-	if workw <= 0 {
-		workw = scrw
+// 客户区 vs 窗口尺寸（证据 E3，spec §0.3）：控件坐标是**客户区**坐标，CreateWindowExW 的 w/h 是
+// **窗口**尺寸，两者差一圈非客户区。旧代码把窗口高度 460 当客户区高度布局 ⇒ 按钮 y=414 起、高 34
+// ⇒ 414..448 落在客户区（460 − 标题栏 31 − 上下边框 8 = 421）之外，被裁约 27px。
+//
+// 换算用 user32.AdjustWindowRectEx（procAdjustWindowRectEx，样式取 wizardStyle，扩展样式 0，
+// 菜单 0；WS_CHILD 不需要，本窗口是 overlapped 顶层窗口）：对空矩形调用得到该样式的非客户区尺寸，
+// 窗口尺寸 = 客户区尺寸 + 非客户区尺寸。
+//
+// 工作区 = SystemParametersInfoW(SPI_GETWORKAREA=0x0030)：当前显示器去掉任务栏的可用区
+// （SM_CXWORKAREA 只反映主屏，竖屏/多屏下会算错，故换 SPI）。
+// 顺序：客户区 ⇒ 窗口 ⇒ 夹到工作区 90% ⇒ 夹最小窗口 480×420（三个 150px 按钮并排的宽度下限 +
+// 日志区可读下限）⇒ 居中 ⇒ 反算客户区。判据：按钮底边 ≤ 客户区高度（见 buttonTopY 的测试）。
+// 只算尺寸与居中，不碰安装逻辑。
+func wizardWindowSize(wantW, wantH int32) (clientW, clientH, winW, winH, x, y int32) {
+	var area [4]int32 // RECT：left, top, right, bottom
+	procSystemParametersInfoW.Call(SPI_GETWORKAREA, 0, uintptr(unsafe.Pointer(&area[0])), 0)
+	workw := area[2] - area[0]
+	workh := area[3] - area[1]
+	if workw <= 0 || workh <= 0 {
+		smw, _, _ := procGetSystemMetrics.Call(0) // SM_CXSCREEN
+		smh, _, _ := procGetSystemMetrics.Call(1) // SM_CYSCREEN
+		if workw <= 0 {
+			workw = int32(smw)
+		}
+		if workh <= 0 {
+			workh = int32(smh)
+		}
+		area[0], area[1] = 0, 0
 	}
-	if workh <= 0 {
-		workh = scrh
+	ncW, ncH := nonClientSize(wizardStyle, 0) // 标题栏 + 边框（AdjustWindowRectEx 的同一套数值）
+	const minW, minH = 480, 420               // 下限作用在**窗口**尺寸上
+	W, H := wantW+ncW, wantH+ncH              // 客户区 ⇒ 窗口
+	if max := workw * 9 / 10; W > max {
+		W = max
 	}
-	W, H := wantW, wantH
-	if workw > 0 && workw-margin < W {
-		W = workw - margin
-	}
-	if workh > 0 && workh-margin < H {
-		H = workh - margin
+	if max := workh * 9 / 10; H > max {
+		H = max
 	}
 	if W < minW {
 		W = minW
@@ -270,7 +385,16 @@ func fitToWorkArea(workw, workh, scrw, scrh, wantW, wantH int32) (int32, int32) 
 	if H < minH {
 		H = minH
 	}
-	return W, H
+	x = area[0] + (workw-W)/2
+	y = area[1] + (workh-H)/2
+	if x < area[0] {
+		x = area[0]
+	}
+	if y < area[1] {
+		y = area[1]
+	}
+	// 窗口 ⇒ 客户区（控件布局用的是客户区坐标，按钮行必须落在这里面）
+	return W - ncW, H - ncH, W, H, x, y
 }
 
 func runGUI() {
@@ -286,46 +410,35 @@ func runGUI() {
 		os.Exit(2)
 	}
 
-	smw, _, _ := procGetSystemMetrics.Call(0)    // SM_CXSCREEN
-	smh, _, _ := procGetSystemMetrics.Call(1)    // SM_CYSCREEN
-	workw, _, _ := procGetSystemMetrics.Call(76) // SM_CXWORKAREA
-	workh, _, _ := procGetSystemMetrics.Call(77) // SM_CYWORKAREA
-	// 尺寸口径：按主屏工作区（整屏去掉任务栏的可用区）自适应。
-	// 设计值 620×460 不变；工作区比设计值小的屏上自动收进
-	// "工作区 - 边距"，窗口不再超出可用区（同族缺陷：窗口要手动拉伸才显示全）。
-	// 竖屏 1080×1920 的工作区 1080×1880 ⇒ 620×460 原样保留。
-	// 只算尺寸与居中，安装逻辑、注册表操作、文件复制顺序一律不动。
-	W, H := fitToWorkArea(int32(workw), int32(workh), int32(smw), int32(smh), 620, 460)
-	x := (int32(workw) - W) / 2
-	y := (int32(workh) - H) / 2
-	if x < 0 {
-		x = 40
-	}
-	if y < 0 {
-		y = 40
-	}
+	// 尺寸口径：内容需要**客户区** 620×460，换算成窗口尺寸后夹到工作区 90%、最小窗口 480×420、居中。
+	cw, ch, W, H, x, y := wizardWindowSize(620, 460)
+	clientW, clientH = cw, ch
 
 	hMain = mkWindow("WeatherScrSetupWnd", appName+" 安装器 v"+appVersion,
-		wsOverlappedWindow|wsVisible, x, y, W, H, 0, 0)
+		wizardStyle|wsVisible, x, y, W, H, 0, 0)
 	if hMain == 0 {
 		fmt.Fprintln(os.Stderr, "创建窗口失败")
 		os.Exit(2)
 	}
 
-	// 标题与说明
-	hStatus = mkWindow("STATIC", "就绪。点击\"安装屏保\"将安装到 C:\\Windows\\System32，并只弹一次 UAC 用于系统目录写入。",
-		wsChild|wsVisible|0x0001 /*SS_LEFT*/, 14, 12, W-28, 46, hMain, idStatus)
+	// 用窗口**实际**样式复核非客户区：GetWindowLongW 取 GWL_STYLE/GWL_EXSTYLE ⇒ AdjustWindowRectEx。
+	// 若与 wizardStyle 假设值不同（主题/DPI 差异），按实际值重算窗口尺寸并落位，
+	// 保证按钮行仍落在客户区内（证据 E3 的判据）。
+	ncW, ncH := nonClientSize(getWindowLong(hMain, gwlStyle), getWindowLong(hMain, gwlExStyle))
+	if ncW != ncWidthPx || ncH != ncHeightPx {
+		W, H = cw+ncW, ch+ncH
+		if W < 480 {
+			W = 480
+		}
+		if H < 420 {
+			H = 420
+		}
+		procSetWindowPos.Call(uintptr(hMain), 0, uintptr(x), uintptr(y), uintptr(W), uintptr(H),
+			uintptr(swpNoZorder|swpNoActivate))
+		clientW, clientH = W-ncW, H-ncH
+	}
 
-	// 日志区
-	hLog = mkWindow("EDIT", "",
-		wsChild|wsVisible|wsBorder|wsVScroll|esReadOnly|esMultiline|wsTabStop,
-		14, 64, W-28, H-64-58, hMain, idLog)
-
-	// 按钮
-	by := int32(H - 46)
-	hBtnIns = mkWindow("BUTTON", btnInstallLabel, wsChild|wsVisible|wsTabStop, 14, by, 150, 34, hMain, idBtnInstall)
-	hBtnUn = mkWindow("BUTTON", btnUninstLabel, wsChild|wsVisible|wsTabStop, 174, by, 150, 34, hMain, idBtnUninst)
-	hBtnQuit = mkWindow("BUTTON", btnQuitLabel, wsChild|wsVisible|wsTabStop, W-164, by, 150, 34, hMain, idBtnQuit)
+	showPage(startPage)
 
 	procShowWindow.Call(uintptr(hMain), 5 /*SW_SHOW*/)
 	procUpdateWindow.Call(uintptr(hMain))
@@ -340,6 +453,93 @@ func runGUI() {
 		procTranslateMessage.Call(uintptr(unsafe.Pointer(&m)))
 		procDispatchMessageW.Call(uintptr(unsafe.Pointer(&m)))
 	}
+}
+
+// mkStatic/mkButton 建页内控件并登记（切页时统一销毁，见 showPage）。
+func mkStatic(label string, x, y, w, h int32) windows.HWND {
+	// 证据 E2（spec §0.1）：Win32 里 SS_LEFT = 0x0000、SS_CENTER = 0x0001，
+	// 旧代码在样式里加上了 SS_CENTER 的那个位、却注释成 SS_LEFT ⇒ 实机正文是居中排列。
+	// 正解：SS_LEFT = 0x0000，样式就是 wsChild|wsVisible（不再带那个位）。
+	hwnd := mkWindow("STATIC", label, wsChild|wsVisible /*SS_LEFT = 0x0000*/, x, y, w, h, hMain, 0)
+	pageChildren = append(pageChildren, hwnd)
+	return hwnd
+}
+
+func mkButton(label string, x, y, w, h int32, id uintptr) windows.HWND {
+	hwnd := mkWindow("BUTTON", label, wsChild|wsVisible|wsTabStop, x, y, w, h, hMain, id)
+	pageChildren = append(pageChildren, hwnd)
+	pageBtns = append(pageBtns, hwnd)
+	return hwnd
+}
+
+// showPage 向导页状态机：销毁上一页控件、创建新页控件。
+// 现有控件是绝对坐标，分页后每页各自布局；日志 EDIT 只在"安装"页存在，
+// 跨线程写入方式不变（appendLog 的 SendMessageW 口径，见其注释）。
+func showPage(p int32) {
+	for _, h := range pageChildren {
+		if h != 0 {
+			procDestroyWindow.Call(uintptr(h))
+		}
+	}
+	pageChildren = nil
+	pageBtns = nil
+	hLog, hStatus, hBtnCancel = 0, 0, 0
+	currentPage = p
+	W, H := clientW, clientH // 客户区坐标：控件坐标与窗口尺寸不是一回事（证据 E3）
+	by := buttonTopY(H)      // 按钮行顶边 = 客户区高度 − (按钮高 34 + 底边留白 12)
+	switch p {
+	case pageWelcome:
+		mkStatic("欢迎安装 "+appName+" v"+appVersion, 14, 12, W-28, 24)
+		mkStatic("本向导将把屏保安装到 C:\\Windows\\System32，并创建桌面快捷方式。\r\n\r\n"+
+			"· 只为写入 System32 弹一次 UAC\r\n"+
+			"· 不修改 ScreenSaveTimeOut（保留机器现有等待时间）\r\n"+
+			"· 卸载时恢复安装前的屏保设置", 14, 44, W-28, H-44-58)
+		hBtnCancel = mkButton(btnCancelLabel, 14, by, btnW, btnH, idBtnCancel)
+		mkButton(btnNextLabel, W-164, by, btnW, btnH, idBtnNext)
+	case pageIntro:
+		prevLine := ""
+		if prev, err := readScrSave(); err != nil {
+			prevLine = fmt.Sprintf("当前屏保值读取失败：%v（安装第一步会重试并记录回退值）", err)
+		} else if prev == "" {
+			prevLine = "当前屏保程序 = 无（卸载时将删除 SCRNSAVE.EXE 值）"
+		} else {
+			prevLine = fmt.Sprintf("当前屏保程序 = %q（卸载时将恢复此值）", prev)
+		}
+		mkStatic("说明与准备", 14, 12, W-28, 24)
+		mkStatic("安装路径：C:\\Windows\\System32\\WeatherScr.scr\r\n\r\n"+
+			"UAC 说明：只为写入 System32 弹一次 UAC；HKCU 注册表与桌面快捷方式\r\n"+
+			"以当前登录账户身份写入（提权进程写 HKCU 会落进提权账户的 hive）。\r\n\r\n"+
+			"提权复制失败时当场回滚注册表。\r\n\r\n"+prevLine, 14, 44, W-28, H-44-58)
+		mkButton(btnBackLabel, 14, by, btnW, btnH, idBtnBack)
+		hBtnCancel = mkButton(btnCancelLabel, 164, by, btnW, btnH, idBtnCancel)
+		mkButton(btnNextLabel, W-164, by, btnW, btnH, idBtnNext)
+	case pageProgress:
+		hStatus = mkStatic("就绪。点击\"安装\"开始；日志实时显示在下方。", 14, 12, W-28, 24)
+		hLog = mkWindow("EDIT", "",
+			wsChild|wsVisible|wsBorder|wsVScroll|esReadOnly|esMultiline|wsTabStop,
+			14, 44, W-28, H-44-58, hMain, idLog)
+		pageChildren = append(pageChildren, hLog)
+		if len(logLines) > 0 {
+			setText(hLog, strings.Join(logLines, "\r\n"))
+		}
+		procSendMessageW.Call(uintptr(hLog), 0x00B7 /*WM_VSCROLL*/, 7 /*SB_BOTTOM*/, 0)
+		mkButton(btnBackLabel, 14, by, btnW, btnH, idBtnBack)
+		hBtnCancel = mkButton(btnCancelLabel, 164, by, btnW, btnH, idBtnCancel)
+		hInstall := mkButton(btnInstallLabel, W-164, by, btnW, btnH, idBtnInstall)
+		if uninstalling {
+			// --uninstall 直进本页：只跑卸载，安装按钮禁用（证据 E4：必须用 EnableWindow，
+			// 旧的 0x00C7 /*WM_ENABLE*/ 不是 Win32 消息，控件直接忽略 ⇒ 实机上按钮仍可点）
+			procEnableWindow.Call(uintptr(hInstall), 0)
+		}
+	case pageFinish:
+		mkStatic("安装完成", 14, 12, W-28, 24)
+		mkStatic("屏保已安装：C:\\Windows\\System32\\WeatherScr.scr\r\n\r\n"+
+			"· 桌面快捷方式 \"天气屏保 · 设置\" 打开设置窗口\r\n"+
+			"· 桌面快捷方式 \"天气屏保 · 启动\" 立即预览\r\n"+
+			"· 卸载：控制面板 › 程序和功能，或运行本安装器 --uninstall", 14, 44, W-28, H-44-58)
+		mkButton(btnFinishLabel, W-164, by, btnW, btnH, idBtnFinish)
+	}
+	procUpdateWindow.Call(uintptr(hMain))
 }
 
 // ───────────────────────── 提权 ─────────────────────────
@@ -392,6 +592,12 @@ func runInstall() {
 			setStatus("安装失败")
 		}
 	}()
+
+	// 证据 E4（spec §0.4 / §1.4）：一进入安装就禁用安装/上一步/下一步（只留"取消"）。
+	// 旧版只发了不存在的 WM_ENABLE 消息 ⇒ 按钮实际未禁用，第二次点击又跑了一遍 runInstall，
+	// 把 PreviousScr 覆盖成"安装后的值"（C:\Windows\System32\SRPSS.scr → ...\WeatherScr.scr）。
+	// EnableWindow 必须在 GUI 线程调用 ⇒ 经 wmAppButtons 转投给窗口过程。
+	procPostMessageW.Call(uintptr(hMain), wmAppButtons, 0, 0)
 
 	logf("=== 安装开始 ===")
 	logf("提权状态：%v（HKCU 与桌面快捷方式必须以登录账户身份写，故先做账户级，只为 System32 复制弹一次 UAC）", isElevated())
@@ -480,17 +686,27 @@ func runInstall() {
 	}
 
 	// 6 桌面快捷方式
+	// "设置"的目标 = 安装器自身 + --settings（安装器用直接 CreateProcess 起
+	// .scr /c）。取证 36.16.5：.scr 的 shell 关联是 "%1" /S，走 shell 的启动
+	// 参数一律被换成 /S ⇒ 目标指 .scr 的"设置"快捷键永远开屏保。
+	// "启动"保持 WeatherScr.scr /s 不变；两者的工作目录与图标不变。
+	settingsTarget, settingsArgs := selfExe(), "--settings"
+	if settingsTarget == "" {
+		// 取不到安装器自身路径（罕见）⇒ 退回旧口径，快捷键至少可用
+		settingsTarget, settingsArgs = warmupExe, "/c"
+		logf("取安装器自身路径失败 ⇒ \"设置\"快捷方式退回 %s /c", warmupExe)
+	}
 	d, err := desktopDirFast()
 	if err != nil {
 		logf("取桌面目录失败：%v", err)
 	} else {
 		logf("桌面目录 = %s", d)
-		if p, err := makeShortcut(d, "天气屏保 · 设置", warmupExe, "/c"); err != nil {
+		if p, err := makeShortcut(d, "天气屏保 · 设置", settingsTarget, settingsArgs, warmupExe); err != nil {
 			logf("建\"设置\"快捷方式失败：%v", err)
 		} else {
-			logf("已建快捷方式 %s", p)
+			logf("已建快捷方式 %s 目标=%s 参数=%s", p, settingsTarget, settingsArgs)
 		}
-		if p, err := makeShortcut(d, "天气屏保 · 启动", warmupExe, "/s"); err != nil {
+		if p, err := makeShortcut(d, "天气屏保 · 启动", warmupExe, "/s", warmupExe); err != nil {
 			logf("建\"启动\"快捷方式失败：%v", err)
 		} else {
 			logf("已建快捷方式 %s", p)
@@ -498,7 +714,7 @@ func runInstall() {
 	}
 
 	logf("=== 安装完成 ===")
-	logf("屏保程序 = %s；设置 = %s /c；启动 = %s /s", warmupExe, warmupExe, warmupExe)
+	logf("屏保程序 = %s；设置 = %s %s；启动 = %s /s", warmupExe, settingsTarget, settingsArgs, warmupExe)
 	setStatus("安装完成")
 }
 
@@ -536,6 +752,12 @@ func runUninstall() {
 	logf("=== 卸载开始 ===")
 	prev, _ := loadState("PreviousScr")
 	logf("安装前记录的屏保程序 = %q", prev)
+	// 证据 E5（spec §0.5）：记录值就是本程序自己的安装路径时（双安装把回滚值覆盖成了安装后的值），
+	// 恢复它等于把 SCRNSAVE.EXE 指向一个即将被卸载删除的文件 ⇒ 按"安装前没有屏保"处理。
+	if isSelfScrPath(prev, warmupExe) {
+		logf("记录值 = 本程序安装路径（自指）⇒ 按\"安装前没有屏保\"处理，卸载后删除 SCRNSAVE.EXE 值")
+		prev = ""
+	}
 
 	// 删 System32 里的文件需要提权
 	if fileExists(warmupExe) {
@@ -838,14 +1060,26 @@ func mustDesktop() string {
 }
 
 // makeShortcut 用 PowerShell 的 WScript.Shell COM 建 .lnk（LTSC 17763 自带 PowerShell 5.1）。
-func makeShortcut(dir, name, target, args string) (string, error) {
+// icon 是 IconLocation 的目标文件（图标来源与快捷方式目标解耦：
+// "设置"快捷方式的目标换成了安装器，图标仍取屏保文件的 0 号图标）。
+func makeShortcut(dir, name, target, args, icon string) (string, error) {
 	lnk := filepath.Join(dir, name+".lnk")
 	ps := fmt.Sprintf(
 		"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%s');"+
 			"$s.TargetPath='%s';$s.Arguments='%s';$s.WorkingDirectory='C:\\Windows\\System32';"+
 			"$s.Description='WeatherScr';$s.IconLocation='%s,0';$s.Save()",
-		lnk, target, args, target)
+		lnk, target, args, icon)
 	return lnk, runPS(ps)
+}
+
+// selfExe 当前安装器可执行文件的完整路径（= 安装目录里的 WeatherScr_setup.exe）。
+// 取不到时返回空串，调用方负责回退口径。
+func selfExe() string {
+	p, err := os.Executable()
+	if err != nil || p == "" {
+		return ""
+	}
+	return p
 }
 
 func runPS(script string) error {
@@ -864,11 +1098,50 @@ func runPS(script string) error {
 
 // ───────────────────────── 提权子进程模式 ─────────────────────────
 
+// runSettingsShortcut 实现 `WeatherScr_setup.exe --settings`：
+// 用**直接 CreateProcess** 启动 System32 里的屏保并传 `/c`（配置对话框），
+// 启动成功后本进程立即退出。
+//
+// 取证 36.16.5：`HKCR\scrfile\shell\open\command = "%1" /S` ⇒ 任何经 shell
+// 关联的启动（双击、快捷方式、Start-Process）参数都被强制替换成 `/S` ⇒
+// "设置"快捷方式永远开全屏屏保。同目标用直接 CreateProcess 传 `/c`
+// 得到的是设置窗口（title=WeatherScr 设置，client=624x1061）。
+//
+// 因此本分支**不得**用 ShellExecute / 文件关联：那正是被关联劫持的那条路。
+// lpApplicationName = 目标 exe，lpCommandLine = `"目标" /c`（带引号，
+// 与取证里那条命令行逐字同口径）。
+func runSettingsShortcut() int {
+	app, err := windows.UTF16PtrFromString(warmupExe)
+	if err != nil {
+		return 2
+	}
+	cl, err := windows.UTF16PtrFromString(`"` + warmupExe + `" /c`)
+	if err != nil {
+		return 2
+	}
+	si := windows.StartupInfo{Cb: uint32(unsafe.Sizeof(windows.StartupInfo{}))}
+	var pi windows.ProcessInformation
+	// 继承句柄关掉、创建标志 0：目标是自己家的 GUI 程序，不需要控制台，
+	// 也不需要新窗口组（置顶由被启动方 normalizeDialog 负责）。
+	if err := windows.CreateProcess(app, cl, nil, nil, false, 0, nil, nil, &si, &pi); err != nil {
+		logf("启动设置窗口失败：%v", err)
+		return 1
+	}
+	// 进程句柄不接（fire-and-forget）：设置窗口自己跑完生命周期
+	_ = windows.CloseHandle(pi.Process)
+	_ = windows.CloseHandle(pi.Thread)
+	return 0
+}
+
 func main() {
 	runtime.LockOSThread()
 	args := os.Args[1:]
 
 	switch {
+	case len(args) >= 1 && args[0] == "--settings":
+		// 设置直达（桌面"天气屏保 · 设置"快捷方式的目标）：
+		// 不建 GUI、不弹 UAC，直接 CreateProcess 起 .scr /c 后自行退出。
+		os.Exit(runSettingsShortcut())
 	case len(args) >= 3 && args[0] == "--copy-only":
 		// args: --copy-only <src> <dst> <marker>
 		marker := args[3]
@@ -890,6 +1163,9 @@ func main() {
 		return
 	case len(args) >= 1 && args[0] == "--uninstall":
 		// 从 Add/Remove Programs 进来：起 GUI 并直接执行卸载
+		// （向导口径：直进"安装"页看日志；卸载逻辑本身一字未动）
+		startPage = pageProgress
+		uninstalling = true
 		go func() { time.Sleep(400 * time.Millisecond); runUninstall() }()
 		initAndRun()
 		return

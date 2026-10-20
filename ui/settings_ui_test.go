@@ -292,7 +292,6 @@ func TestSeparatorInnerLength(t *testing.T) {
 }
 
 // TestPanelRadiusAdaptive 圆角随面板高自适应 = min(18, 面板高/6)
-//
 func TestPanelRadiusAdaptive(t *testing.T) {
 	for _, tc := range []struct{ h, want int }{
 		{463, 18}, // 时钟面板（403+2×30）→ 77 → 上限 18

@@ -80,8 +80,11 @@ func TestFetchUmbrellaUsesCurrent(t *testing.T) {
 	if c := q.Get("current"); !strings.HasSuffix(c, "precipitation_probability") {
 		t.Errorf("current 参数未追加 precipitation_probability：%q", c)
 	}
-	if h := q.Get("hourly"); h != "precipitation_probability,precipitation" {
-		t.Errorf("hourly 参数 = %q，期望 precipitation_probability,precipitation", h)
+	if h := q.Get("hourly"); h != "precipitation_probability,precipitation,cloud_cover" {
+		t.Errorf("hourly 参数 = %q，期望 precipitation_probability,precipitation,cloud_cover", h)
+	}
+	if m := q.Get("models"); m != ModelsParam {
+		t.Errorf("models 参数 = %q，期望 %q（三模型云量的开关）", m, ModelsParam)
 	}
 	// 逐小时平行数组 + 时基
 	if len(s.HourlyTime) != 3 || len(s.HourlyProb) != 3 || len(s.HourlyMM) != 3 {

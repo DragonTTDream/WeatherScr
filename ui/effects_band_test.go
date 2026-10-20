@@ -50,15 +50,19 @@ func TestCloudFogAvoidInfoBand(t *testing.T) {
 		}
 		// 外扩量口径：(最大 sc × 精灵原生高 / 屏高) / 2，
 		// 原生高从贴图集取、sc 上限从 spawn 常量取，屏高由调用方传入。
+		// 净尺寸口径：粒子云 = ÷bandNetDiv（与云带共用分母，spriteScale 的 pkCloud 分支），
+		// 雾 = ÷spriteNetDiv（雾的绘制式仍走既有净倍率）。
 		var maxSc float64
+		var netDiv float64
 		switch tc.kind {
 		case pkCloud:
 			maxSc = cloudScBase + cloudScSpan
+			netDiv = bandNetDiv
 		case pkFog:
 			maxSc = fogScBase + fogScSpan
+			netDiv = spriteNetDiv
 		}
-		// 精灵已 2× 超采样 ⇒ 净尺寸口径要除以同一系数
-		want := (maxSc * float64(maxSpriteH(spritesOnce(), tc.kind)) / float64(screenH)) / 2 / float64(spriteSupersample)
+		want := (maxSc * float64(maxSpriteH(spritesOnce(), tc.kind)) / float64(screenH)) / 2 / netDiv
 		if pad != want {
 			t.Errorf("%s 外扩量口径不符: got %v want %v", tc.cls, pad, want)
 		}

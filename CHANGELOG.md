@@ -5,6 +5,128 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Shape mask for the lightning flash: the flash glow is now built by Gaussian-blurring
+  the bolt sprite that the flash is drawing (`bolt1..3.png`, sigma = 0.03 x screen
+  width, normalised to its peak), so the lit area follows the bolt's own outline
+  instead of a circle. Cached per (bolt index, screen size); build cost measured
+  7-8 ms per bolt at 1080x1920. Measured anisotropy at flash = 0.30, 0.15w from the
+  anchor: along the bolt 5.6 / 3.7 / 8.4 levels vs perpendicular 0.2 / 0.7 / 0.0
+  levels (ratio 25 / 5.0 / inf for the three bolts); increment at 0.6w = 0.0 levels.
+- Six self-checks in `ui/sunedge_test.go`: sun profile has no edge, flash shape is the
+  bolt, per-frame cloud speed change, cloud screen-motion smoothness, per-band wrap
+  fully offscreen, and the particle-cloud recycle regression. All six print measured
+  numbers; the measured values are listed in `out/notes-sunedge.md`.
+
+### Changed
+
+- Installer modernization (B3): `cmd/setup` now carries an application manifest
+  (`cmd/setup/WeatherScr_setup.exe.manifest`, embedded via `rsrc -manifest` in the
+  `icon` target): Common-Controls 6.0.0.0 (themed controls), `asInvoker` (elevation
+  still goes through the existing `relaunchElevated` self-bootstrap), DPI awareness
+  (`dpiAware=true` + `dpiAwareness=PerMonitorV2, PerMonitor`). The single-page GUI
+  became a 4-page wizard (welcome -> intro -> install log -> finish) with
+  Back/Next/Install/Finish/Cancel; window size is computed from content and clamped
+  to 90% of the work area (`SystemParametersInfoW(SPI_GETWORKAREA)`), minimum
+  480x420, centered, so no button needs a manual window resize to be reachable.
+  `cmd/scr` keeps no manifest (gioui handles DPI itself; a manifest there risks
+  changing the rendering path). Install/uninstall logic untouched; the uninstall
+  rollback key `PreviousScr` (saved pre-install, restored on uninstall with a
+  `WM_SETTINGCHANGE` broadcast) is verified in place.
+
+- Windows builds of `cmd/scr` and `cmd/setup` link with `-ldflags="-s -w -H=windowsgui"`,
+  so the PE Subsystem is 2 (GUI) instead of 3 (console): starting the screensaver no
+  longer opens a console window. Measured on the two products built by the check
+  command: `/tmp/b1_scr.exe` Subsystem = 2, `/tmp/b1_setup.exe` Subsystem = 2
+  (the shipped pair measured 3 / 3 before). Logging path is unchanged
+  (exe-dir `scr_run.log`), it never needed a console.
+- The settings dialog is a topmost window now: `normalizeDialog` sets `WS_EX_TOPMOST`
+  (0x00000008) and its sized `SetWindowPos` uses `HWND_TOPMOST` without `SWP_NOZORDER`,
+  followed by a `SWP_NOMOVE|SWP_NOSIZE` topmost pass after `ShowWindow(SW_RESTORE)`.
+  Only the settings window goes through this; the fullscreen screensaver path
+  (`app.Fullscreen.Option()` + `app.Decorated(false)`) is untouched.
+- The desktop settings shortcut no longer points at the `.scr`. The shell association
+  `HKCR\scrfile\shell\open\command = "%1" /S` rewrites every shell-launched start of a
+  `.scr`, so the `/c` argument never survives a double click and the shortcut opened
+  the fullscreen saver. The shortcut now targets `<install dir>\WeatherScr_setup.exe`
+  with `--settings`, and that mode starts `"C:\Windows\System32\WeatherScr.scr" /c`
+  through a direct `CreateProcess` (no ShellExecute, no association). Working directory
+  and icon location are unchanged; the start shortcut keeps `WeatherScr.scr /s`.
+
+- Sunlight now covers the whole sky. The sun's sky contribution gains a second, very
+  slow Lorentz term on top of the near field spot: `A_sky = 90 x dim`, `L_sky = 0.9 x`
+  bake width, added outside the 1.5w cos^2 window so the four canvas corners get lifted
+  too (measured net lift at the corners vs a no-sun baseline: 41.7 / 69.0 / 20.3 / 21.3
+  levels; profile steepness stays under 3 levels per pixel, so no ring edge appears).
+- Cloud shadow layer: every particle cloud and every cloud band casts a soft shadow on
+  the sky *before* the cloud body is drawn (same sprite, colour (0,0,0), alpha =
+  cloud alpha x 0.45, size x 1.15 as penumbra). Day only - at night there is no
+  sunlight to block and the night sky would be crushed. Measured: at the cloud-covered
+  point the sky reads 64.7 levels below a cloud-free sky point in the same frame.
+- Three Kenney CC0 textures for the sun's shape per class: `sunrays.png` (Smoke
+  Particles `flash05`, 512 px wide) drawn additively at the sun for the disc classes,
+  `sunglow.png` (Light Masks `circle_a`, 1024 px wide) for the classes that draw no
+  disc, and `flashglow.png` (Light Masks `circle_a`, 512 px wide) as the soft mask of
+  the lightning flash.
+
+### Changed
+
+- Additive sunlight is now the sum of two analytic long-tail decays only: near field
+  `A_n = 150 x dim`, `L_n = 0.55 x bake width` (was `A = 200`, `L = 0.18w`) plus the
+  sky-wide `A_s = 90 x dim`, `L_s = 0.9w`. Neither term is truncated to zero, and the
+  wide glow texture is no longer the mask of the additive light: `sunglow.png` is a
+  soft shape base drawn 1.6 x bake width (rim at 0.8w, off screen) and `sunrays.png`
+  is drawn 1.4 x bake width (was 0.57) so its rim is off screen too. Measured on the
+  540x960 bake: net lift at 0.45w = 117.7 of 192.0 peak (61%) clear, 33.0 of 55.0 (60%)
+  overcast; adjacent-pixel peak 1.67 / 1.00 levels; at the old texture rim (0.465w) the
+  20 px inside vs 20 px outside averages differ by 1.60 levels (overcast).
+- `coupleClouds` is a low-pass filter now: `vx += clamp(target - vx, +/- cloudVxSlew)`
+  with `cloudVxSlew = 0.0004` per frame, gain `cloudCoupleK` 0.05 -> 0.012 and a dead
+  zone `cloudGapDead = 0.15` (gap error within +/-15% is not corrected). The clamp
+  range 0.002-0.015 and the parallax base-speed spread are unchanged; the no-overtake
+  clamp now acts on the target so it cannot jump the speed in one frame either.
+  Measured over 600 frames at 15 fps: max |delta vx| = 0.000400 (= the slew cap),
+  max per-frame screen motion 1.080 px, max acceleration 0.0288 px/frame^2.
+- Cloud band wrap uses a per-band period `span_i = w + 2 x dw_i` (was one shared
+  `w + 2 x average dw`), so a band is fully off screen at the moment it teleports:
+  measured left edge 1848-2257 px at the wrap instant on a 1080 px screen (band widths
+  768-1178 px), right edge 0.0235 px at entry. The shared speed and the left-edge
+  phase convention are unchanged.
+- The round flash mask `flashglow.png` is retired: the file stays in `ui/embed/` and
+  no code references it any more.
+- Two existing flash self-checks (`TestFlashLocalized`, `TestFlashAnchorIsBolt`) now
+  measure the peak increment of the lit layer inside the bolt rect instead of the
+  increment at the anchor pixel. Reason: the anchor is the sprite centre, which is
+  empty in the bolt art (measured 0 pixels above alpha 128 in the 21x21 centre of
+  bolt3), so with a bolt-shaped mask that single pixel is legitimately not lit.
+  The locality ratio criterion (>= 8x / > 5x at 0.5w away) is unchanged.
+
+- The lightning flash's glow is now the Kenney soft light mask centred on the bolt's
+  landing point (0.70 x screen width), replacing the procedurally generated cos^2 disc;
+  amplitude cap 0.30 and the cloud alpha boost 0.60 are unchanged. The bolt body is
+  drawn from flash > 0.12 instead of > 0.25, so a low-amplitude flash shows lightning
+  and not only light (measured 12095 bolt pixels at flash = 0.20, previously 0).
+
+- The clock and weather text blocks are now drawn from a recording of their own draw
+  commands. When every visible input is unchanged — text, placement, font metrics, ink,
+  shadow — the layout, glyph shaping and path construction are skipped and the recording is
+  replayed; any change rebuilds that block wholesale. The cache holds two entries (one per
+  block). Output is pixel-identical: six fixed-input frames rendered from the pre-change
+  tree and byte-compared against the current one, all identical.
+- The process sets a 110 MB memory limit and a 200 % GC trigger (the runtime default is
+  100 %), keeping the heap peak under the 120 MB budget with fewer collections per second.
+- The sun's disc is gated by cloud amount per weather class. `sunDiscVisibility(class, cloudPct)`
+  is the single place that decides it: 1.0 for clear / partly-cloudy / cloudy at cloud <= 50,
+  linear 1.0 -> 0.0 across 50 -> 75, 0.0 above; 0.0 for overcast, fog and dust at any cloud
+  amount; 1.0 for rain / snow / thunder at cloud <= 50 (the sun shower) and 0.0 above. The disc
+  body, the small core, the near field term, the ray texture and the bloom scale by it; the
+  sky-wide lift and the wide glow texture do not, so a cloudy sky keeps its grey wide light.
+  The near field term is back at `A_n = 200`, `L_n = 0.18 x bake width` (was 150 / 0.55w): the
+  middle core shrinks while the 0.9w lift and the 1.6w glow texture keep the overall spread.
+  Measured on the 540x960 bake: middle-core half-width 96 px = 0.178w, net lift at 0.45w = 69.3
+  of the 192.0 peak (36.1 %), disc pixels 1861 at cloud 40 and 0 at cloud 90 (rain).
+
 ### Removed
 
 - The rain-alert layout variants that never shipped: seven drawing functions

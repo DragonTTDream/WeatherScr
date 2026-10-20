@@ -310,6 +310,10 @@ func drawPreview(parent uintptr) {
 	screen := ui.New()
 	snap := previewSnapshot()
 	field := ui.NewField(snap.Class, snap.IsDay, time.Now().UnixNano())
+	// 闪现间隔按码分级（D4）：预览路径同样把码传进粒子场
+	if snap.Sample != nil {
+		field.SetWeatherCode(snap.Sample.WeatherCode)
+	}
 	cfg := config.Load()
 
 	var ops op.Ops

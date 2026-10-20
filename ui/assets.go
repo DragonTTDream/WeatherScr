@@ -7,21 +7,45 @@ import (
 	"image/color"
 	"image/png"
 	"math"
+	"os"
 	"sync"
 
 	"gioui.org/op/paint"
 )
 
-// 背景特效素材：Kenney《Background Elements》云 9 张 +《Particle Pack》
-// 烟雾/光晕，全部 CC0（http://creativecommons.org/publicdomain/zero/1.0/）。
+// 背景特效素材（ui/embed，内嵌即默认路径）：
+//
+//	cloud1..9.png  OpenGameArt "Clouds with Transparency"（WickedInsignia, CC0）
+//	               体积云，448 宽（高 310–474）
+//	fog1..4.png    OpenGameArt "Thick Fog"（lfa, CC0），896×448，
+//	               alpha 通道 ×0.60（浓淡对比图选定的那一档）
+//	moon.png       NASA SVS CGI Moon Kit（公有领域，LRO 数据），384×384，alpha 全 255
+//	rain.png       本项目自绘（MIT），192×192
+//	glow.png       Kenney "Particle Pack" light_01（CC0）
+//	detail_*.png   上游详情行图标，来源见 embed/ATTRIBUTION.md
+//
+// 阳光形态三张（Kenney CC0，包清单与缩放口径见 assets/LICENSE-kenney.txt）：
+//
+//	sunrays.png    Kenney "Smoke Particles" flash05.png，缩到 512 宽（512×521，LANCZOS，alpha 保留）
+//	               = 晴 / 多云见日档在太阳位置加性绘制的星芒（ui/render.go 的 bakeSunRays）
+//	sunglow.png    Kenney "Light Masks" circle_a.png，缩到 1024 宽（1024×1024）
+//	               = 灰蒙档（云量 ≥85）的宽光软形状底（ui/render.go 的 bakeSunGlow，
+//	                 绘制宽 1.6 倍烘焙宽，rim 在屏外；屏内加性光量走解析两项）
+//	flashglow.png  Kenney "Light Masks" circle_a.png，512 宽（512×512，源图原尺寸）
+//	               = 退役：闪电提亮改走闪电本体烘出的形状掩膜（ui/effects.go 的
+//	                 boltGlowMask），圆罩不再被任何代码引用；文件保留在 embed 目录
+//
+// 三张都走覆盖目录工装口径：WS_ASSET_DIR 里有同名文件时优先用它（readPNG / assetImageAny）。
+// 出厂二进制不读任何工装变量（闸门逐字证明）。
+//
+// 许可与来源逐条记录：NOTICE 的第三方表 + assets/LICENSE-ogazoo.txt +
+// assets/LICENSE-kenney.txt + ui/embed/ATTRIBUTION.md。
 //
 // 为什么用现成素材而不是继续程序生成：需求是从社区取现成的精美素材，
 // 不用程序生成（需求 4）。程序生成的软边团块经视觉判读
 // 判定为"像高斯模糊的白噪点、像均匀蒙版、有贴图感"——这是算法生成形状
-// 的固有上限，调参调不出来。Kenney 的云是人工设计的扁平矢量插画，
+// 的固有上限，调参调不出来。体积云是人工设计的形状，
 // 边缘平滑、有前后层次，直接解决该问题。
-//
-// 素材来源与许可记录见 assets/LICENSE-kenney.txt。
 
 //go:embed embed/*.png
 var embedFS embed.FS
@@ -92,7 +116,25 @@ func toNRGBA(img image.Image) *image.NRGBA {
 // 只在**加载时**做一次（本函数是加载路径，不在每帧路径里），使全部精灵
 // （cloud1..9 / fog1..4 / glow / star / flake / drop / mote / sun 以及本批新增的
 // detail_* / cond_*统一受益。
+// 覆盖目录（预览工装）：WS_ASSET_DIR 非空且该目录里有同名文件时，
+// 本函数改从该目录读；目录里没有的名字照旧走 embedFS。
+// 反预乘口径两条路径完全相同（toNRGBA → unpremultiply），
+// 负缓存语义不变（loadSprite 对加载失败的负缓存照旧）。
+// 未启用覆盖目录时 assetLookupPath 恒 false ⇒ 本函数与改动前逐字节等价。
+// 依据：素材预览工装规格 1.1 节；实现见 ui/assetdir.go。
 func readPNG(name string) (image.Image, bool) {
+	if p, ok := assetLookupPath(name); ok {
+		f, err := os.Open(p)
+		if err != nil {
+			return nil, false
+		}
+		im, err := png.Decode(f)
+		f.Close()
+		if err != nil {
+			return nil, false
+		}
+		return unpremultiply(toNRGBA(im)), true
+	}
 	b, err := embedFS.ReadFile(name)
 	if err != nil {
 		return nil, false
@@ -182,9 +224,11 @@ func glowRaw() *image.NRGBA {
 //
 //	反馈 A：云的锯齿状边缘十分明显 ⇒ 需要压掉放大 2.2 倍后的台阶；
 //	反馈 B：很夸张、很糊，某些边缘是平的（像圆弧强行被拉平）
+//
 // ⇒ 第一版对**整张精灵**做 r=2 的盒均值，被放大 2.2 倍后边缘糊成一团，
-//	  而盒滤波是低通：圆顶极值被邻域平均掉 ⇒ 圆弧顶部出现平台（"被拉平"）。
-//	  这是本次改动引入的伪影，不是素材的问题。
+//
+//	而盒滤波是低通：圆顶极值被邻域平均掉 ⇒ 圆弧顶部出现平台（"被拉平"）。
+//	这是本次改动引入的伪影，不是素材的问题。
 //
 // 现口径：**只处理边缘像素**（3×3 邻域内同时存在 alpha=0 与 alpha>0 的像素），
 // 半径 1。内部实心区完全不动 ⇒ 形状与圆顶保形；台阶只发生在边缘 1 px 上，
@@ -261,16 +305,78 @@ func featherAlpha(src *image.NRGBA, r int) *image.NRGBA {
 	return out
 }
 
-// spriteSupersample 精灵超采样倍率。
+// spriteSupersample 精灵超采样倍率 = **1**（B 版素材落地后）。
 //
-// 实测依据（TestEdgeProfileIsRamp）：Kenney 云精灵顶边 alpha 剖面 =
-// [127, 255, 255, 255, …] —— **边缘只有 1 px 的半透明斜坡**，其余是硬实心。
-// GPU 侧 v0.10.3 只有 FilterLinear，放大 2.2 倍后每个源像素变成 2.2 px 的软方块
-// ⇒ 沿曲线边界就是肉眼可读的台阶（低性能 x86 小主机反馈"锯齿状边缘十分明显"）。
+// 历史口径（2）：Kenney 云精灵顶边 alpha 剖面 = [127, 255, 255, 255, …]，
+// 边缘只有 1 px 的半透明斜坡，其余是硬实心（TestEdgeProfileIsRamp 实测）。
+// GPU 侧 v0.10.3 只有 FilterLinear，把 177–266 px 的原生小图放大 2.2 倍后
+// 每个源像素变成 2.2 px 的软方块 ⇒ 沿曲线边界就是肉眼可读的台阶。
 // 加载时先按三次核（Catmull-Rom）高质量放大 2 倍，绘制时把 scale 除以同一系数
 // ⇒ GPU 近似 1:1 贴图，台阶在 CPU 的高质量重采样阶段就被消掉。
-// 代价：精灵像素 ×4（9 张云 ≈ 3.5 MB），加载一次。
-const spriteSupersample = 2
+//
+// 现在取 1 的依据（内存口径，逐张实测）：
+//
+//	B 版源图 = 云 448 宽（高 310–474）、雾 896×448。
+//	屏上云宽 88–133 px ⇒ 源图已是它的 3.4–5.1 倍，GPU 走的是**缩小**采样，
+//	"放大源像素成软方块"这个台阶机制本身不存在了，超采样换不来任何东西。
+//	解码像素（RGBA 4 B/px）：
+//	  新素材 + supersample=2 = 30.68 Mpx = **122.8 MB**（云 24.26 + 雾 6.42）
+//	  新素材 + supersample=1 =  3.12 Mpx = **12.5 MB**
+//	  旧素材（Kenney）+ supersample=2 = 2.03 Mpx = 8.1 MB（对照）
+//	122.8 MB 单是云/雾贴图就顶穿 120 MB 的稳态 RSS 预算
+//	（180 s 窗口实测 RSS 104.7 → 114.0 MB，取证 34.14），
+//	⇒ 口径"保证视觉效果然后降低尺寸"= 视觉口径不动、把 ×4 的解码放大砍掉。
+//
+// 注意：**绘制尺寸不随本常量走**，见下面 spriteNetDiv / cloudNetScale /
+// fogNetScale / bandNetDiv（超采样降 1 后若继续除以 spriteSupersample，
+// 全部精灵会放大 2 倍）。
+const spriteSupersample = 1
+
+// 净绘制倍率（相对**源图像素尺寸**）。
+//
+// 旧口径把这些尺寸公式统一写成 "除以 spriteSupersample"，在 supersample=2 时
+// 净尺寸 = 0.5×原生。supersample 降到 1 后若照旧除以它，星/雪/尘/光晕
+// （它们从未被超采样，除以 2 就是它们的既有口径）会整体放大 2 倍，
+// 云/雾也会从 112 px 涨到 224 px ⇒ 画面口径全变。
+// ⇒ 把"除以 2"从超采样倍率里拆出来固定成常量，屏上尺寸逐处保持现状：
+//
+//	云  448 px 宽 × cloudNetScale 0.25 = 112 px  —— 既有口径 88–133 px 之内
+//	雾  896 px 宽 × fogNetScale   0.143 = 128 px  —— 旧净宽 = Kenney 256 原生 × 0.5
+//	带  448 px 宽 × (1.5+0.8·frac)/bandNetDiv 4 = 168–258 px —— 旧净宽 142–306 px
+//	其余精灵（星/雪/尘/光晕/雨丝）沿用 ÷spriteNetDiv = ÷2 的既有口径
+//
+// **口径改判（2026-10-20）：屏上尺寸回到选定效果图那一份，内存不跟着涨。**
+// 上面这组常量把新素材"逐档对齐"到旧 Kenney 尺寸（注释里的"不因换素材变大"），
+// 结果出厂画面与选定的那张效果图不是同一个东西：效果图是 supersample=2（源图 2× 放大）
+// 下出的，屏上尺寸 = 云 256 px、云带 768–1178 px、雾团 732–2867 px；
+// 落地后 supersample 降 1 并按旧尺寸收 ⇒ 云 112 px、带 168–258 px、雾 128 px，
+// 云带缩到效果图的 1/4.5 ⇒ 大块体积云读成一堆小圆团。
+// 现按"效果图的屏上尺寸 ÷ 现在的源图尺寸"定净倍率，**supersample 保持 1**
+// （照效果图那份口径要 2× 放大贴图 = 精灵像素 4 倍 ≈ +42 MB，超内存预算）：
+//
+//	云  512 px 宽 × 0.50 = 256 px               （效果图 1024 × 0.25 = 256 px）
+//	带  512 px 宽 × (1.5+0.8·frac)/1.0 = 768–1178 px（效果图 1024 × /2 = 768–1178 px）
+//	雾  1024 px 宽 × sc·(0.55+0.45·depth)·scaleMul × 1.0（效果图 2048 × 同式 ÷2）
+//
+// 代价（如实记）：源图 512 画到 768–1178 px = 1.5–2.3× 放大 ⇒ 边缘比效果图软；
+// 云带填充面积 ×4.5 ⇒ CPU 上升（帧率自适应会压粒子数兜底，实测见规格 34.18）。
+//
+// **粒子云口径改判（2026-10-20，粒子云改大）**：粒子云的屏宽不再由
+// cloudNetScale 这个常量决定，改走与云带**同一个分母 bandNetDiv**：
+//
+//	粒子云 512 px 宽 × p.sc·scaleMul / bandNetDiv，p.sc ∈ [1.5, 2.3]
+//	   = 512 × [1.5, 2.3] = 768–1178 px（未乘 scaleMul 抖动时），与云带逐档相同
+//
+// 依据：稳态下粒子云 256 px、云带 768–1178 px，相差 3–4.6 倍 ⇒
+// 屏上同时有 8 朵 256 px 的圆团与 4 条 768–1178 px 的带，圆团读成"小坨"。
+// 朵数按面积反比同步下调（单朵面积 ≈ 现 9 倍），见 effects.go counts。
+// cloudNetScale 保留作 supersample=2 时代的换算记录，绘制路径已不读它。
+const (
+	spriteNetDiv  = 2.0
+	cloudNetScale = 0.50 // 旧粒子云口径：512 源 → 256 px（现绘制路径已不读，见上）
+	fogNetScale   = 1.00 // 效果图口径：与 sc·(0.55+0.45·depth)·scaleMul 相乘，1024 源 → 732–2867 px
+	bandNetDiv    = 1.00 // 效果图口径：512 源 → 768–1178 px（云带与粒子云共用）
+)
 
 // upscaleCatmull 把图放大 f 倍（只支持整数倍），alpha 通道用 Catmull-Rom 核。
 // RGB 直接取最近源像素（精灵是平涂色，插值 RGB 会引入暗边）。
@@ -458,6 +564,54 @@ func loadSprite(name string) (paint.ImageOp, image.Point, bool) {
 	e := &spriteEntry{op: paint.NewImageOp(n), sz: n.Bounds().Size(), img: n, ok: true}
 	spriteCache.m[name] = e
 	return e.op, e.sz, true
+}
+
+// loadSpriteSet 按前缀加载一组粒子贴图（snow1..3 / rain1..7 / bolt1..3）。
+//
+// 解码口只有 loadSprite 一个（= readPNG 的反预乘口径），本函数不新增解码路径。
+// 任意一张缺 ⇒ 整组返回 false：逐组退路，屏幕上不会出现"半套贴图"
+// （三张雪里两张是贴图、一张是程序晶形那种混合态）。
+func loadSpriteSet(prefix string, n int) ([]paint.ImageOp, []image.Point, []*image.NRGBA, bool) {
+	var ops []paint.ImageOp
+	var szs []image.Point
+	var imgs []*image.NRGBA
+	for i := 1; i <= n; i++ {
+		name := prefix + itoa(i) + ".png"
+		op, sz, ok := loadSprite(name)
+		if !ok {
+			return nil, nil, nil, false
+		}
+		img := spriteImg(name)
+		if img == nil {
+			return nil, nil, nil, false
+		}
+		ops = append(ops, op)
+		szs = append(szs, sz)
+		imgs = append(imgs, img)
+	}
+	return ops, szs, imgs, true
+}
+
+// spriteImg 取缓存精灵的**反预乘原始像素**（不复制、只读）。
+//
+// 用途：云/雾体色的运行时着色需要贴图本体（gioui v0.10.3 的 paint.ImageOp
+// 没有颜色乘子：ImageOp 的字段是 Filter/uniform/color/src，MulColor 是 v0.11 才加的），
+// 所以"按天气类提白/压暗"只能在内存里做贴图副本 ⇒ 需要本体像素。
+// **素材文件逐字节不动**（规格 5：ui/embed/*.png 不许重采样/烘 alpha）。
+func spriteImg(name string) *image.NRGBA {
+	spriteCache.mu.Lock()
+	defer spriteCache.mu.Unlock()
+	if e, ok := spriteCache.m[name]; ok {
+		return e.img
+	}
+	img, ok := readPNG("embed/" + name)
+	if !ok {
+		spriteCache.m[name] = &spriteEntry{}
+		return nil
+	}
+	n := toNRGBA(img)
+	spriteCache.m[name] = &spriteEntry{op: paint.NewImageOp(n), sz: n.Bounds().Size(), img: n, ok: true}
+	return n
 }
 
 // embedHas 判断嵌入素材是否存在（上游 _file_source 的"在不在"语义，

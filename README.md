@@ -258,7 +258,20 @@ Layout and geometry live in `ui/layout.go`; the particle and cloud-band simulati
   of its code.
 - **[gioui](https://gioui.org)** — the UI toolkit that makes a pure-Go, cgo-free
   Direct3D 11 screensaver possible.
-- **[Kenney](https://kenney.nl)** — the cloud and smoke sprites, released as CC0.
+- **[OpenGameArt "Clouds with Transparency", WickedInsignia](https://opengameart.org/content/clouds-with-transparency)** —
+  the volume cloud sprites `cloud1..cloud9.png`, released as CC0.
+- **[OpenGameArt "Thick Fog", lfa](https://opengameart.org/content/thick-fog)** —
+  the fog sprites `fog1..fog4.png` (alpha channel scaled to 0.60), released as CC0.
+- **[NASA SVS CGI Moon Kit](https://svs.gsfc.nasa.gov/4720)** — the moon surface
+  texture `moon.png`, built from Lunar Reconnaissance Orbiter (LRO/LROC) data;
+  public domain.
+- **[Kenney](https://kenney.nl)** — the glow sprite `glow.png` (Particle Pack,
+  light_01), the sun ray burst `sunrays.png` (Smoke Particles, `flash05.png`,
+  scaled to 512 px wide) and the soft light masks `sunglow.png` / `flashglow.png`
+  (Light Masks, `circle_a.png`, scaled to 1024 px / 512 px wide), all released as
+  CC0. The cloud and smoke sprites shipped in earlier revisions were Kenney and
+  are now superseded by the two OpenGameArt sets above.
+- The **rain streak texture** `rain.png` is drawn by this project (MIT).
 - **[Open-Meteo](https://open-meteo.com)** — weather, forecast and moon-phase data,
   free and keyless.
 - The **Chinese national rainstorm warning** thresholds, used for the alert tiers.

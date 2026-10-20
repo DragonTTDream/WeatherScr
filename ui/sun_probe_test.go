@@ -11,7 +11,7 @@ import (
 // 判据：真太阳是**核心亮 + 大范围柔和衰减**（无边界）；
 // 圆盘是**内部平、外缘陡**（有边界）。
 func TestSunProfile(t *testing.T) {
-	img := renderSkyCPU(540, 960, effect.Clear, true, nil)
+	img := renderSkyCPU(540, 960, effect.Clear, true, nil, 0)
 	b := img.Bounds()
 	w, h := b.Dx(), b.Dy()
 	lum := func(x, y int) float64 {

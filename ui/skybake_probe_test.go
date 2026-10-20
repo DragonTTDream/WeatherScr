@@ -7,7 +7,7 @@ import (
 )
 
 func TestSkyBakeProbe(t *testing.T) {
-	img := renderSkyCPU(540, 960, effect.Cloudy, true, nil)
+	img := renderSkyCPU(540, 960, effect.Cloudy, true, nil, 0)
 	if img == nil {
 		t.Fatal("nil")
 	}

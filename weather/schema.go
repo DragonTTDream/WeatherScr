@@ -24,6 +24,20 @@ type Sample struct {
 	// CloudCover = Open-Meteo current.cloud_cover（百分比）。
 	// 定案的动画分档口径用它，WMO 码只作降水/雾的判据。
 	CloudCover *int `json:"cloud_cover"`
+	// CloudCoverPct = 云量百分比（0–100），**逐时线性插值到"现在"这一时刻**。
+	// 口径（D1 第 3 条）：hourly.cloud_cover 是整点阶梯，整点交界处会跳变，
+	// 而太阳可见度是逐帧画出来的量 ⇒ 主源取插值（InterpCloudPct）。
+	// current.cloud_cover 只用于交叉校验与日志，不当主源。
+	// 回落：响应里没有 cloud_cover ⇒ 按码推（cloudPctFromCode）并打 CLOUD_FALLBACK。
+	// 越界一律钳位 [0,100]。
+	CloudCoverPct int `json:"cloud_cover_pct,omitempty"`
+	// CloudMedian = 当前时刻三家模型云量（gfs_seamless / icon_seamless /
+	// ecmwf_ifs025）的**中位数**（规格 1.6）。
+	// 天空档位由它判：&lt;30 晴、30–70 多云见日、&gt;70 阴；降水类仍由天气码判。
+	// nil = 三家都没给 / 当前小时取不到 ⇒ 档位退回 CloudCover 与天气码。
+	CloudMedian *int `json:"cloud_median,omitempty"`
+	// CloudHourIndex = 取中位数时用的 hourly 下标（诊断用，-1 = 取不到）。
+	CloudHourIndex int `json:"cloud_hour_index,omitempty"`
 	// TodayPrecipProbMax = 今日最大降雨概率（%，daily.precipitation_probability_max[0]）。
 	// 降雨提醒的触发线数据源（官方"有机会出现降水"下限 30%）。
 	TodayPrecipProbMax *int `json:"today_precip_prob_max"`
@@ -35,7 +49,9 @@ type Sample struct {
 	// moon_illumination / lunar_illumination / lunar_phase / illumination /
 	// moon_altitude / moon_azimuth 全部拒绝；/v1/astronomy 端点 404 不存在
 	// ⇒ 照度只能自己算（见 ui.moonIllumination）。
-	// 取 daily 数组第一个值 = 今天。nil = 取不到 ⇒ 月亮回落到 bakeMoonCrisp 画法。
+	// 取 daily 数组第一个值 = 今天；带 models= 的响应里 daily 只有带模型后缀的
+	// moon_phase_* 键（见 provider.go 的 Daily 段），填值顺序 = 裸键 → 三家后缀键。
+	// nil = 取不到 ⇒ **不画月亮**（与新月一致，规格 2.3）。
 	MoonPhase *float64 `json:"moon_phase"`
 	// ---- 未来 N 小时滚动窗口的原料（逐小时数据 + 时基）----
 	// 三条**平行数组**，从响应 hourly 原样存（不排序、不去空、不补齐）：

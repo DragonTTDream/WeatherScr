@@ -37,7 +37,12 @@ const (
 	// 滚动窗口"需要逐小时毫米数求和；上游 hourly 只有 precipitation_probability
 	// （open_meteo_provider.py:331），实测 `hourly=precipitation_probability,precipitation`
 	// 接受，units `%` 与 `mm`（需求 1）。
-	hourlyFields = "precipitation_probability,precipitation"
+	hourlyFields = "precipitation_probability,precipitation,cloud_cover"
+	// cloud_cover 是规格 1.6 加的第三项：三模型云量仲裁的原料。
+	// 实测：与 `models=gfs_seamless,icon_seamless,ecmwf_ifs025` 同时给出时，hourly 里
+	// 出现逐模型键 cloud_cover_gfs_seamless / cloud_cover_icon_seamless /
+	// cloud_cover_ecmwf_ifs025（各自一条数组，与 time 对齐）；
+	// current 只返回一个合并对象，不能拿它做多模型。
 	// dailyFields 在上游三键之外多取三键（与 cloud_cover 同类偏离）：
 	// precipitation_probability_max = 今日最大降雨概率（提醒触发线用它），
 	// precipitation_sum = 今日预计降雨量 mm（提醒正文用它），
@@ -62,6 +67,8 @@ func RequestParams(lat, lon float64) url.Values {
 	v.Set("longitude", strconv.FormatFloat(lon, 'f', -1, 64))
 	v.Set("current", currentFields)
 	v.Set("hourly", hourlyFields)
+	// 三模型云量（规格 1.6）：models= 逐字三家，与 hourly= 里的 cloud_cover 配对。
+	v.Set("models", ModelsParam)
 	v.Set("daily", dailyFields)
 	v.Set("forecast_days", forecastDays)
 	v.Set("forecast_hours", forecastHours)
@@ -110,6 +117,13 @@ type forecastResponse struct {
 		// precipitation 单位 mm。平行数组，原样存进 Sample 供 WindowProb 用。
 		Time          []string  `json:"time"`
 		Precipitation []float64 `json:"precipitation"`
+		// 逐模型云量（规格 1.6，%）：请求带 models= 时 Open-Meteo 才给的三条数组，
+		// 与 Time 对齐。键名逐字照抄响应（CloudKeyGFS 等三个常量）。
+		// 请求没带 models=、或该模型不覆盖本地 ⇒ 键不存在 ⇒ 解成 nil ⇒ 中位数按缺失算。
+		CloudCover      []int `json:"cloud_cover"`
+		CloudCoverGFS   []int `json:"cloud_cover_gfs_seamless"`
+		CloudCoverIcon  []int `json:"cloud_cover_icon_seamless"`
+		CloudCoverECMWF []int `json:"cloud_cover_ecmwf_ifs025"`
 	} `json:"hourly"`
 	Daily struct {
 		Time             []string  `json:"time"`
@@ -120,7 +134,20 @@ type forecastResponse struct {
 		PrecipitationProbabilityMax []float64 `json:"precipitation_probability_max"`
 		PrecipitationSum            []float64 `json:"precipitation_sum"`
 		// 今日月相（fraction，0–1），实测
+		//
+		// 请求带 models=（三模型云量，规格 1.6）时，Open-Meteo 把 daily 里
+		// **每个逐模型字段都按模型后缀各给一条数组**，实测该请求的 daily 键 =
+		// [time, temperature_2m_max_gfs_seamless, …, moon_phase_gfs_seamless,
+		//  moon_phase_icon_seamless, moon_phase_ecmwf_ifs025, …]，
+		// **没有裸 moon_phase 键**（证据 E-MOON-KEYS：weather/moonprobe2_test.go
+		// 打印 DAILY_KEYS 与 DAILY_MOON=<nil>）。
+		// 只解裸键 ⇒ 数组空 ⇒ Sample.MoonPhase = nil（证据 E-MOON-NIL）。
+		// 三条后缀键 = 本批补的解析口径；裸键保留 = 请求不带 models= 时的旧口径。
 		MoonPhase []float64 `json:"moon_phase"`
+		// 带模型后缀的三条月相数组（键名逐字照抄响应，与 CloudCoverGFS 同一族）。
+		MoonPhaseGFS   []float64 `json:"moon_phase_gfs_seamless"`
+		MoonPhaseIcon  []float64 `json:"moon_phase_icon_seamless"`
+		MoonPhaseECMWF []float64 `json:"moon_phase_ecmwf_ifs025"`
 	} `json:"daily"`
 	// 响应顶层 utc_offset_seconds：
 	// 滚动窗口的"现在"要按**当地**时间算，必须拿到这个偏移。
@@ -297,13 +324,66 @@ func (c *Client) Fetch(city string) (*Sample, error) {
 			s.TodayPrecipMM = &mm
 		}
 	}
-	// 今日月相（daily 下标 0 = 今天），实测。
-	// 取不到（数组空）→ 保持 nil ⇒ 月亮回落到 bakeMoonCrisp 画法。
-	if len(f.Daily.MoonPhase) > 0 {
-		v := f.Daily.MoonPhase[0]
-		s.MoonPhase = &v
+	// 今日月相（daily 下标 0 = 今天）。
+	// 填值顺序 = 裸键 → 三家后缀键里第一个非空数组的 [0]（证据 E-MOON-KEYS：
+	// 带 models= 的响应里只有后缀键、没有裸键）；值域外（<0 或 >1）视为无效。
+	// 取不到 ⇒ 保持 nil ⇒ 绘制端不画月亮（规格 D5/D7 第 2.3 条）。
+	if v, ok := pickMoonPhase(f.Daily.MoonPhase, f.Daily.MoonPhaseGFS,
+		f.Daily.MoonPhaseIcon, f.Daily.MoonPhaseECMWF); ok {
+		val := v
+		s.MoonPhase = &val
+		fmt.Printf("MOONPHASE=%.4f\n", val)
 	}
+	// 三模型云量的中位数（规格 1.6）：当前时刻那一条上三家各取一个值。
+	// 下标取不到（hourly.time 里没有当前小时）/ 三家全缺 ⇒ nil ⇒
+	// 档位退回 current.cloud_cover 与天气码的既有判定，不空不崩。
+	idx := CurrentHourIndex(f.Hourly.Time, f.UTCOffsetSeconds, time.Now())
+	s.CloudHourIndex = idx
+	if m := MedianFromModels(f.Hourly.CloudCoverGFS, f.Hourly.CloudCoverIcon,
+		f.Hourly.CloudCoverECMWF, idx); m != nil {
+		s.CloudMedian = m
+	}
+	// 云量（D1 第 1–5 条）：主源 = 逐时 cloud_cover 在"现在"的**线性插值**，
+	// current.cloud_cover 只用于交叉校验与日志；响应里没有该字段 ⇒ 按码推回落，
+	// 并打 CLOUD_FALLBACK=code=N pct=M。三条路径出来的值一律钳位 [0,100]。
+	pct, ok := InterpCloudPct(f.Hourly.Time, f.Hourly.CloudCover, f.UTCOffsetSeconds, time.Now())
+	curStr := "none"
+	if f.Current.CloudCover != nil {
+		curStr = strconv.Itoa(*f.Current.CloudCover)
+	}
+	src := "hourly_interp"
+	switch {
+	case ok:
+	case f.Current.CloudCover != nil:
+		// 逐时数组缺失/解不开，current 有值 ⇒ 用 current（旧口径，不空）
+		pct, src = *f.Current.CloudCover, "current"
+	default:
+		// 两边都没有 ⇒ 按码推
+		pct, src = cloudPctFromCode(f.Current.WeatherCode), "code_fallback"
+		fmt.Printf("CLOUD_FALLBACK=code=%d pct=%d\n", f.Current.WeatherCode, clampCloudPct(pct))
+	}
+	s.CloudCoverPct = clampCloudPct(pct)
+	CloudPctLog(s.CloudCoverPct, src, f.Current.WeatherCode, curStr)
 	return s, nil
+}
+
+// pickMoonPhase 按填值顺序取今日月相：裸键 → 三家后缀键里第一个非空数组的 [0]。
+//
+// 值域外（<0 或 >1）视为无效，继续往下一家找；全都没有 ⇒ false（调用方保持 nil）。
+// 顺序逐字照规格 2.2：裸键优先（请求不带 models= 时的旧口径），
+// 后缀键按 gfs_seamless → icon_seamless → ecmwf_ifs025（与请求里 models= 的次序一致）。
+func pickMoonPhase(bare, gfs, icon, ecmwf []float64) (float64, bool) {
+	for _, arr := range [][]float64{bare, gfs, icon, ecmwf} {
+		if len(arr) == 0 {
+			continue
+		}
+		v := arr[0]
+		if v < 0 || v > 1 {
+			continue
+		}
+		return v, true
+	}
+	return 0, false
 }
 
 // tomorrowText 复刻上游明日行文案：

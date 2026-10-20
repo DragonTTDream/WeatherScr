@@ -26,6 +26,19 @@ import (
 )
 
 func main() {
+	// 素材预览工装（规格 1.6）：FX_ASSET_DIR 存在 ⇒ 透传给 ui 包的 WS_ASSET_DIR，
+	// 让渲染路径从外部目录读素材。必须在任何 ui 调用之前设（贴图集在首次用到时加载）。
+	// 出厂二进制 cmd/scr 不读这个变量，也不读 WS_ASSET_DIR。
+	if v := os.Getenv("FX_ASSET_DIR"); v != "" {
+		os.Setenv("WS_ASSET_DIR", v)
+		fmt.Printf("ASSET_DIR=%s\n", v)
+		files := ui.AssetOverrideStatus()
+		if len(files) == 0 {
+			fmt.Printf("ASSET_FILES=none\n")
+		} else {
+			fmt.Printf("ASSET_FILES=%s\n", strings.Join(files, ","))
+		}
+	}
 	clsName := "rain"
 	if len(os.Args) > 1 {
 		clsName = os.Args[1]
@@ -69,6 +82,9 @@ func main() {
 		}
 	}
 	stepUp(frames)
+	// 闪现间隔按码分级（D4）：把 FX_CODE 传进粒子场。
+	// 非雷暴码 ⇒ 不闪（出厂口径），要看闪光用 FX_FLASH 强制一次局域闪光。
+	field.SetWeatherCode(fxCode())
 	if v := os.Getenv("FX_FLASH"); v != "" {
 		f, _ := strconv.ParseFloat(v, 64)
 		field.SetFlash(f)
@@ -208,6 +224,10 @@ func main() {
 			c, cov := field.CelestialCover(w, h)
 			fmt.Printf("SHOT step=%d t=%.1fs 云压在盘上=%d 朵 盘面被覆盖=%.1f%%\n",
 				n, float64(n)*dt.Seconds(), c, cov)
+			// 云实例清单（dev 取证用，FX_INV=1）：屏上云的数量与逐朵尺寸。
+			// 判据：观感口径"一小坨一小坨" = 屏上小朵数量与 dw 分布，
+			// 必须能在出图同一时刻量化，不能靠看图猜。
+			printInv(field, n)
 			if !renderTo(fmt.Sprintf("%s.s%05d.png", base, n)) {
 				return
 			}
@@ -225,6 +245,7 @@ func main() {
 	if !renderTo(name) {
 		return
 	}
+	printInv(field, frames)
 	if os.Getenv("FX_DEBUG") == "1" {
 		fmt.Print(field.DebugStats(field.TotalCount()))
 	}
@@ -279,6 +300,10 @@ func parseClass(name string) effect.Class {
 		return effect.Clear
 	case "cloudy":
 		return effect.Cloudy
+	case "partly-cloudy", "partly_cloudy", "partlycloudy":
+		return effect.PartlyCloudy
+	case "overcast":
+		return effect.Overcast
 	case "fog":
 		return effect.Fog
 	case "rain":
@@ -290,6 +315,9 @@ func parseClass(name string) effect.Class {
 	case "dust":
 		return effect.Dust
 	}
+	// 未知类名回落 Clear 是**静默**的：出图时看着像"这个类长这样"，
+	// 实际画的是晴档（盘 + 光斑 + 晴天空）。出图判读前必须确认类名被认下。
+	fmt.Printf("CLASS_UNRECOGNIZED=%s (回落 clear)\n", name)
 	return effect.Clear
 }
 
@@ -326,16 +354,15 @@ func sample() *weather.Sample {
 	}
 	// FX_CODE：WMO 状况码（状况图标要靠它选图）。
 	// 默认 1 = "Mainly clear"，与上面的 cond 一致。
-	code := 1
-	if v := os.Getenv("FX_CODE"); v != "" {
-		code, _ = strconv.Atoi(v)
-	}
+	code := fxCode()
 	s.WeatherCode = code
 	// FX_CC：当前云量（%）。云量 ≥30 时 ClassifyByCloudCover 把 Clear 变 Cloudy
 	// fxshot 原先不设云量 ⇒ 永远出不了多云类。
+	// 同一个值也喂给 CloudCoverPct（太阳可见度的输入，见 ui.frameCloudPct）。
 	if v := os.Getenv("FX_CC"); v != "" {
 		n, _ := strconv.Atoi(v)
 		s.CloudCover = &n
+		s.CloudCoverPct = n
 	}
 	if v := os.Getenv("FX_TMAX"); v != "" {
 		mx, _ := strconv.ParseFloat(v, 64)
@@ -347,6 +374,21 @@ func sample() *weather.Sample {
 		s.TodayPrecipMM = &mm
 	}
 	return s
+}
+
+// fxCode 出图开关 FX_CODE：WMO 状况码。空 = 1（"Mainly clear"）。
+// 同一份取值喂两处：Sample.WeatherCode（图标与文字）与粒子场的闪现档位
+// （ui.Field.SetWeatherCode，闪现间隔按码分级）。
+func fxCode() int {
+	v := os.Getenv("FX_CODE")
+	if v == "" {
+		return 1
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 1
+	}
+	return n
 }
 
 // fxMoonPhase 出图开关 FX_MOON：月相分数（0..1）。空 = nil（走 bakeMoonCrisp 回落画法）。
@@ -361,4 +403,43 @@ func fxMoonPhase() *float64 {
 		return nil
 	}
 	return &f
+}
+
+// pf 解析浮点（FX_INV 取证用）。
+func pf(s string) float64 {
+	v, _ := strconv.ParseFloat(strings.TrimSpace(strings.Split(s, " ")[0]), 64)
+	return v
+}
+
+// printInv 云实例清单（dev 取证，FX_INV=1）。
+// 观感口径"一小坨一小坨" = 屏上小朵云的数量与逐朵宽度，必须量化，不能靠看图猜。
+func printInv(field *ui.Field, step int) {
+	if os.Getenv("FX_INV") != "1" {
+		return
+	}
+	onScreen, narrow, wide := 0, 0, 0
+	for _, ln := range strings.Split(field.DebugStats(field.TotalCount()), "\n") {
+		if !strings.HasPrefix(ln, "p") || !strings.Contains(ln, "kind=4 ") {
+			continue
+		}
+		vals := map[string]float64{}
+		for _, tok := range strings.Fields(ln) {
+			if i := strings.Index(tok, "="); i > 0 {
+				if v, err := strconv.ParseFloat(tok[i+1:], 64); err == nil {
+					vals[tok[:i]] = v
+				}
+			}
+		}
+		x, y, dw, alpha, spr := vals["x"], vals["y"], vals["dw"], vals["alpha"], vals["spr"]
+		if x > -0.15 && x < 1.15 && y > -0.15 && y < 1.15 {
+			onScreen++
+			if dw < 400 {
+				narrow++
+			} else {
+				wide++
+			}
+			fmt.Printf("INV i=%s x=%.3f y=%.3f dw=%.0f alpha=%.2f spr=%d\n", strings.TrimPrefix(strings.Fields(ln)[0], "p"), x, y, dw, alpha, int(spr))
+		}
+	}
+	fmt.Printf("INV step=%d 屏上云=%d 朵（<400px=%d，>=400px=%d）\n", step, onScreen, narrow, wide)
 }

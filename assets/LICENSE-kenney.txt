@@ -1,17 +1,42 @@
-背景特效素材来源与许可
-======================
+背景特效素材来源与许可（Kenney 部分）
+======================================
 
-1) Kenney "Background Elements"（云 cloud1..cloud9.png）
+1) Kenney "Background Elements"（cloud1..cloud9.png 的**历史来源**）
    来源: https://kenney.nl/assets/background-elements
    镜像: https://github.com/shorepine/kenney (commit 3694c6879e487c108f55677be7dd2ca75b07cc3b)
    作者: Kenney (www.kenney.nl)
    许可: Creative Commons Zero, CC0  http://creativecommons.org/publicdomain/zero/1.0/
+   现状: 这组云贴图已被 OpenGameArt 的体积云替换（同名文件 cloud1..cloud9.png），
+         本仓库里不再有 Kenney 的云贴图。来源变更记录见 assets/LICENSE-ogazoo.txt。
 
-2) Kenney "Particle Pack"（fog1..fog4.png 取自 smoke_01/02/04/05，
-   glow.png 取自 light_01）
+2) Kenney "Particle Pack"
    来源: https://kenney.nl/assets/particle-pack
    作者: Kenney (www.kenney.nl)
    许可: Creative Commons Zero, CC0  http://creativecommons.org/publicdomain/zero/1.0/
+   在用的文件: glow.png（取自 light_01，日/地平线光晕 pkGlow 与太阳烘焙用）。
+   现状: fog1..fog4.png 原先取自本素材包的 smoke_01/02/04/05，
+         已被 OpenGameArt "Thick Fog" 替换（alpha ×0.60），
+         本仓库里不再有 Kenney 的烟雾贴图。
+
+4) Kenney "Light Masks"
+   来源: https://kenney.nl/assets/light-masks
+   作者: Kenney (www.kenney.nl)
+   许可页原文: "License / Creative Commons CC0"（2026-10-20 逐页核验）
+   许可: Creative Commons Zero, CC0  http://creativecommons.org/publicdomain/zero/1.0/
+   在用的文件: circle_a.png 的两份缩放副本 ——
+     ui/embed/sunglow.png   （1024 宽，灰蒙档的宽光罩）
+     ui/embed/flashglow.png （ 512 宽，闪电以自身为中心照亮的软光罩）
+
+5) Kenney "Smoke Particles"
+   来源: https://kenney.nl/assets/smoke-particles
+   作者: Kenney (www.kenney.nl)
+   许可页原文: "License / Creative Commons CC0"（2026-10-20 逐页核验）
+   许可: Creative Commons Zero, CC0  http://creativecommons.org/publicdomain/zero/1.0/
+   在用的文件: flash05.png 的缩放副本 ui/embed/sunrays.png（512 宽，晴档太阳的星芒）。
+
+6) Kenney "Explosion Pack"
+   来源: https://kenney.nl/assets/explosion-pack
+   现状: 该页已下架（实测 HTTP 404）⇒ 本仓库**不使用**该包的任何素材。
 
 CC0 = 公共领域贡献，无需署名、可商用、可修改。
 本文件仅作来源备案，不构成许可义务。

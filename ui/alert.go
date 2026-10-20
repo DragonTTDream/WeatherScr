@@ -144,6 +144,7 @@ func windowHoursLabel(h int) int {
 //
 // 正文内容 = **未来 N 小时滚动窗口**
 // 需求：正文取动态窗口，不取一天的最大值；默认 3 小时，可设 6 小时。
+//
 //	有毫米数 en：Rain in next 3 h 62% · 0.3 mm expected
 //	无毫米数 en：Rain in next 3 h 62%
 //	有毫米数 zh：未来 3 小时降雨 62% · 预计 0.3 mm
@@ -278,7 +279,7 @@ func measureText(gtx layout.Context, w layout.Widget) layout.Dimensions {
 	return w(g)
 }
 
-// softGlow 分阶叠加的柔和光晕：n 层圆角矩形，每层 alpha 相同 ⇒ 
+// softGlow 分阶叠加的柔和光晕：n 层圆角矩形，每层 alpha 相同 ⇒
 // 中心 ≈ n×alpha、边缘 ≈ 1×alpha，圆角让边缘不出现硬边。
 func softGlow(gtx layout.Context, r image.Rectangle, c color.NRGBA, rad int, n int, per uint8, scale float64) {
 	for i := 0; i < n; i++ {
@@ -337,11 +338,11 @@ func (s *Screen) alertRow(f Frame) layout.Widget {
 //
 // 出厂画面口径（逐字保持，一个像素都不动）：
 //
-//	1. 无光晕。softGlow 是嵌套圆角矩形分阶叠加，暗底盖住内层后，可见的只剩
-//	   一圈**向外扩 26 px 的矩形环**，不贴文字 ⇒ 读成偏移的脏影 ⇒ 去掉。
-//	2. 左右居中走**绝对屏幕坐标**，不走 flex 行盒：行盒在 flex 内的坐标基准
-//	   与绝对绘制对不上（实测 chip 中心 x=766、屏幕中心 540 ⇒ 右偏 226 px）。
-//	3. 白字 + 只包住文字的圆角暗底 + 左侧预警色小色块 + 文字下细线。
+//  1. 无光晕。softGlow 是嵌套圆角矩形分阶叠加，暗底盖住内层后，可见的只剩
+//     一圈**向外扩 26 px 的矩形环**，不贴文字 ⇒ 读成偏移的脏影 ⇒ 去掉。
+//  2. 左右居中走**绝对屏幕坐标**，不走 flex 行盒：行盒在 flex 内的坐标基准
+//     与绝对绘制对不上（实测 chip 中心 x=766、屏幕中心 540 ⇒ 右偏 226 px）。
+//  3. 白字 + 只包住文字的圆角暗底 + 左侧预警色小色块 + 文字下细线。
 func drawPanelRow(gtx layout.Context, size image.Point, a *Alert, s *Screen, cy int) {
 	tier := a.TierColor()
 	as := a.alphaScale()

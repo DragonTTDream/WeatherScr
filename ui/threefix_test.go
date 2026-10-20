@@ -73,8 +73,8 @@ func TestEnteringCloudsOffscreen(t *testing.T) {
 		if p.kind != pkCloud {
 			continue
 		}
-		half := 0.5 / float64(spriteSupersample) * 476 / 2 / 1080 // 最宽云半宽（归一化）
-		if p.x+half > 0 {
+		hw, _ := f.airHalfN(p) // 该朵云的真实半宽（归一化，与绘制同口径）
+		if p.x+hw > 0 {
 			onScreen++
 		}
 		xs = append(xs, p.x)

@@ -75,8 +75,8 @@ func TestSkyCacheKeyMoon(t *testing.T) {
 	skyCache = skyCacheType{}
 	skyStats = SkyCacheStats{}
 	size := image.Pt(540, 960)
-	e1 := skyCached(size, effect.Clear, false, f64p(0.174))
-	e2 := skyCached(size, effect.Clear, false, f64p(0.174))
+	e1 := skyCached(size, effect.Clear, false, f64p(0.174), 0)
+	e2 := skyCached(size, effect.Clear, false, f64p(0.174), 0)
 	if e1 == nil || e2 == nil {
 		t.Fatal("skyCached 返回 nil")
 	}
@@ -90,7 +90,7 @@ func TestSkyCacheKeyMoon(t *testing.T) {
 		t.Errorf("同一相位第二次调用 Hits = %d，期望 ≥1", skyStats.Hits)
 	}
 	// 相位变了 → 键变 → 重烘（Builds +1）
-	e3 := skyCached(size, effect.Clear, false, f64p(0.5))
+	e3 := skyCached(size, effect.Clear, false, f64p(0.5), 0)
 	if e3 == e1 {
 		t.Errorf("相位变化后返回同一条目 ⇒ 没重烘")
 	}
@@ -102,17 +102,17 @@ func TestSkyCacheKeyMoon(t *testing.T) {
 func f64p(v float64) *float64 { return &v }
 
 // TestBakeMoonPhases 实测 bakeMoon 的三条口径（需求 3）：
-// - phase == nil → 走 bakeMoonCrisp 回落（月核区有像素）。
+// - phase == nil → 不画月亮（月核区无像素，规格 2.3）。
 // - phase != nil 且非 new → 用素材绘制（月核区有像素）。
 // - phase 落在 new 区间 → 不画月亮（月核区无像素）。
 //
-// 位置/半径口径逐字沿用 bakeMoonCrisp：心 (0.72w,0.095h)，半径 0.045w。
+// 位置/半径口径 = 月亮独立层：心 (0.72w,0.095h)，半径 moonRcFrac=0.060 倍屏宽。
 // TestBakeMoonPhases 月亮层的月相判据（此后月亮由独立层绘制）。
 //
 // 月亮已从天空纹理摘出（半分辨率烘焙 ⇒ 边缘整像素台阶 + 云压不住月面），
 // 上线路径 = moonLayerGet(整屏分辨率) → moonBlit 画在云之前。
 // 本测试直接打这条路径，判据逐字不变：
-// - phase == nil → 满月回落（月核区有亮像素）
+// - phase == nil → 不画月亮（月核区无亮像素，规格 2.3）
 // - phase = 0.5 → 满月（月核区有亮像素）
 // - phase = 0.0 → 新月不画月亮（月核区无亮像素）
 // - 白天不画月亮
@@ -147,8 +147,10 @@ func TestBakeMoonPhases(t *testing.T) {
 		return n
 	}
 
-	if n := bright(moonLayerGet(w, h, nil)); n == 0 {
-		t.Errorf("phase=nil 回落画法月核区无亮像素")
+	// 相位 nil 的口径（规格 2.3）：**不画月亮** ⇒ 月核区亮像素必须 = 0。
+	// 旧口径是"取不到就当满月"（bakeMoonAt 里 p:=0.5）⇒ 缺数据时画出一轮满月。
+	if n := bright(moonLayerGet(w, h, nil)); n != 0 {
+		t.Errorf("phase=nil 月核区亮像素 = %d ⇒ 取不到月相还在画月亮（应不画，与新月一致）", n)
 	}
 	if n := bright(moonLayerGet(w, h, f64p(0.5))); n == 0 {
 		t.Errorf("phase=0.5 素材绘制月核区无亮像素")

@@ -600,10 +600,21 @@ func workAreaRect() (x, y, w, h int32, ok bool) {
 //  2. 样式置 WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|WS_MINIMIZEBOX|
 //     WS_MAXIMIZEBOX|WS_VISIBLE，清 WS_POPUP
 //  3. 扩展样式清 WS_EX_TOOLWINDOW、置 WS_EX_APPWINDOW（进任务栏）
+//     并置 WS_EX_TOPMOST(0x00000008)
 //  4. 尺寸 = wpx×hpx；位置 = 主显示器工作区居中；工作区小于目标尺寸时
 //     夹到不小于 MinSize 且不小于工作区可用尺寸
-//  5. SetWindowPos(0, x, y, wpx, hpx, SWP_NOZORDER|SWP_FRAMECHANGED)
+//  5. SetWindowPos(HWND_TOPMOST, x, y, wpx, hpx, SWP_FRAMECHANGED)
+//     —— 不带 SWP_NOZORDER：本步必须改 z 序
 //  6. ShowWindow(SW_RESTORE)
+//  7. SetWindowPos(HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE)
+//     —— 置顶落定（SW_RESTORE 会把窗口插回非置顶带，故补这一步）
+//
+// 置顶的取证依据（36.16.1 之 1）：设置窗口 EX=00040100 无 WS_EX_TOPMOST，
+// 同帧运行中的全屏屏保在它上面 ⇒ 设置窗口被盖住。
+// WS_EX_TOPMOST 必须经 SetWindowPos(HWND_TOPMOST=-1) 才生效（同屏保路径口径，
+// 见本文件上方"目标样式"注释与 gioui windows.go:211-213）。
+// 本函数只作用于设置窗口（调用点在 main.go runSettings 的 styleDone 守卫内）；
+// 屏保窗口不走本函数，样式与 z 序由 coverLoop 那条路管。
 //
 // 样式位用"置位 + 清位"的写法：置上面列出的六个位、清 WS_POPUP，
 // 其余位保留（gioui 建窗时加的 WS_CLIPSIBLINGS|WS_CLIPCHILDREN，
@@ -618,7 +629,8 @@ func normalizeDialog(hwnd uintptr, wpx, hpx int) {
 
 	style := (styleBefore &^ uintptr(wsPopupBit)) |
 		wsCaption | wsSysmenu | wsThickframe | wsMinimizebox | wsMaximizebox | wsVisible
-	exstyle := (exstyleBefore &^ uintptr(wsExToolwindow)) | uintptr(wsExAppwindow)
+	// WS_EX_TOPMOST 与 WS_EX_APPWINDOW 同处置、WS_EX_TOOLWINDOW 同处清。
+	exstyle := (exstyleBefore &^ uintptr(wsExToolwindow)) | uintptr(wsExAppwindow) | uintptr(wsExTopmost)
 
 	// 尺寸与定位：目标尺寸按传入值；工作区装不下时夹到
 	// 不小于 MinSize 且不小于工作区可用尺寸的取值。
@@ -647,13 +659,20 @@ func normalizeDialog(hwnd uintptr, wpx, hpx int) {
 
 	setWindowLong(hwnd, gwlStyle, style)
 	setWindowLong(hwnd, gwlExstyle, exstyle)
-	procSetWindowPos.Call(hwnd, hwndTop,
+	// 第 5 步：带尺寸/定位的一次 SetWindowPos 走 HWND_TOPMOST，且**不带
+	// SWP_NOZORDER**（带它就等于不改 z 序，置顶不落地）。
+	procSetWindowPos.Call(hwnd, hwndTopmost,
 		uintptr(x), uintptr(y), uintptr(w), uintptr(h),
-		uintptr(swpNoZorderReal|swpFrameChanged))
+		uintptr(swpFrameChanged))
 	procShowWindow.Call(hwnd, swRestore)
+	// 第 7 步：SW_RESTORE 会把窗口插回非置顶带，这里再落一次置顶，
+	// 只改 z 序（SWP_NOMOVE|SWP_NOSIZE），不动尺寸、位置、激活态。
+	procSetWindowPos.Call(hwnd, hwndTopmost, 0, 0, 0, 0,
+		uintptr(swpNoMove|swpNoSize))
 
 	st, ex := getWindowLong(hwnd, gwlStyle), getWindowLong(hwnd, gwlExstyle)
-	logf("CFG_STYLE before=%08x after=%08x exstyle_before=%08x exstyle_after=%08x rect=%d,%d,%dx%d 工作区=%dx%d",
+	logf("CFG_STYLE before=%08x after=%08x exstyle_before=%08x exstyle_after=%08x TOPMOST=%v TOOLWINDOW=%v APPWINDOW=%v rect=%d,%d,%dx%d 工作区=%dx%d",
 		uint32(styleBefore), uint32(st), uint32(exstyleBefore), uint32(ex),
+		ex&wsExTopmost != 0, ex&wsExToolwindow != 0, ex&wsExAppwindow != 0,
 		x, y, w, h, aw, ah)
 }

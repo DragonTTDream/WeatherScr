@@ -1,24 +1,33 @@
 // Package effect 把 WMO 码映射到背景特效类。
 //
-// 与规格的对齐说明（防止"7 类 vs 9 行"打架）：
+// 与上游实况表的对齐说明（防止"类数 vs 行数"打架）：
 //
-//	定案是 **7 类**；上游实况表是 9 行。调和方式 = 7 个类，
-//	其中 rain 与 snow 各带 light/heavy 两个强度变体（上游实况表里的 rain-light /
+//	上游实况表是 9 行；类数 = 9（原 7 类 + 云量两档 PartlyCloudy/Overcast）。
+//	rain 与 snow 各带 light/heavy 两个强度变体（上游实况表里的 rain-light /
 //	rain-heavy / snow-light / snow-heavy 就是变体，不是独立类。
 //	类名对外用 "rain-light" 这种带强度的写法，与上游实况表逐行一致。
 package effect
 
-// 7 个类。
+// 9 个类（原 7 类 + 云量两档）。
+//
+// PartlyCloudy / Overcast 是把原 Cloudy 拆成两档得来的：
+// 现象是"有的天气是那种多云看不到太阳一整天，有的天气是多云但是太阳照的下来"
+// （取证 34.16.1），根因 = WMO 2 与 3 都映射成 Cloudy，视觉无差别（取证 34.16.2）。
+// 两档共用云的贴图与运动口径，差异只在**太阳可见性 + 云密度**
+// （见 ui 包的 counts / bakeCelestial）。
+// Cloudy 保留：逐小时云量分档（ClassifyByCloudCover）与 scr.cls 覆盖仍产出该类。
 type Class string
 
 const (
-	Clear   Class = "clear"
-	Cloudy  Class = "cloudy"
-	Fog     Class = "fog"
-	Rain    Class = "rain"
-	Snow    Class = "snow"
-	Thunder Class = "thunder"
-	Dust    Class = "dust"
+	Clear        Class = "clear"
+	Cloudy       Class = "cloudy"
+	PartlyCloudy Class = "partly-cloudy"
+	Overcast     Class = "overcast"
+	Fog          Class = "fog"
+	Rain         Class = "rain"
+	Snow         Class = "snow"
+	Thunder      Class = "thunder"
+	Dust         Class = "dust"
 )
 
 // 强度变体。
@@ -40,10 +49,14 @@ var wmoTable = map[int]struct {
 	Class     Class
 	Intensity Intensity
 }{
-	0:  {Clear, None},
-	1:  {Clear, None},
-	2:  {Cloudy, None},
-	3:  {Cloudy, None},
+	0: {Clear, None},
+	1: {Clear, None},
+	// WMO 2 = "Partly cloudy"、WMO 3 = "Overcast"：上游实况表本来就是两行，
+	// 此前都映射成 Cloudy ⇒ 见日与无日两档长得一样（取证 34.16.2）。
+	// 拆档后：2 = PartlyCloudy（画太阳、云密度 = 原 Cloudy 的一半），
+	// 3 = Overcast（不画太阳、云密度 = 原 Cloudy 的 1.6 倍、云带 alpha 上限提高）。
+	2:  {PartlyCloudy, None},
+	3:  {Overcast, None},
 	45: {Fog, None},
 	48: {Fog, None},
 
