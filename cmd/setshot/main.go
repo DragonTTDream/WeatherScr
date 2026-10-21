@@ -68,7 +68,7 @@ func panelModel() ui.PanelModel {
 		AlertThresholdPct:   30,
 		AlertYOffset:        -60,
 		AlertPulse:          true,
-		AlertWindowHours:    3,
+		AlertMinMM:          0.05,
 		LocationLat:         0,
 		LocationLon:         0,
 		LocationNameZh:      "",

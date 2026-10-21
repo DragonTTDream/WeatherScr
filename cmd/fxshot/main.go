@@ -91,15 +91,18 @@ func main() {
 	}
 
 	// 降雨提醒：FX_ALERT 是**存在开关** —— 非空 = 出预警（出厂 panelrow 版式），
-	// 不再接受版式名。FX_ALERT_PCT=概率，FX_ALERT_MM=毫米，
+	// 不再接受版式名。FX_ALERT_STATE = 三态开关（批次 b-alert-v1 第 9 步）：
+	//   "daily"（默认，带伞提醒）/ "disaster"（自算灾害）/ "unavailable"（数据不可用）。
+	// FX_ALERT_PCT=日常层概率，FX_ALERT_MM=灾害层 mm 或日常层 mm/h，
+	// FX_ALERT_TIER=灾害档位 1..4，FX_ALERT_HOURS=灾害窗口小时，
 	// FX_ALERT_PULSE=相位 0..1，FX_ALERT_STATIC=1 关掉脉动。
 	var alert *ui.Alert
 	if os.Getenv("FX_ALERT") != "" {
-		pct := 78
+		pct := 45
 		if v := os.Getenv("FX_ALERT_PCT"); v != "" {
 			pct, _ = strconv.Atoi(v)
 		}
-		mm := 1.2
+		mm := 0.6
 		if v := os.Getenv("FX_ALERT_MM"); v != "" {
 			mm, _ = strconv.ParseFloat(v, 64)
 		}
@@ -118,10 +121,56 @@ func main() {
 		if lang == "" {
 			lang = "zh"
 		}
-		alert = &ui.Alert{Pct: pct, MM: mm, Pulse: ph, YOff: yoff, Lang: lang,
-			PulseOn: os.Getenv("FX_ALERT_STATIC") != "1"}
-		fmt.Printf("ALERT pct=%d tier=%s(%d) pulse=%.2f lang=%s\n",
-			pct, alert.TierName(lang), alert.Tier(), ph, lang)
+		pulseOn := os.Getenv("FX_ALERT_STATIC") != "1"
+		now := time.Now()
+		a := &ui.Alert{Pulse: ph, YOff: yoff, Lang: lang, PulseOn: pulseOn, AsOf: now}
+		switch os.Getenv("FX_ALERT_STATE") {
+		case "disaster":
+			tier := 1
+			if v := os.Getenv("FX_ALERT_TIER"); v != "" {
+				tier, _ = strconv.Atoi(v)
+			}
+			hours := 12
+			if v := os.Getenv("FX_ALERT_HOURS"); v != "" {
+				hours, _ = strconv.Atoi(v)
+			}
+			a.State = ui.AlertDisaster
+			a.TierVal, a.MM, a.DisasterHours = tier, mm, hours
+		case "official":
+			// 批次 b-alert-v2 态①（官方信号）。默认值取现网实测样本：
+			// 四川省 2026-10-21 22:44 雷电黄色预警（out/nmc-pic-code.txt 同族口径）。
+			a.State = ui.AlertOfficial
+			a.OfficialLevel = 2
+			if v := os.Getenv("FX_ALERT_OFF_LEVEL"); v != "" {
+				a.OfficialLevel, _ = strconv.Atoi(v)
+			}
+			a.OfficialTypeZh = os.Getenv("FX_ALERT_OFF_TYPE_ZH")
+			if a.OfficialTypeZh == "" {
+				a.OfficialTypeZh = "雷电"
+			}
+			a.OfficialTypeEn = os.Getenv("FX_ALERT_OFF_TYPE_EN")
+			if a.OfficialTypeEn == "" {
+				a.OfficialTypeEn = "Thunderstorm"
+			}
+			a.OfficialIssued = now
+			if v := os.Getenv("FX_ALERT_OFF_ISSUED"); v != "" {
+				if tm, err := time.Parse("15:04", v); err == nil {
+					a.OfficialIssued = time.Date(now.Year(), now.Month(), now.Day(),
+						tm.Hour(), tm.Minute(), 0, 0, now.Location())
+				}
+			}
+			a.PulseOn = false
+		case "unavailable":
+			a.State = ui.AlertUnavailable
+			a.PulseOn = false
+		default: // "daily"
+			a.State = ui.AlertDaily
+			a.Pct, a.MMPerH, a.Start = pct, mm, now
+			a.PulseOn = false
+		}
+		alert = a
+		fmt.Printf("ALERT state=%s tier=%s(%d) pct=%d mm=%.1f lang=%s\n",
+			os.Getenv("FX_ALERT_STATE"), alert.TierName(lang), alert.Tier(), pct, mm, lang)
 	}
 
 	if v := os.Getenv("FX_BANDSPREAD"); v != "" {

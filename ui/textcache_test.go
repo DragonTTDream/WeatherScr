@@ -84,7 +84,7 @@ func textFrame(now time.Time, full bool, cond string, withAlert ...bool) Frame {
 	}
 	if len(withAlert) > 0 && withAlert[0] {
 		f.Layers |= LayerAlert
-		f.Alert = &Alert{Pct: 78, MM: 1.2, Pulse: 0.25, Lang: "zh"}
+		f.Alert = &Alert{State: AlertDisaster, TierVal: 3, MM: 1.2, DisasterHours: 3, Pulse: 0.25, Lang: "zh"}
 	}
 	return f
 }

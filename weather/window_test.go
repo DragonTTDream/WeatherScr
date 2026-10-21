@@ -3,25 +3,17 @@ package weather
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"testing"
 	"time"
 )
 
-// 未来 N 小时滚动窗口的 fixture（测试 1）。
+// 预警判据 fixture（批次 b-alert-v1 重写 weather/window.go 之后）。
 //
-// 实测序列逐字照抄需求 2（2026-10-16，坐标 30.2495,120.1583，
-// 每 3 小时抽样：
-//
-//	00:00 16%/0.0 · 03:00 56%/0.5 · 06:00 62%/0.2 · 09:00 57%/0.1
-//	12:00 79%/0.1 · 15:00 77%/0.1 · 18:00 28%/0.0 · 21:00 0%/0.0
-//
-// 中间小时（01,02,04,05,…）**实测未取证** ⇒ 按"步进取下一个实测点"补齐
-// （01,02 ← 03:00 的 56%；07,08 ← 09:00 的 57%；22,23 无下一个实测点 ⇒ 用 21:00 的 0%）。
-// 补齐只影响未实测的中间格，实测点逐字不动；补齐规则已记入工程记录。
-//
-// 次日（2026-10-17）逐小时值实测只取证到"forecast_days=2 → 48 条"这一条事实，
-// 数值未取证 ⇒ 次日部分用**合成**序列 prob=4·(h+1)、mm=0.1·(h+1)（见 notes），
-// 断言只按 fixture 自身算出的最大值/求和来钉，不引入外部数字。
+// 逐小时 fixture 沿用批次"需求 1/2"的实测序列（2026-10-16，坐标 30.2495,120.1583，
+// 每 3 小时抽样：00:00 16%/0.0 · 03:00 56%/0.5 · 06:00 62%/0.2 · 09:00 57%/0.1
+// · 12:00 79%/0.1 · 15:00 77%/0.1 · 18:00 28%/0.0 · 21:00 0%/0.0）；
+// 中间小时实测未取证 ⇒ 步进取下一个实测点（补齐规则已记工程记录，本批不改 fixture）。
 
 var day1Prob = []float64{16, 56, 62, 57, 79, 77, 28, 0} // 00,03,06,09,12,15,18,21 实测
 var day1MM = []float64{0.0, 0.5, 0.2, 0.1, 0.1, 0.1, 0.0, 0.0}
@@ -44,10 +36,11 @@ func fill24(probs, mms []float64) ([]float64, []float64) {
 	return p, m
 }
 
-// day1Sample 造 2026-10-16 的 24 条 fixture（当地墙钟，无时区标记）。
+// day1Sample 造 2026-10-16 的 24 条逐小时 fixture（当地墙钟，无时区标记）。
+// ProbN/MMN 填满 = 数据闸门放行（闸门口径见 Evaluate）。
 func day1Sample() *Sample {
 	p, m := fill24(day1Prob, day1MM)
-	s := &Sample{UTCOffsetSeconds: 28800}
+	s := &Sample{UTCOffsetSeconds: 28800, ProbN: 24, MMN: 24}
 	for h := 0; h < 24; h++ {
 		s.HourlyTime = append(s.HourlyTime, "2026-10-16T"+hourStr(h)+":00")
 		s.HourlyProb = append(s.HourlyProb, p[h])
@@ -56,13 +49,15 @@ func day1Sample() *Sample {
 	return s
 }
 
-// day2Sample 追加次日 n 条（合成序列）。
-func day2Sample(s *Sample, n int) *Sample {
-	for h := 0; h < n; h++ {
-		s.HourlyTime = append(s.HourlyTime, "2026-10-17T"+hourStr(h)+":00")
-		s.HourlyProb = append(s.HourlyProb, 4*float64(h+1))
-		s.HourlyMM = append(s.HourlyMM, 0.1*float64(h+1))
+// min15Sample 造 n 小时的 15 分钟格（每格 mmPerCell 毫米），prob 固定。
+func min15Sample(start time.Time, cells int, mmPerCell float64, prob float64) *Sample {
+	s := &Sample{UTCOffsetSeconds: 28800, ProbN: cells, MMN: cells, Min15N: cells}
+	for i := 0; i < cells; i++ {
+		s.Min15Time = append(s.Min15Time, start.Add(time.Duration(i*15)*time.Minute).Format(hourlySlotLayout))
+		s.Min15MM = append(s.Min15MM, mmPerCell)
+		s.Min15Prob = append(s.Min15Prob, prob)
 	}
+	s.ProbN, s.MMN, s.Min15N = 24*24, 24*24, cells
 	return s
 }
 
@@ -73,132 +68,361 @@ func localAt(y, mo, d, hh, mi int) time.Time {
 	return time.Date(y, time.Month(mo), d, hh, mi, 0, 0, time.UTC)
 }
 
-// TestWindowProbSameDay 断言测试 1 的前两条：
-// - now=20:45, hours=3 → 21,22,23 三格 ⇒ prob = 三格最大值、mm = 三格和；
-// - now=07:00, hours=3 → 07,08,09 ⇒ prob = 57（实测给定的数字）。
-func TestWindowProbSameDay(t *testing.T) {
+// ---- 钉死：官方四级阈值常量（spec/b-alert-v1-brief.md §2；
+// 官方逐字口径见 spec/alert-latency-and-logic.md §9 引北京市丰台区政府科普页）----
+
+func TestPinnedOfficialTierConstants(t *testing.T) {
+	if tierRedMM != 100 {
+		t.Errorf("tierRedMM = %v，期望 100（官方：红 = 3h 内 100 mm 以上）", tierRedMM)
+	}
+	if tierOrangeMM != 50 {
+		t.Errorf("tierOrangeMM = %v，期望 50（官方：橙 = 3h 内 50 mm 以上）", tierOrangeMM)
+	}
+	if tierYellowMM != 50 {
+		t.Errorf("tierYellowMM = %v，期望 50（官方：黄 = 6h 内 50 mm 以上）", tierYellowMM)
+	}
+	if tierBlueMM != 50 {
+		t.Errorf("tierBlueMM = %v，期望 50（官方：蓝 = 12h 内 50 mm 以上）", tierBlueMM)
+	}
+	if tierRedHours != 3 || tierOrangeHours != 3 {
+		t.Errorf("红/橙窗口 = %d/%d，期望 3/3", tierRedHours, tierOrangeHours)
+	}
+	if tierYellowHours != 6 {
+		t.Errorf("tierYellowHours = %d，期望 6", tierYellowHours)
+	}
+	if tierBlueHours != 12 {
+		t.Errorf("tierBlueHours = %d，期望 12", tierBlueHours)
+	}
+	if defaultMinMMPer15min != 0.05 {
+		t.Errorf("defaultMinMMPer15min = %v，期望 0.05", defaultMinMMPer15min)
+	}
+	if hysteresisFactor != 0.7 {
+		t.Errorf("hysteresisFactor = %v，期望 0.7", hysteresisFactor)
+	}
+	if hysteresisOffCycles != 2 {
+		t.Errorf("hysteresisOffCycles = %d，期望 2", hysteresisOffCycles)
+	}
+}
+
+// ---- 钉死：逐模型键名（spec/b-alert-v1-brief.md §2 逐字）----
+//
+// 规格钉死 p_probability_<model>；本机 2026-10-21 直连实测到的是
+// precipitation_probability_<model>（`hourly=p_probability` 被 API 拒 400）
+// ⇒ 两套键名在解析端并存，两套都钉（差异记 out/notes-alert-v1.md）。
+
+func TestPinnedPerModelKeyNames(t *testing.T) {
+	tag := func(path ...string) string {
+		typ := reflect.TypeOf(forecastResponse{})
+		var f reflect.StructField
+		for _, name := range path {
+			var ok bool
+			f, ok = typ.FieldByName(name)
+			if !ok {
+				t.Fatalf("forecastResponse 里没有字段 %s（路径 %v）", name, path)
+			}
+			typ = f.Type
+		}
+		return f.Tag.Get("json")
+	}
+	want := map[string]string{
+		// 规格钉死的三套（逐字）
+		"Hourly.ProbGFS":  "p_probability_gfs_seamless",
+		"Hourly.ProbIcon": "p_probability_icon_seamless",
+		"Hourly.ProbECM":  "p_probability_ecmwf_ifs025",
+		"Hourly.MMGFS":    "precipitation_gfs_seamless",
+		"Hourly.MMIcon":   "precipitation_icon_seamless",
+		"Hourly.MMECM":    "precipitation_ecmwf_ifs025",
+		// 云量（规格 1.6 既有，逐字不动）
+		"Hourly.CloudCoverGFS": "cloud_cover_gfs_seamless",
+		// 15 分钟层同规则（第 3 步）
+		"Minutely15.ProbGFS": "p_probability_gfs_seamless",
+		"Minutely15.MMGFS":   "precipitation_gfs_seamless",
+	}
+	for path, w := range want {
+		parts := splitPath(path)
+		if got := tag(parts[0], parts[1]); got != w {
+			t.Errorf("键名 %s = %q，期望逐字 %q", path, got, w)
+		}
+	}
+	// 实测那套拼法（同一家的别名，不许被改名）
+	alias := map[string]string{
+		"Hourly.ProbGFSApi":  "precipitation_probability_gfs_seamless",
+		"Hourly.ProbIconApi": "precipitation_probability_icon_seamless",
+		"Hourly.ProbECMApi":  "precipitation_probability_ecmwf_ifs025",
+	}
+	for path, w := range alias {
+		parts := splitPath(path)
+		if got := tag(parts[0], parts[1]); got != w {
+			t.Errorf("别名键名 %s = %q，期望逐字 %q", path, got, w)
+		}
+	}
+}
+
+func splitPath(p string) []string {
+	var out []string
+	cur := ""
+	for _, r := range p {
+		if r == '.' {
+			out = append(out, cur)
+			cur = ""
+			continue
+		}
+		cur += string(r)
+	}
+	return append(out, cur)
+}
+
+// ---- 第 5 步：R(Δ) 与官方配对判据 ----
+
+func TestRainWithinPrefersMin15(t *testing.T) {
+	// 15 分钟格每格 1.0 mm ⇒ 3 h = 12 格 = 12 mm；逐小时每格 5 mm ⇒ 3 h = 15 mm。
+	// 口径"优先 15 分钟格求和，缺则逐小时"⇒ 应取 12。
+	s := min15Sample(localAt(2026, 10, 16, 0, 0), 48, 1.0, 40)
+	for h := 0; h < 12; h++ {
+		s.HourlyTime = append(s.HourlyTime, "2026-10-16T"+hourStr(h)+":00")
+		s.HourlyMM = append(s.HourlyMM, 5)
+	}
+	mm, ok := RainWithin(s, localAt(2026, 10, 16, 0, 0), 3)
+	if !ok {
+		t.Fatalf("R(3h) 应有数据")
+	}
+	if math.Abs(mm-12) > 1e-9 {
+		t.Errorf("R(3h) = %v，期望 12（15 分钟格优先）", mm)
+	}
+}
+
+func TestRainWithinFallsBackToHourly(t *testing.T) {
+	s := day1Sample() // 无 15 分钟层
+	mm, ok := RainWithin(s, localAt(2026, 10, 16, 0, 0), 3)
+	if !ok {
+		t.Fatalf("R(3h) 应有数据")
+	}
+	// 00,01,02 三格 = 0.0 + 0.5 + 0.5（fill24 的步进补齐口径）
+	if math.Abs(mm-1.0) > 1e-9 {
+		t.Errorf("R(3h) = %v，期望 1.0", mm)
+	}
+}
+
+func TestDisasterTierOfficialPairing(t *testing.T) {
+	cases := []struct {
+		name      string
+		mmPerCell float64 // 每 15 分钟格的毫米数
+		wantTier  int
+		wantHours int
+	}{
+		// 3 h = 12 个 15 分钟格、6 h = 24 格、12 h = 48 格
+		// 每格 25 mm ⇒ R(3h)=300 ≥100 ⇒ 红（同时满足橙/黄/蓝，取满足的最高级）
+		{"red", 25, TierRed, 3},
+		// 每格 5 mm ⇒ R(3h)=60 ⇒ 橙（红不满足）
+		{"orange", 5, TierOrange, 3},
+		// 每格 1.1 mm ⇒ R(3h)=13.2、R(6h)=26.4 不满足；R(12h)=52.8 ⇒ 蓝
+		{"blue", 1.1, TierBlue, 12},
+		// 每格 0.5 mm ⇒ R(12h)=24 ⇒ 全不满足 ⇒ 灾害层不亮
+		{"none", 0.5, TierNone, 0},
+	}
+	for _, tc := range cases {
+		s := min15Sample(localAt(2026, 10, 16, 0, 0), 96, tc.mmPerCell, 40)
+		tier, mm, hrs := DisasterTier(s, localAt(2026, 10, 16, 0, 0))
+		if tier != tc.wantTier || hrs != tc.wantHours {
+			t.Errorf("%s: tier=%d hours=%d (mm=%.1f)，期望 tier=%d hours=%d",
+				tc.name, tier, hrs, mm, tc.wantTier, tc.wantHours)
+		}
+	}
+}
+
+// 黄档（6h 内 50 mm）在 3h 内不足 50 mm 时的命中口径：
+// 每格 2.5 mm ⇒ R(3h)=30（橙不满足）、R(6h)=60 ⇒ 黄。
+func TestDisasterTierYellow(t *testing.T) {
+	s := min15Sample(localAt(2026, 10, 16, 0, 0), 96, 2.5, 40)
+	tier, mm, hrs := DisasterTier(s, localAt(2026, 10, 16, 0, 0))
+	if tier != TierYellow || hrs != 6 {
+		t.Errorf("tier=%d hours=%d (mm=%.2f)，期望 黄(2)/6", tier, hrs, mm)
+	}
+}
+
+// ---- 第 6 步：日常层锚定（视野内第一个达门槛格）----
+
+func TestFirstWetCellAnchorsFirstCell(t *testing.T) {
+	s := min15Sample(localAt(2026, 10, 16, 0, 0), 96, 0.06, 45)
+	at, prob, mmPerH, ok := FirstWetCell(s, localAt(2026, 10, 16, 0, 0), 12, 0.05)
+	if !ok {
+		t.Fatalf("视野内应有达门槛格")
+	}
+	if !at.Equal(localAt(2026, 10, 16, 0, 0)) {
+		t.Errorf("起始时刻 = %v，期望 00:00（第一个达门槛格）", at)
+	}
+	if prob != 45 {
+		t.Errorf("该格概率 = %d，期望 45", prob)
+	}
+	if math.Abs(mmPerH-0.24) > 1e-9 {
+		t.Errorf("折算强度 = %v mm/h，期望 0.24（0.06×4）", mmPerH)
+	}
+}
+
+func TestFirstWetCellBelowThreshold(t *testing.T) {
+	s := min15Sample(localAt(2026, 10, 16, 0, 0), 96, 0.04, 45)
+	if _, _, _, ok := FirstWetCell(s, localAt(2026, 10, 16, 0, 0), 12, 0.05); ok {
+		t.Errorf("0.04 mm/15min < 门槛 0.05 ⇒ 不应有达门槛格")
+	}
+}
+
+func TestFirstWetCellRespectsHorizon(t *testing.T) {
+	// 达门槛的格在 13 h 之后 ⇒ 12 h 视野内找不到。
+	s := &Sample{UTCOffsetSeconds: 28800, ProbN: 24 * 24, MMN: 24 * 24, Min15N: 96}
+	for i := 0; i < 96; i++ {
+		at := localAt(2026, 10, 16, 0, 0).Add(time.Duration(i*15) * time.Minute)
+		s.Min15Time = append(s.Min15Time, at.Format(hourlySlotLayout))
+		mm := 0.0
+		if i >= 52 { // 13:00 起
+			mm = 0.6
+		}
+		s.Min15MM = append(s.Min15MM, mm)
+		s.Min15Prob = append(s.Min15Prob, 45)
+	}
+	if _, _, _, ok := FirstWetCell(s, localAt(2026, 10, 16, 0, 0), 12, 0.05); ok {
+		t.Errorf("达门槛格在 13:00，12 h 视野内不应命中")
+	}
+	at, _, _, ok := FirstWetCell(s, localAt(2026, 10, 16, 0, 0), 24, 0.05)
+	if !ok || !at.Equal(localAt(2026, 10, 16, 13, 0)) {
+		t.Errorf("24 h 视野应命中 13:00，实得 %v ok=%v", at, ok)
+	}
+}
+
+// ---- 第 7 步：滞回 ----
+
+func TestHysteresisTwoCycleOff(t *testing.T) {
+	h := &Hysteresis{}
+	if h.Step(0.06, 0.05) != true {
+		t.Errorf("达门槛应亮")
+	}
+	if h.Step(0.03, 0.05) != true {
+		t.Errorf("第 1 个低于门槛七成 的周期不应灭（灭 = 连续 2 个）")
+	}
+	if h.Step(0.03, 0.05) != false {
+		t.Errorf("连续 2 个低于门槛七成 的周期应灭")
+	}
+}
+
+func TestHysteresisBandKeepsState(t *testing.T) {
+	// 0.7×门槛 ≤ v < 门槛 的带内：状态保持、连击清零
+	h := &Hysteresis{}
+	h.Step(0.06, 0.05) // 亮
+	h.Step(0.03, 0.05) // 低 1
+	h.Step(0.04, 0.05) // 带内（0.035 ≤ v < 0.05）⇒ 清零
+	if h.Step(0.03, 0.05) != true {
+		t.Errorf("带内清零后，单个低周期不应灭")
+	}
+}
+
+// ---- 第 4 步：数据闸门 ----
+
+func TestEvaluateDataGate(t *testing.T) {
 	s := day1Sample()
-
-	// 1 now=20:45 ⇒ 严格未来 = 21:00, 22:00, 23:00
-	prob, mm, ok := WindowProb(s, localAt(2026, 10, 16, 20, 45), 3)
-	if !ok {
-		t.Fatalf("20:45 应有可用条目")
+	s.ProbN = 3 // < 视野 12 ⇒ 数据不可用
+	e := Evaluate(s, localAt(2026, 10, 16, 0, 0), 0.05, &Hysteresis{})
+	if e.Available {
+		t.Errorf("ProbN=%d < 视野 12 ⇒ 应置数据不可用", s.ProbN)
 	}
-	wantProb := math.Max(s.HourlyProb[21], math.Max(s.HourlyProb[22], s.HourlyProb[23]))
-	wantMM := math.Round((s.HourlyMM[21]+s.HourlyMM[22]+s.HourlyMM[23])*10) / 10
-	if float64(prob) != wantProb {
-		t.Errorf("20:45/3h prob = %d，期望三格最大值 %v", prob, wantProb)
-	}
-	if mm != wantMM {
-		t.Errorf("20:45/3h mm = %v，期望三格和 %v", mm, wantMM)
-	}
-
-	// 2 now=07:00 ⇒ 07,08,09 ⇒ prob = 57（测试 1 第 2 条）
-	prob, mm, ok = WindowProb(s, localAt(2026, 10, 16, 7, 0), 3)
-	if !ok {
-		t.Fatalf("07:00 应有可用条目")
-	}
-	if prob != 57 {
-		t.Errorf("07:00/3h prob = %d，期望 57", prob)
-	}
-	if want := 0.3; mm != want {
-		t.Errorf("07:00/3h mm = %v，期望 0.3（0.1+0.1+0.1）", mm)
+	if e.Disaster || e.Daily {
+		t.Errorf("数据不可用时不评灾害/日常，实得 disaster=%v daily=%v", e.Disaster, e.Daily)
 	}
 }
 
-// TestWindowProbMidnightCrossing 断言测试 1 第 3 条：
-// now=23:00, hours=3 → **跨午夜**（48 条 fixture），prob 与 mm 正确。
-// 口径 = slot >= nowLocal ⇒ 窗口是 23:00 + 次日 00:00,01:00（下标 23,24,25）；
-// 原文写"取次日 00,01,02"，那是按 `slot > nowLocal` 的说法，
-// 与同节测试 1 第 2 条给的硬数字（07:00 ⇒ 57）互斥，取硬数字口径，
-// 见 window.go 的注释。**跨午夜这一判据不变**。
-func TestWindowProbMidnightCrossing(t *testing.T) {
-	s := day2Sample(day1Sample(), 24) // 48 条
-	if len(s.HourlyTime) != 48 {
-		t.Fatalf("fixture 应 48 条，实得 %d", len(s.HourlyTime))
+// ---- 批次 b-alert-v1b 第 6 步：钉死视野常量（旋钮已拆，值来自 fixture 标定）----
+
+func TestUmbrellaViewConstants(t *testing.T) {
+	if umbrellaViewHours != 2 {
+		t.Errorf("umbrellaViewHours = %d，期望 2（spec/b-alert-v1b.md 标定表：门槛 0.05 下 "+
+			"ON_RATIO=0.1397、COVERAGE=1.00、LEAD 105–345 min）", umbrellaViewHours)
 	}
-	prob, mm, ok := WindowProb(s, localAt(2026, 10, 16, 23, 0), 3)
-	if !ok {
-		t.Fatalf("23:00 跨午夜应有可用条目")
+	if officialMaxWindowHours != 12 {
+		t.Errorf("officialMaxWindowHours = %d，期望 12（官方配对最长窗口 = 蓝 12 h 内 50 mm）",
+			officialMaxWindowHours)
 	}
-	// 窗口 = 当日 23:00 + 次日 00:00,01:00 = 下标 23,24,25
-	if s.HourlyTime[23] != "2026-10-16T23:00" || s.HourlyTime[25] != "2026-10-17T01:00" {
-		t.Fatalf("fixture 跨午夜条目异常: %s … %s", s.HourlyTime[23], s.HourlyTime[25])
+	// 数据闸门 = ProbN < officialMaxWindowHours（12）：边界两侧各钉一次。
+	s := min15Sample(localAt(2026, 10, 16, 0, 0), 96, 0.15, 45)
+	s.ProbN = officialMaxWindowHours - 1
+	if e := Evaluate(s, localAt(2026, 10, 16, 0, 0), 0.05, &Hysteresis{}); e.Available {
+		t.Errorf("ProbN=%d < 12 ⇒ 应判「数据不可用」", s.ProbN)
 	}
-	wantProb := math.Max(s.HourlyProb[23], math.Max(s.HourlyProb[24], s.HourlyProb[25]))
-	wantMM := math.Round((s.HourlyMM[23]+s.HourlyMM[24]+s.HourlyMM[25])*10) / 10
-	if float64(prob) != wantProb {
-		t.Errorf("23:00/3h prob = %d，期望窗口三格最大值 %v", prob, wantProb)
+	s.ProbN = officialMaxWindowHours
+	if e := Evaluate(s, localAt(2026, 10, 16, 0, 0), 0.05, &Hysteresis{}); !e.Available {
+		t.Errorf("ProbN=%d = 12 ⇒ 应放行（闸门是 <，不是 <=）", s.ProbN)
 	}
-	if mm != wantMM {
-		t.Errorf("23:00/3h mm = %v，期望窗口三格和 %v", mm, wantMM)
+	// 日常层视野 = 常量 2 h：达门槛格在 3 h 后 ⇒ 不命中（视野不再是调用方可传的参数）。
+	s2 := &Sample{UTCOffsetSeconds: 28800, ProbN: 24 * 24, MMN: 24 * 24, Min15N: 96}
+	base := localAt(2026, 10, 16, 0, 0)
+	for i := 0; i < 96; i++ {
+		s2.Min15Time = append(s2.Min15Time, base.Add(time.Duration(i*15)*time.Minute).Format(hourlySlotLayout))
+		mm := 0.0
+		if i == 12 { // 3 h 后那格
+			mm = 0.2
+		}
+		s2.Min15MM = append(s2.Min15MM, mm)
 	}
-	if prob == 0 {
-		t.Errorf("跨午夜窗口 prob 不应为 0（23:00 之后的条目有值）")
+	if _, _, _, ok := FirstWetCell(s2, base, umbrellaViewHours, 0.05); ok {
+		t.Errorf("达门槛格在 3:00，2 h 视野内不应命中")
+	}
+	if _, _, _, ok := FirstWetCell(s2, base, umbrellaViewHours+2, 0.05); !ok {
+		t.Errorf("夹具自检：4 h 视野应命中 3:00 那格")
 	}
 }
 
-// TestWindowProbTruncates 断言测试 1 第 4 条：
-// now=23:30, hours=6 且只剩 2 条 ⇒ 用全部 2 条，ok=true（末日截断，不报错）。
-func TestWindowProbTruncates(t *testing.T) {
-	s := day2Sample(day1Sample(), 2) // 26 条：23:30 之后只剩次日 00:00、01:00
-	prob, mm, ok := WindowProb(s, localAt(2026, 10, 16, 23, 30), 6)
-	if !ok {
-		t.Fatalf("只剩 2 条时 ok 应为 true")
+func TestEvaluateDisasterBeatsDaily(t *testing.T) {
+	// 规格「待定点」第 2 条本批定案：灾害层优先，同一行。
+	s := min15Sample(localAt(2026, 10, 16, 0, 0), 96, 25, 45)
+	e := Evaluate(s, localAt(2026, 10, 16, 0, 0), 0.05, &Hysteresis{})
+	if !e.Disaster || !e.On {
+		t.Fatalf("应命中灾害层且亮，实得 disaster=%v on=%v", e.Disaster, e.On)
 	}
-	wantProb := math.Max(s.HourlyProb[24], s.HourlyProb[25])
-	wantMM := math.Round((s.HourlyMM[24]+s.HourlyMM[25])*10) / 10
-	if float64(prob) != wantProb {
-		t.Errorf("23:30/6h prob = %d，期望 2 条最大值 %v", prob, wantProb)
-	}
-	if mm != wantMM {
-		t.Errorf("23:30/6h mm = %v，期望 2 条和 %v", mm, wantMM)
+	if e.Tier != TierRed || e.Hours != 3 {
+		t.Errorf("tier=%d hours=%d，期望 红(4)/3", e.Tier, e.Hours)
 	}
 }
 
-// TestWindowProbNoFuture 断言测试 1 第 5 条：全部条目已过去 ⇒ ok=false。
-func TestWindowProbNoFuture(t *testing.T) {
-	s := day1Sample() // 到 23:00 为止
-	if prob, mm, ok := WindowProb(s, localAt(2026, 10, 16, 23, 30), 3); ok {
-		t.Errorf("全部条目已过去应 ok=false，实得 prob=%d mm=%v", prob, mm)
+func TestEvaluateDailyBlue(t *testing.T) {
+	s := min15Sample(localAt(2026, 10, 16, 0, 0), 96, 0.15, 45)
+	e := Evaluate(s, localAt(2026, 10, 16, 0, 0), 0.05, &Hysteresis{})
+	if !e.Daily || !e.On || e.Disaster {
+		t.Fatalf("应命中日常层且亮，实得 %+v", e)
 	}
-	// 空样本 / 非法小时数同样不显示
-	if _, _, ok := WindowProb(&Sample{}, localAt(2026, 10, 16, 12, 0), 3); ok {
-		t.Errorf("空 HourlyTime 应 ok=false")
-	}
-	if _, _, ok := WindowProb(s, localAt(2026, 10, 16, 12, 0), 0); ok {
-		t.Errorf("hours=0 应 ok=false")
-	}
-	if _, _, ok := WindowProb(nil, localAt(2026, 10, 16, 12, 0), 3); ok {
-		t.Errorf("nil 样本应 ok=false")
+	if e.Tier != TierBlue {
+		t.Errorf("日常层档位 = %d，期望 蓝(1)（§11 态③ 蓝色小色块）", e.Tier)
 	}
 }
 
-// TestWindowProbCurrentHourBoundary 钉"当前小时"边界口径：
-// - now = 12:00 整点 ⇒ 12:00 那一格（79%）**算**进窗口（该小时还没走完）；
-// - now = 12:01 ⇒ 12:00 那一格**不算**，窗口 = 13,14,15 = 77,77,77。
-func TestWindowProbCurrentHourBoundary(t *testing.T) {
-	s := day1Sample()
-	prob, _, ok := WindowProb(s, localAt(2026, 10, 16, 12, 0), 3)
-	if !ok {
-		t.Fatalf("12:00 应有可用条目")
+// ---- 第 2 步：逐模型中位数 ----
+
+func TestPerSlotMedianRules(t *testing.T) {
+	p := func(v float64) *float64 { x := v; return &x }
+	n := 4
+	gfs := []*float64{p(10), p(20), nil, nil}
+	icon := []*float64{p(30), p(40), p(50), nil}
+	ecm := []*float64{p(50), p(60), p(70), nil}
+	vals, nOK := perSlotMedian(n, nil, gfs, icon, ecm)
+	// 格 0：10,30,50 ⇒ 中位 30；格 1：20,40,60 ⇒ (40+40)/2? 偶数取中间两数平均 = 40
+	// 格 2：50,70 ⇒ 偶数 ⇒ 60；格 3：全缺 ⇒ 0 且不计入
+	if vals[0] != 30 {
+		t.Errorf("格0 中位 = %v，期望 30", vals[0])
 	}
-	if prob != 79 {
-		t.Errorf("12:00 整点/3h prob = %d，期望 79（12:00 那格算进窗口）", prob)
+	if vals[1] != 40 {
+		t.Errorf("格1 中位 = %v，期望 40", vals[1])
 	}
-	prob, _, ok = WindowProb(s, localAt(2026, 10, 16, 12, 1), 3)
-	if !ok {
-		t.Fatalf("12:01 应有可用条目")
+	if vals[2] != 60 {
+		t.Errorf("格2 两家 50/70 ⇒ 偶数取中间两数平均 = %v，期望 60", vals[2])
 	}
-	if prob != 77 {
-		t.Errorf("12:01/3h prob = %d，期望 77（12:00 那格已不算）", prob)
+	if vals[3] != 0 {
+		t.Errorf("格3 三模型全缺 ⇒ 期望 0，实得 %v", vals[3])
 	}
-	// 20:45 同理：20:00 那格不算 ⇒ 窗口 21,22,23 = 0,0,0
-	prob, _, ok = WindowProb(s, localAt(2026, 10, 16, 20, 45), 3)
-	if !ok {
-		t.Fatalf("20:45 应有可用条目")
+	if nOK != 3 {
+		t.Errorf("nOK = %d，期望 3（全缺那格计入缺数据）", nOK)
 	}
-	if prob != 0 {
-		t.Errorf("20:45/3h prob = %d，期望 0（21,22,23 三格实测都是 0%%）", prob)
+}
+
+func TestPerSlotMedianBareFallback(t *testing.T) {
+	p := func(v float64) *float64 { x := v; return &x }
+	vals, nOK := perSlotMedian(2, []*float64{p(11), p(12)}, nil, nil, nil)
+	if vals[0] != 11 || vals[1] != 12 || nOK != 2 {
+		t.Errorf("三家全缺 + 裸键有值 ⇒ 应回落裸键，实得 %v nOK=%d", vals, nOK)
 	}
 }

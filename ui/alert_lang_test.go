@@ -3,122 +3,139 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
-// TestAlertTextFollowsLanguage 对应需求 6 的语言口径
-// （lang="en" 含 "Alert" 且不含"警""降雨"；lang="zh" 走中文；lang="" 走英文）
-// + 正文内容（未来 N 小时滚动窗口）。
-func TestAlertTextFollowsLanguage(t *testing.T) {
-	// 橙警数据：窗口 88%、2.6 mm、窗口 3 小时（Tier()=3）
-	a := &Alert{Pct: 88, MM: 2.6, WindowHours: 3}
+// 批次 b-alert-v1 第 9 步的三态文案（规格逐字样例，spec/b-alert-v1.md:33-38）：
+//
+//	日常 zh `22:15 起 有雨 · 有机会 45% · 0.6 mm/h`  en `Rain from 22:15 · 45% likely · 0.6 mm/h`
+//	灾害 zh `暴雨风险 蓝 · 12h 内 62 mm`            en `Rainstorm risk Blue · 62 mm within 12 h`
+//	不可用 zh `预警数据不可用 · 截至 21:11`          en `Alert data unavailable · as of 21:11`
+//
+// 语言口径不变：**只有恰好 "zh" 走中文，其余（含空串）一律英文**。
 
-	en := a.Line("en")
-	if !strings.Contains(en, "Alert") {
-		t.Errorf(`lang="en" 应含 "Alert"，得到 %q`, en)
-	}
-	for _, zh := range []string{"警", "降雨"} {
-		if strings.Contains(en, zh) {
-			t.Errorf(`lang="en" 不得含 %q，得到 %q`, zh, en)
-		}
-	}
-	if want := "Orange Alert · Rain in next 3 h 88% · 2.6 mm expected"; en != want {
-		t.Errorf(`lang="en" 全文 = %q，期望 %q`, en, want)
-	}
+func at(h, m int) time.Time { return time.Date(2026, 10, 21, h, m, 0, 0, time.UTC) }
 
-	zh := a.Line("zh")
-	if want := "橙警 · 未来 3 小时降雨 88% · 预计 2.6 mm"; zh != want {
-		t.Errorf(`lang="zh" 全文 = %q，期望 %q`, zh, want)
+func TestAlertTextDailyVerbatim(t *testing.T) {
+	a := &Alert{State: AlertDaily, Pct: 45, MMPerH: 0.6, Start: at(22, 15)}
+	if got, want := a.Text("zh"), "22:15 起 有雨 · 有机会 45% · 0.6 mm/h"; got != want {
+		t.Errorf("日常 zh = %q，期望逐字 %q", got, want)
 	}
-
-	none := a.Line("")
-	if none != en {
-		t.Errorf(`lang="" 应走英文：%q vs %q`, none, en)
+	if got, want := a.Text("en"), "Rain from 22:15 · 45% likely · 0.6 mm/h"; got != want {
+		t.Errorf("日常 en = %q，期望逐字 %q", got, want)
 	}
-
-	// 无毫米数（第二个模板）
-	b := &Alert{Pct: 88, WindowHours: 3}
-	if got, want := b.Line("en"), "Orange Alert · Rain in next 3 h 88%"; got != want {
-		t.Errorf("无毫米数 en = %q，期望 %q", got, want)
-	}
-	if got, want := b.Line("zh"), "橙警 · 未来 3 小时降雨 88%"; got != want {
-		t.Errorf("无毫米数 zh = %q，期望 %q", got, want)
-	}
-
-	// 明日分支保留现状不动（最后一句）
-	c := &Alert{Pct: 78, Tomorrow: true}
-	if got, want := c.Line("en"), "Orange Alert · Rain tomorrow 78%"; got != want {
-		t.Errorf("明日 en = %q，期望 %q", got, want)
-	}
-	if got, want := c.Line("zh"), "橙警 · 今日降雨 78%"; got != want {
-		t.Errorf("明日 zh = %q，期望 %q（现状逐字，要求不动）", got, want)
-	}
-
-	// 档位名映射（需求 2）
-	for _, tc := range []struct {
-		pct            int
-		zhTier, enTier string
-	}{
-		{30, "蓝", "Blue"},
-		{55, "黄", "Yellow"},
-		{75, "橙", "Orange"},
-		{95, "红", "Red"},
-	} {
-		d := &Alert{Pct: tc.pct, WindowHours: 3}
-		if got := d.TierName("zh"); got != tc.zhTier {
-			t.Errorf("Pct=%d zh 档位名 = %q，期望 %q", tc.pct, got, tc.zhTier)
-		}
-		if got := d.TierName("en"); got != tc.enTier {
-			t.Errorf("Pct=%d en 档位名 = %q，期望 %q", tc.pct, got, tc.enTier)
-		}
-		if got, want := d.TierLabel("en"), tc.enTier+" Alert"; got != want {
-			t.Errorf("Pct=%d en 档位标签 = %q，期望 %q", tc.pct, got, want)
-		}
-		if got, want := d.TierLabel("zh"), tc.zhTier+"警"; got != want {
-			t.Errorf("Pct=%d zh 档位标签 = %q，期望 %q", tc.pct, got, want)
-		}
-	}
-
-	// tier 1–2 不带档位前缀（出厂行 drawPanelRow / alertRow 的拼接口径）
-	low := &Alert{Pct: 55, WindowHours: 3}
-	if got, want := low.Line("en"), "Rain in next 3 h 55%"; got != want {
-		t.Errorf("tier2 en = %q，期望 %q", got, want)
-	}
-	if got, want := low.Line("zh"), "未来 3 小时降雨 55%"; got != want {
-		t.Errorf("tier2 zh = %q，期望 %q", got, want)
+	if got := a.Text(""); strings.Contains(got, "起") {
+		t.Errorf(`语言口径破了：lang="" 应走英文，实得 %q`, got)
 	}
 }
 
-// TestAlertTextWindowHours 对应测试 2：
-// WindowHours=3 的 en 串含 "next 3 h"；WindowHours=6 的 zh 串含 "未来 6 小时"。
-// 窗口小时数必须**逐字**出现在文案里。
-func TestAlertTextWindowHours(t *testing.T) {
-	a3 := &Alert{Pct: 62, MM: 0.3, WindowHours: 3}
-	if got := a3.Text("en"); !strings.Contains(got, "next 3 h") {
-		t.Errorf(`WindowHours=3 的 en 串应含 "next 3 h"，得到 %q`, got)
+func TestAlertTextDisasterVerbatim(t *testing.T) {
+	a := &Alert{State: AlertDisaster, TierVal: 1, MM: 62, DisasterHours: 12}
+	if got, want := a.Text("zh"), "暴雨风险 蓝 · 12h 内 62 mm"; got != want {
+		t.Errorf("灾害 zh = %q，期望逐字 %q", got, want)
 	}
-	if got, want := a3.Text("en"), "Rain in next 3 h 62% · 0.3 mm expected"; got != want {
-		t.Errorf("en 全文 = %q，期望 %q", got, want)
+	if got, want := a.Text("en"), "Rainstorm risk Blue · 62 mm within 12 h"; got != want {
+		t.Errorf("灾害 en = %q，期望逐字 %q", got, want)
 	}
+}
 
-	a6 := &Alert{Pct: 62, MM: 0.3, WindowHours: 6}
-	if got := a6.Text("zh"); !strings.Contains(got, "未来 6 小时") {
-		t.Errorf(`WindowHours=6 的 zh 串应含 "未来 6 小时"，得到 %q`, got)
+func TestAlertTextUnavailableVerbatim(t *testing.T) {
+	a := &Alert{State: AlertUnavailable, AsOf: at(21, 11)}
+	if got, want := a.Text("zh"), "预警数据不可用 · 截至 21:11"; got != want {
+		t.Errorf("不可用 zh = %q，期望逐字 %q", got, want)
 	}
-	if got, want := a6.Text("zh"), "未来 6 小时降雨 62% · 预计 0.3 mm"; got != want {
-		t.Errorf("zh 全文 = %q，期望 %q", got, want)
+	if got, want := a.Text("en"), "Alert data unavailable · as of 21:11"; got != want {
+		t.Errorf("不可用 en = %q，期望逐字 %q", got, want)
 	}
-	if got, want := a6.Text("en"), "Rain in next 6 h 62% · 0.3 mm expected"; got != want {
-		t.Errorf("en 全文 = %q，期望 %q", got, want)
-	}
+}
 
-	// 零值/非法值按 3 出文案（config.alert_window_hours 的合法集 = {3,6}，默认 3）
-	for _, h := range []int{0, 1, 9, 12} {
-		z := &Alert{Pct: 40, WindowHours: h}
-		if got := z.Text("zh"); !strings.Contains(got, "未来 3 小时") {
-			t.Errorf("WindowHours=%d 应回落 3 小时文案，得到 %q", h, got)
+// 灾害层四档逐字（蓝/黄/橙/红 → Blue/Yellow/Orange/Red），档位由灾害层给。
+func TestAlertTierFromDisasterLayer(t *testing.T) {
+	want := map[int][2]string{
+		1: {"蓝", "Blue"},
+		2: {"黄", "Yellow"},
+		3: {"橙", "Orange"},
+		4: {"红", "Red"},
+	}
+	for tier, names := range want {
+		a := &Alert{State: AlertDisaster, TierVal: tier, MM: 120, DisasterHours: 3}
+		if got := a.Tier(); got != tier {
+			t.Errorf("Tier() = %d，期望灾害层给的 %d", got, tier)
 		}
-		if got := z.Text("en"); !strings.Contains(got, "next 3 h") {
-			t.Errorf("WindowHours=%d 应回落 next 3 h 文案，得到 %q", h, got)
+		if got := a.TierName("zh"); got != names[0] {
+			t.Errorf("TierName(zh) = %q，期望 %q", got, names[0])
 		}
+		if got := a.TierName("en"); got != names[1] {
+			t.Errorf("TierName(en) = %q，期望 %q", got, names[1])
+		}
+		if !strings.Contains(a.Text("zh"), names[0]) {
+			t.Errorf("灾害 zh 文案应含档位名 %q，实得 %q", names[0], a.Text("zh"))
+		}
+	}
+	// 日常层 = §11 态③ 的蓝色小色块
+	d := &Alert{State: AlertDaily, Pct: 95, MMPerH: 0.6, Start: at(22, 15)}
+	if d.Tier() != 1 {
+		t.Errorf("日常层档位 = %d，期望 1（蓝，恒定不闪）", d.Tier())
+	}
+}
+
+// 官方降水概率分级词逐字（spec/weather-scr.md:1663-1665）；
+// 官方未定义的 20–30 与 50–60 两档本批自定为「可能性很小」/「可能性中等」。
+func TestProbWordOfficialBands(t *testing.T) {
+	cases := []struct {
+		pct  int
+		want string
+	}{
+		{0, "基本不会"}, {19, "基本不会"},
+		{20, "可能性很小"}, {29, "可能性很小"}, // 自定档（官方未定义 20–30）
+		{30, "有机会"}, {45, "有机会"}, {50, "有机会"},
+		{51, "可能性中等"}, {59, "可能性中等"}, // 自定档（官方未定义 50–60）
+		{60, "可能性较大"}, {70, "可能性较大"},
+		{71, "认为有降水"}, {79, "认为有降水"},
+		{80, "可能性非常大"}, {90, "可能性非常大"},
+		{91, "认为有降水"},
+	}
+	for _, tc := range cases {
+		if got := ProbWord(tc.pct); got != tc.want {
+			t.Errorf("ProbWord(%d) = %q，期望 %q", tc.pct, got, tc.want)
+		}
+	}
+	// 分级词逐字进日常层文案
+	a := &Alert{State: AlertDaily, Pct: 45, MMPerH: 0.6, Start: at(22, 15)}
+	if !strings.Contains(a.Text("zh"), "有机会 45%") {
+		t.Errorf("日常 zh 文案应含「有机会 45%%」，实得 %q", a.Text("zh"))
+	}
+}
+
+// 显隐口径：旧 `Pct < AlertThresholdPct ⇒ 不画` 作废（概率不单独决定亮灭），
+// 改由 State 决定。
+func TestAlertVisibilityByState(t *testing.T) {
+	if (&Alert{State: AlertNone, Pct: 99}).Visible() {
+		t.Errorf("AlertNone 不该画（旧的概率触发线口径已作废）")
+	}
+	for _, st := range []AlertState{AlertDaily, AlertDisaster, AlertUnavailable} {
+		if !(&Alert{State: st}).Visible() {
+			t.Errorf("State=%d 应画", st)
+		}
+	}
+	// 低概率的日常层照样画（判据 + 滞回决定亮灭，不是概率阈值）
+	if !(&Alert{State: AlertDaily, Pct: 5}).Visible() {
+		t.Errorf("Pct=5 的日常层应画（概率只进措辞）")
+	}
+	var nilAlert *Alert
+	if nilAlert.Visible() {
+		t.Errorf("nil 提醒不该画")
+	}
+}
+
+// 不可用态配色 = 灰（§11 态④「灰，恒定」）。
+func TestAlertUnavailableColor(t *testing.T) {
+	c := (&Alert{State: AlertUnavailable, AsOf: at(21, 11)}).TierColor()
+	if !(c.R == 128 && c.G == 128 && c.B == 132) {
+		t.Errorf("不可用态色块 = %v，期望灰 {128,128,132}", c)
+	}
+	red := (&Alert{State: AlertDisaster, TierVal: 4}).TierColor()
+	if !(red.R == 217 && red.G == 38 && red.B == 38) {
+		t.Errorf("红档色块 = %v，期望 {217,38,38}", red)
 	}
 }

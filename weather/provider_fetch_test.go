@@ -113,23 +113,24 @@ func TestFetchUmbrellaFallsBackToHourly0(t *testing.T) {
 	}
 }
 
-// TestWindowProbUsesFetchedSample 把 Fetch 的产物直接喂进 WindowProb，
+// TestRainWithinUsesFetchedSample 把 Fetch 的产物直接喂进 RainWithin，
 // 实测"时基 = 当地"这条链路（local := UTC + utc_offset_seconds）。
-func TestWindowProbUsesFetchedSample(t *testing.T) {
+// b-alert-v1 之后预警判据 = 官方配对判据的 R(Δ)（旧 WindowProb 已重写掉）。
+func TestRainWithinUsesFetchedSample(t *testing.T) {
 	s := fetchFrom(t, `{"temperature_2m":18.3,"weather_code":61,"wind_speed_10m":4.2,
 		"is_day":1,"relative_humidity_2m":77,"precipitation":0.0,"rain":0.0,
 		"cloud_cover":80,"precipitation_probability":42}`, nil)
 	// "现在" = 当地 2026-10-16T00:30（= UTC 2026-10-15T16:30 + 28800 s）
 	nowUTC := time.Date(2026, 10, 15, 16, 30, 0, 0, time.UTC)
 	local := nowUTC.UTC().Add(time.Duration(s.UTCOffsetSeconds) * time.Second)
-	prob, mm, ok := WindowProb(s, local, 2)
+	mm, ok := RainWithin(s, local, 2)
 	if !ok {
 		t.Fatalf("当地 00:30 应有未来条目")
 	}
-	if prob != 56 {
-		t.Errorf("prob = %d，期望 56（01:00,02:00 两格最大值）", prob)
-	}
 	if math.Abs(mm-1.0) > 1e-9 {
 		t.Errorf("mm = %v，期望 1.0（0.5+0.5）", mm)
+	}
+	if s.ProbN < 1 {
+		t.Errorf("ProbN = %d，期望 >=1（逐模型/裸键解析出的概率格数）", s.ProbN)
 	}
 }

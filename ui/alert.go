@@ -5,6 +5,8 @@ import (
 	"image/color"
 	"math"
 	"strconv"
+	"strings"
+	"time"
 
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -28,49 +30,95 @@ import (
 // **30%–50% 有机会出现降水**、60%–70% 可能性较大、>70% 认为有降水发生、80%–90% 可能性非常大。
 // ⇒ 触发线取官方"有机会出现降水"下限 **30%**。
 //
-// 数据源（逐字定为）：
-// **未来 N 小时滚动窗口**（weather.WindowProb），不再是"一天的最大值"；
-// N = config.alert_window_hours（默认 3，可设 6） ⇒ Alert.WindowHours。
-// 阈值口径与档位配色**不变**。
+// 数据源与判据（批次 b-alert-v1，2026-10-21 定案）：
+// 灾害层 = 官方四级**配对**判据（红 R(3h)≥100 / 橙 R(3h)≥50 / 黄 R(6h)≥50 / 蓝 R(12h)≥50）；
+// 日常层 = 视野内第一个 ≥ alert_min_mm 的 15 分钟格（锚定型，默认 0.05 mm/15min）；
+// 滞回 = 亮 = 达门槛，灭 = 连续 2 个采样周期低于门槛 70%；
+// 数据闸门 = 概率条数不足 ⇒ 「数据不可用」态。实现：weather.Evaluate（weather/window.go）。
+// **窗口不再是用户配置项**（旧 alert_window_hours 作废，由量级配对决定），
+// **概率不再单独决定亮灭**（旧 AlertThresholdPct 触发线口径作废，只进措辞）。
 
-// AlertThresholdPct = 触发线（官方"有机会出现降水"下限）。
+// AlertThresholdPct = 官方"有机会出现降水"下限（30%）。
+// b-alert-v1 之后**不再作触发线**（亮灭由判据 + 滞回决定），
+// 保留 = 配置键 alert_threshold_pct 与设置面板那行的既有口径不动。
 const AlertThresholdPct = 30
 
-// Alert 一条降雨提醒。
+// AlertState 提醒形态（spec/alert-latency-and-logic.md §11 的四态，本批无①官方信号）。
+// 四态互斥、同一时刻只显示一行，优先级 灾害 > 日常 > 不可用。
+type AlertState int
+
+const (
+	// AlertNone = 不画（视野内无达门槛降水且无灾害、数据可用）。
+	AlertNone AlertState = iota
+	// AlertDisaster = §11 态② 自算灾害（官方配对判据命中）。
+	AlertDisaster
+	// AlertDaily = §11 态③ 带伞提醒（视野内第一个达门槛的 15 分钟格）。
+	AlertDaily
+	// AlertUnavailable = §11 态④ 数据不可用（第 4 步数据闸门）。
+	AlertUnavailable
+	// AlertOfficial = §11 态① 官方信号（批次 b-alert-v2 第 6 步：
+	// 中国区 NMC 返回有效信号 ⇒ 优先显示，取不到回退自算层 ②/③）。
+	// 追加在枚举末尾 ⇒ 既有三态的取值不动（b-alert-v1/v1b 的钉死单测不受影响）。
+	AlertOfficial
+)
+
+// Alert 一条降雨提醒（批次 b-alert-v1 第 9 步）。
 type Alert struct {
-	// Pct = 预警概率（%）。低于 AlertThresholdPct 时不画。
-	// 现行口径 = **未来 WindowHours 小时滚动窗口里的最大概率**
-	// （weather.WindowProb）；
-	// 不再是 daily.precipitation_probability_max（一天的最大值）。
+	// State 四态之一；只有 AlertNone 不画。
+	State AlertState
+	// Pct = 日常层那一格的降水概率（%）。
+	// 口径（第 6 步）：概率只决定**措辞与深浅**，不单独决定亮灭
+	// （spec/alert-latency-and-logic.md §11：「概率只进措辞与深浅」）。
 	Pct int
-	// MM = 窗口内的预计降雨量（mm，逐小时 precipitation 求和）。<=0 = 未知，正文不显示该项。
+	// MM = 灾害层命中那一级窗口的累计预报雨量（mm，第 5 步 R(Δ)）。
 	MM float64
-	// WindowHours = 滚动窗口长度（小时），**逐字出现在文案里**。
-	// 合法值只有 3 与 6（config.alert_window_hours，默认 3）；其它值按 3 出文案。
-	WindowHours int
+	// MMPerH = 日常层那格的折算强度（mm/h = mm × 4，第 6 步）。
+	MMPerH float64
+	// DisasterHours = 灾害层命中那一级配对的窗口小时数（3/6/12，逐字进文案）。
+	DisasterHours int
+	// Start = 日常层第一个达门槛格子的起始时刻（当地墙钟，逐字进文案 "22:15 起"）。
+	Start time.Time
+	// AsOf = 数据不可用文案的"截至"时刻（当地墙钟，逐字进文案 "截至 21:11"）。
+	AsOf time.Time
+	// TierVal 灾害层档位：1=蓝 2=黄 3=橙 4=红（第 5 步判据给，取满足的最高级）。
+	TierVal int
+
 	// Lang 文案语言：取值 "en"/"zh"，
 	// **只有恰好 "zh" 走中文，其余一律英文** —— 与 cmd/scr/main.go 的 displayLang
 	// 口径一致（同文件 :339-344）。由 buildAlert 从配置传进来。
 	Lang string
-	// Tomorrow = 文案说的是明日而非今日（需求 3 的"明日"模板）。
-	// 生产路径不填（buildAlert 只用今日数据，口径）。
-	Tomorrow bool
 	// Pulse 0..1 脉动相位；PulseOn 是否做缓慢呼吸。
 	Pulse   float64
 	PulseOn bool
 	// YOff 提醒行的垂直偏移（像素，可调，与 ClockYOff / WeatherYOff 同族）。
 	YOff int
+
+	// ---- 批次 b-alert-v2 第 6 步：§11 态① 官方信号 ----
+	// 文案逐字（spec/b-alert-v2.md 第 6 步）：
+	//   zh `暴雨 黄色预警 · 22:44 发布`   en `Rainstorm Yellow · issued 22:44`
+	OfficialTypeZh string // 中文类型名（标题正则取，§15.3）
+	OfficialTypeEn string // 英文类型名
+	OfficialLevel  int    // 官方等级 1=蓝 2=黄 3=橙 4=红（Tier() 由它给，brief §1）
+	OfficialIssued time.Time
 }
 
-// Tier 标准四级：1=蓝 2=黄 3=橙 4=红。
+// Tier 档位：1=蓝 2=黄 3=橙 4=红。
+//
+// 批次 b-alert-v1 第 9 步（brief §1 `ui/alert.go:66`）：**由灾害层给**。
+// 日常层 = §11 态③ 的"蓝色小色块" ⇒ 恒 1；不可用态不参与配色分级（走灰）。
 func (a *Alert) Tier() int {
-	switch {
-	case a.Pct >= 90:
-		return 4
-	case a.Pct >= 70:
-		return 3
-	case a.Pct >= 50:
-		return 2
+	switch a.State {
+	case AlertDisaster:
+		if a.TierVal >= 1 && a.TierVal <= 4 {
+			return a.TierVal
+		}
+		return 1
+	case AlertOfficial:
+		// 批次 b-alert-v2（brief §1 `ui/alert.go:97`）：态① 的档位**由官方等级给**。
+		if a.OfficialLevel >= 1 && a.OfficialLevel <= 4 {
+			return a.OfficialLevel
+		}
+		return 1
 	default:
 		return 1
 	}
@@ -115,8 +163,11 @@ func (a *Alert) TierLabel(lang string) string {
 	return a.TierName("en") + " Alert"
 }
 
-// TierColor 预警四级配色。
+// TierColor 预警四级配色；不可用态走灰（§11 态④「灰，恒定」）。
 func (a *Alert) TierColor() color.NRGBA {
+	if a.State == AlertUnavailable {
+		return color.NRGBA{R: 128, G: 128, B: 132, A: 255} // 灰
+	}
 	switch a.Tier() {
 	case 4:
 		return color.NRGBA{R: 217, G: 38, B: 38, A: 255} // 红
@@ -129,73 +180,122 @@ func (a *Alert) TierColor() color.NRGBA {
 	}
 }
 
-// windowHoursLabel 文案里的窗口小时数：合法值只有 3 与 6
-// （config.alert_window_hours 的合法集）；
-// 其它值（含零值）按 3 出文案 = 配置的默认值口径。
-func windowHoursLabel(h int) int {
-	if h == 6 {
-		return 6
+// fmtMM 毫米数出文案：1 位小数，整数位省掉 ".0"
+// （规格逐字样例：灾害 "12h 内 62 mm"、日常 "0.6 mm/h" ⇒ 62 不带小数、0.6 带）。
+func fmtMM(v float64) string {
+	s := strconv.FormatFloat(v, 'f', 1, 64)
+	if strings.HasSuffix(s, ".0") {
+		return s[:len(s)-2]
 	}
-	return 3
+	return s
 }
 
-// Text 提醒正文（需求 3、4 的语言口径不变：
-// 只有恰好 "zh" 走中文，其余（含空串一律英文）。
+// ProbWord 官方降水概率分级词（逐字口径，spec/weather-scr.md:1663-1665 引中国气象局）。
 //
-// 正文内容 = **未来 N 小时滚动窗口**
-// 需求：正文取动态窗口，不取一天的最大值；默认 3 小时，可设 6 小时。
+//	<20 基本不会 / 30–50 有机会 / 60–70 可能性较大 / >70 认为有降水 / 80–90 可能性非常大
 //
-//	有毫米数 en：Rain in next 3 h 62% · 0.3 mm expected
-//	无毫米数 en：Rain in next 3 h 62%
-//	有毫米数 zh：未来 3 小时降雨 62% · 预计 0.3 mm
-//	无毫米数 zh：未来 3 小时降雨 62%
-//	明日分支：  保留现状不动（最后一句）
+// 官方**未定义** 20–30 与 50–60 两档 ⇒ 本批自定为「可能性很小」/「可能性中等」
+// （规格 b-alert-v1 第 9 步明写"是自定"，代码注释按此标注）。
+// 80–90 是官方给的更窄档 ⇒ 覆盖 ">70 认为有降水"；>90 回到"认为有降水"。
+func ProbWord(pct int) string {
+	switch {
+	case pct < 20:
+		return "基本不会"
+	case pct < 30:
+		return "可能性很小" // 自定：官方 11 级里 20–30 档未定义
+	case pct <= 50:
+		return "有机会"
+	case pct < 60:
+		return "可能性中等" // 自定：官方 11 级里 50–60 档未定义
+	case pct <= 70:
+		return "可能性较大"
+	case pct < 80:
+		return "认为有降水"
+	case pct <= 90:
+		return "可能性非常大"
+	default:
+		return "认为有降水"
+	}
+}
+
+// officialLevelZh 官方等级名（1=蓝 2=黄 3=橙 4=红），逐字对应 §15.3 的颜色词。
+func officialLevelZh(level int) string {
+	switch level {
+	case 4:
+		return "红色"
+	case 3:
+		return "橙色"
+	case 2:
+		return "黄色"
+	default:
+		return "蓝色"
+	}
+}
+
+// officialLevelEn 官方等级英文名（态① 文案 `Rainstorm Yellow` 的那一段）。
+func officialLevelEn(level int) string {
+	switch level {
+	case 4:
+		return "Red"
+	case 3:
+		return "Orange"
+	case 2:
+		return "Yellow"
+	default:
+		return "Blue"
+	}
+}
+
+// Visible 报告这一行画不画。
 //
-// 窗口小时数来自 Alert.WindowHours（3 或 6），逐字出现在文案里。
+// 旧口径 `Pct < AlertThresholdPct ⇒ 不画` 作废：第 6/11 步定案
+// **概率不单独决定亮灭**，亮灭由判据 + 滞回（第 7 步）决定 ⇒ 改由 State 决定。
+func (a *Alert) Visible() bool { return a != nil && a.State != AlertNone }
+
+// Text 提醒正文（第 9 步三态文案，逐字照规格样例）：
+//
+//	日常 zh `22:15 起 有雨 · 有机会 45% · 0.6 mm/h`  en `Rain from 22:15 · 45% likely · 0.6 mm/h`
+//	灾害 zh `暴雨风险 蓝 · 12h 内 62 mm`            en `Rainstorm risk Blue · 62 mm within 12 h`
+//	不可用 zh `预警数据不可用 · 截至 21:11`          en `Alert data unavailable · as of 21:11`
+//
+// 语言口径不变：只有恰好 "zh" 走中文，其余（含空串）一律英文。
 func (a *Alert) Text(lang string) string {
-	if a.Tomorrow {
-		// 明日分支保留现状（明日分支不动）。
+	switch a.State {
+	case AlertOfficial:
+		// 态① 文案逐字（spec/b-alert-v2.md 第 6 步）：
+		//   zh `暴雨 黄色预警 · 22:44 发布`   en `Rainstorm Yellow · issued 22:44`
+		t := a.OfficialIssued.Format("15:04")
 		if lang == "zh" {
-			// 注意：不能用 formatTemp —— 它带 °C 后缀（实测渲染出 "预计 2.4°C mm"）。
-			if a.MM > 0 {
-				return "今日降雨 " + strconv.Itoa(a.Pct) + "% · 预计 " + strconv.FormatFloat(a.MM, 'f', 1, 64) + " mm"
-			}
-			return "今日降雨 " + strconv.Itoa(a.Pct) + "%"
+			return a.OfficialTypeZh + " " + officialLevelZh(a.OfficialLevel) + "预警 · " + t + " 发布"
 		}
-		if a.MM > 0 {
-			return "Rain tomorrow " + strconv.Itoa(a.Pct) + "% · " +
-				strconv.FormatFloat(a.MM, 'f', 1, 64) + " mm expected"
+		return a.OfficialTypeEn + " " + officialLevelEn(a.OfficialLevel) + " · issued " + t
+	case AlertDisaster:
+		h := strconv.Itoa(a.DisasterHours)
+		if lang == "zh" {
+			return "暴雨风险 " + a.TierName("zh") + " · " + h + "h 内 " + fmtMM(a.MM) + " mm"
 		}
-		return "Rain tomorrow " + strconv.Itoa(a.Pct) + "%"
-	}
-	h := strconv.Itoa(windowHoursLabel(a.WindowHours))
-	if lang == "zh" {
-		if a.MM > 0 {
-			return "未来 " + h + " 小时降雨 " + strconv.Itoa(a.Pct) + "% · 预计 " +
-				strconv.FormatFloat(a.MM, 'f', 1, 64) + " mm"
+		return "Rainstorm risk " + a.TierName("en") + " · " + fmtMM(a.MM) + " mm within " + h + " h"
+	case AlertUnavailable:
+		if lang == "zh" {
+			return "预警数据不可用 · 截至 " + a.AsOf.Format("15:04")
 		}
-		return "未来 " + h + " 小时降雨 " + strconv.Itoa(a.Pct) + "%"
+		return "Alert data unavailable · as of " + a.AsOf.Format("15:04")
+	case AlertDaily:
+		t := a.Start.Format("15:04")
+		mh := strconv.FormatFloat(a.MMPerH, 'f', 1, 64)
+		if lang == "zh" {
+			return t + " 起 有雨 · " + ProbWord(a.Pct) + " " + strconv.Itoa(a.Pct) + "% · " + mh + " mm/h"
+		}
+		return "Rain from " + t + " · " + strconv.Itoa(a.Pct) + "% likely · " + mh + " mm/h"
 	}
-	if a.MM > 0 {
-		return "Rain in next " + h + " h " + strconv.Itoa(a.Pct) + "% · " +
-			strconv.FormatFloat(a.MM, 'f', 1, 64) + " mm expected"
-	}
-	return "Rain in next " + h + " h " + strconv.Itoa(a.Pct) + "%"
+	return ""
 }
 
-// Line 完整一行 = 档位标签 " · " + 正文。
+// Line 完整一行。
 //
-// 拼接口径照出厂行（drawPanelRow / alertRow）：**只有 tier>=3 才带
-// 档位前缀**，tier 1–2 只有正文。
-// zh 例："橙警 · 未来 3 小时降雨 88% · 预计 2.6 mm"
-// en 例："Orange Alert · Rain in next 3 h 88% · 2.6 mm expected"
-func (a *Alert) Line(lang string) string {
-	txt := a.Text(lang)
-	if a.Tier() >= 3 {
-		txt = a.TierLabel(lang) + " · " + txt
-	}
-	return txt
-}
+// 旧口径"tier>=3 才带档位前缀"作废：灾害态正文自带档位名（`暴雨风险 蓝 · …`），
+// 日常态 = 蓝色不带前缀，不可用态无前缀 ⇒ 三态都直接出正文。
+func (a *Alert) Line(lang string) string { return a.Text(lang) }
 
 // alphaScale 缓慢呼吸：0.75..1.0 的正弦（Pulse 给相位）。
 func (a *Alert) alphaScale() float64 {
@@ -308,7 +408,7 @@ type glowCtx struct {
 // ⇒ 做成面板 flex 里的一行，与地名/条件/明细/预报同组，颜色融合进文字。
 func (s *Screen) alertRow(f Frame) layout.Widget {
 	a := f.Alert
-	if a == nil || a.Pct < AlertThresholdPct {
+	if !a.Visible() {
 		return func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }
 	}
 	tier := a.TierColor()
@@ -374,7 +474,7 @@ func drawPanelRow(gtx layout.Context, size image.Point, a *Alert, s *Screen, cy 
 //
 // 这就是出厂预警画面的全部绘制代码（原 fusion3 分支，改名 panelrow 胶囊，绘制逐字未动）。
 func DrawAlertPanelRow(gtx layout.Context, size image.Point, a *Alert, s *Screen, panelBottom int) {
-	if a == nil || a.Pct < AlertThresholdPct {
+	if !a.Visible() {
 		return
 	}
 	drawPanelRow(gtx, size, a, s, panelBottom-52+a.YOff)

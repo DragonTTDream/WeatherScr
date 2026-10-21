@@ -62,6 +62,19 @@ type Sample struct {
 	HourlyTime []string  `json:"hourly_time,omitempty"`
 	HourlyProb []float64 `json:"hourly_prob,omitempty"`
 	HourlyMM   []float64 `json:"hourly_mm,omitempty"`
+	// ---- b-alert-v1 第 2/3/4 步：逐模型中位数的产物与数据闸门计数 ----
+	// ProbN = hourly 里"至少一家模型给出概率值"的格数（三模型全缺的格不计）。
+	// MMN   = 同口径的毫米格数。Min15N = 15 分钟层解析出的格数。
+	// 第 4 步的数据闸门：ProbN < 视野小时数 ⇒ 置「数据不可用」态；
+	// alertdiag 自检打印 HOURLY_SLOTS / PROB_N / MM_N / MIN15_N 用的就是这三条。
+	ProbN  int `json:"prob_n,omitempty"`
+	MMN    int `json:"mm_n,omitempty"`
+	Min15N int `json:"min15_n,omitempty"`
+	// 15 分钟层（第 3 步）：三条平行数组，键 time / precipitation / precipitation_probability
+	// 的逐模型中位数产物，与 Min15Time 对齐（每格 15 分钟）。
+	Min15Time []string  `json:"min15_time,omitempty"`
+	Min15Prob []float64 `json:"min15_prob,omitempty"`
+	Min15MM   []float64 `json:"min15_mm,omitempty"`
 	// UTCOffsetSeconds = 响应顶层 utc_offset_seconds（秒，当地相对 UTC 的偏移）。
 	// "现在"要按当地时间算：local := time.Now().UTC().Add(off 秒)。
 	UTCOffsetSeconds int     `json:"utc_offset_seconds,omitempty"`

@@ -23,3 +23,9 @@ func normalizeDialog(hwnd uintptr, wpx, hpx int) {}
 // coverLoop 空桩：run() 里 `go coverLoop()` 在双平台都要能编译。
 // 非 Windows 无 Win32 窗口可显示/铺满，常驻检查无意义，直接返回。
 func coverLoop() {}
+
+// scrDbgFlag 空桩：调试态标志。Windows 侧定义在 foreground_windows.go:16
+// （coverLoop 独立线程共用），main.go 在**无 build tag** 的行里写它
+// （cmd/scr/main.go:640 `scrDbgFlag = dbg`）⇒ 非 Windows 也必须有个同名变量，
+// 否则 `go build ./...` 在 Linux 上红（闸门 b1 第 1 步就是这条）。
+var scrDbgFlag bool

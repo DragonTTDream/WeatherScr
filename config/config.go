@@ -91,12 +91,12 @@ type Config struct {
 	AlertThresholdPct int   `json:"alert_threshold_pct"`
 	AlertYOffset      int   `json:"alert_y_offset"`
 	AlertPulse        *bool `json:"alert_pulse"`
-	// AlertWindowHours = 预警的滚动窗口长度（小时）。
-	// 逐字定为：
-	// "预警应该是如果接下来要出门有雨的概率…**它应该是动态的，而不是一天的最大值**"
-	// "**默认3小时，设置项可以改成6小时**"
-	// ⇒ 合法值只允许 **3 或 6**；非法值回落 3 并写一行日志（不静默）。
-	AlertWindowHours int `json:"alert_window_hours"`
+	// 预警视野旋钮已在批次 b-alert-v1b 第 2 步拆掉：窗口由官方四级**配对**决定
+	// （红/橙 3 h、黄 6 h、蓝 12 h），日常层视野 = 常量 2 h（weather.umbrellaViewHours）。
+	// 旧键 alert_window_hours 与旧的视野小时键读到时只写一行日志，不映射成任何视野值。
+	// AlertMinMM = 日常层的淋湿门槛（mm / 15 分钟格），默认 0.05（≈0.2 mm/h）。
+	// 合法范围 0.02–0.5，越界回落默认并写日志（第 8 步）。
+	AlertMinMM float64 `json:"alert_min_mm"`
 
 	// 路径为本进程实际使用的配置文件（不写入 JSON）
 	path string
@@ -157,24 +157,33 @@ func Defaults() Config {
 		AlertThresholdPct:   30,
 		AlertYOffset:        -60,
 		AlertPulse:          &tTrue,
-		// 预警滚动窗口默认 3 小时（可设 6 小时）
-		AlertWindowHours: 3,
+		// 淋湿门槛默认 0.05 mm/15min（视野已进常量，配置里没有旋钮）。
+		AlertMinMM: defaultAlertMinMM,
 	}
 }
 
-// AlertWindowHoursLegal 报告窗口小时数是否是合法值。
-// 合法集 = {3, 6}（新键 alert_window_hours，
-// Defaults() = 3，合法值只允许 3 或 6。
-func AlertWindowHoursLegal(v int) bool { return v == 3 || v == 6 }
+// defaultAlertMinMM = 淋湿门槛默认值（第 8 步：0.05 mm/15min ≈ 0.2 mm/h）。
+// 与 weather.defaultMinMMPer15min 同值（两处常量，谁都不引用谁，避免跨包耦合）。
+const defaultAlertMinMM = 0.05
 
-// NormalizeAlertWindowHours 把非法值收口成默认 3，并报告是否发生了回落。
-// 调用方负责写日志（非法值回落 3 并写一行日志，不要静默）。
-func NormalizeAlertWindowHours(v int) (int, bool) {
-	if AlertWindowHoursLegal(v) {
+// NormalizeAlertMinMM 把越界的淋湿门槛收口成默认 0.05，并报告是否发生回落。
+// 合法范围 = [0.02, 0.5]（第 8 步）。
+func NormalizeAlertMinMM(v float64) (float64, bool) {
+	if v >= 0.02 && v <= 0.5 {
 		return v, false
 	}
-	return 3, true
+	return defaultAlertMinMM, true
 }
+
+// MigrateAlertWindowHours 旧键处置（批次 b-alert-v1b 第 2 步）：**只作废、不映射**。
+//
+// 视野旋钮已拆（spec/b-alert-v1b.md「标定实测」：视野 12 h ⇒ 亮时占比 36%、
+// 提前量中位 13.75 h，同时违反两条目标；视野 2 h + 门槛 0.05 三条目标同时达标）。
+// 预警窗口由官方四级**配对**决定（红/橙 3 h、黄 6 h、蓝 12 h，见 weather/window.go），
+// 日常层视野 = 常量 2 h ⇒ 旧键 alert_window_hours 读到时**不再映射成任何视野值**，
+// 只由调用方写一行日志（不静默）。返回"是否读到了旧键"（口径照 NormalizeAlertMinMM：
+// 收口逻辑在本函数，写日志在调用方）。值 0 = 旧配置里等于没设 ⇒ 报告"无需作废"。
+func MigrateAlertWindowHours(v int) bool { return v != 0 }
 
 // 安装位置。
 const InstallDir = `C:\Program Files\WeatherScr`
@@ -208,8 +217,11 @@ func Load() Config { return LoadFrom(Path()) }
 // LoadFrom 从指定路径读配置（Load 用 Path()；测试用临时文件，
 // 因为 Path() 是 Windows 安装目录，非 Windows 的自检只能走显式路径。
 //
-// 读完后收口 alert_window_hours：合法值只允许 3 或 6，
-// 非法值回落 3 **并写一行日志**（不要静默）。
+// 读完后收口（批次 b-alert-v1 第 8 步 + b-alert-v1b 第 2 步）：
+//
+//	旧键 alert_window_hours 读到时写一行作废日志（窗口由官方量级配对决定，
+//	  本键作废且不映射成任何视野值）；
+//	alert_min_mm 合法范围 0.02–0.5，越界回落 0.05 并写日志。
 func LoadFrom(path string) Config {
 	c := Defaults()
 	b, err := os.ReadFile(path)
@@ -219,9 +231,19 @@ func LoadFrom(path string) Config {
 	if err := json.Unmarshal(b, &c); err != nil {
 		return Defaults()
 	}
-	if got, fell := NormalizeAlertWindowHours(c.AlertWindowHours); fell {
-		log.Printf("config: alert_window_hours=%d 非法（只允许 3 或 6），回落默认值 %d", c.AlertWindowHours, got)
-		c.AlertWindowHours = got
+	// 旧键：Config 里已无该字段 ⇒ 从原始 JSON 再解一次该键，只写日志不改行为。
+	var raw struct {
+		AlertWindowHours *int `json:"alert_window_hours"`
+	}
+	if err := json.Unmarshal(b, &raw); err == nil && raw.AlertWindowHours != nil &&
+		MigrateAlertWindowHours(*raw.AlertWindowHours) {
+		log.Printf("config: 旧键 alert_window_hours=%d 已作废 —— 预警窗口由官方量级配对决定"+
+			"（红/橙 3 h、黄 6 h、蓝 12 h），日常层视野固定 2 h，本键不映射成任何视野值",
+			*raw.AlertWindowHours)
+	}
+	if got, fell := NormalizeAlertMinMM(c.AlertMinMM); fell {
+		log.Printf("config: alert_min_mm=%v 越界（合法 0.02–0.5），回落默认值 %v", c.AlertMinMM, got)
+		c.AlertMinMM = got
 	}
 	c.path = path
 	return c

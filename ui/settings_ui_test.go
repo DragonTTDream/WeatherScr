@@ -37,14 +37,12 @@ func sampleModel() PanelModel {
 		AlertThresholdPct: 0,
 		AlertYOffset:      0,
 		AlertPulse:        false,
-		// 预警窗口写规范值 3（同 DisplayLanguage 的口径：非规范值会让
-		// 无事件帧被 model() 读成"有改动"。
-		AlertWindowHours: 3,
-		LocationLat:      0,
-		LocationLon:      0,
-		LocationNameZh:   "",
-		LocationNameEn:   "",
-		DisplayLanguage:  "en",
+		AlertMinMM:        0.05,
+		LocationLat:       0,
+		LocationLon:       0,
+		LocationNameZh:    "",
+		LocationNameEn:    "",
+		DisplayLanguage:   "en",
 	}
 }
 
@@ -126,56 +124,26 @@ func TestSettingsPanelLayoutNoEvents(t *testing.T) {
 	}
 }
 
-// TestSettingsPanelAlertWindowRadio 对应测试 4：
-// 模型含 alert_window_hours 字段，选中 6 后模型值为 6（照现有面板测试写法）。
-// 合法集 = {3, 6} ⇒ 控件值不是 "6" 时读出 3。
-func TestSettingsPanelAlertWindowRadio(t *testing.T) {
+// TestSettingsPanelAlertMinMM 对应批次 b-alert-v1 第 10 步的「最小雨量(mm/15min)」行：
+// 文本编辑器往返稳定；解析失败保留旧值（与其它数值行同口径）。
+func TestSettingsPanelAlertMinMM(t *testing.T) {
 	m := sampleModel()
-	if m.AlertWindowHours != 3 {
-		t.Fatalf("夹具应含 AlertWindowHours=3，实得 %d", m.AlertWindowHours)
+	if m.AlertMinMM != 0.05 {
+		t.Fatalf("夹具应含 AlertMinMM=0.05，实得 %v", m.AlertMinMM)
 	}
 	p := NewSettingsPanel(m)
-	if got := p.Model().AlertWindowHours; got != 3 {
-		t.Errorf("初始化 AlertWindowHours = %d，期望 3", got)
+	if got := p.edAlertMin.Text(); got != "0.05" {
+		t.Errorf("编辑器初值 = %q，期望 \"0.05\"", got)
 	}
-	// 选中 6 小时
-	p.winSel.Value = "6"
-	if got := p.model().AlertWindowHours; got != 6 {
-		t.Errorf("选中 6 后模型值 = %d，期望 6", got)
+	p.edAlertMin.SetText("0.2")
+	if got := p.model().AlertMinMM; got != 0.2 {
+		t.Errorf("填 0.2 后模型值 = %v，期望 0.2", got)
 	}
-	// 选回 3
+	// 解析失败保留**面板模型里的现值**（model() 以 p.m 为基，与其它数值行同口径）
 	p.setModel(p.model())
-	if p.winSel.Value != "6" {
-		t.Errorf("setModel 后控件应停在 6，实得 %q", p.winSel.Value)
-	}
-	p.winSel.Value = "3"
-	if got := p.model().AlertWindowHours; got != 3 {
-		t.Errorf("选中 3 后模型值 = %d，期望 3", got)
-	}
-	// 非规范控件值 ⇒ 读出默认 3（面板不产生非法值）
-	p.winSel.Value = "9"
-	if got := p.model().AlertWindowHours; got != 3 {
-		t.Errorf("控件值 9 应读出 3，实得 %d", got)
-	}
-	// 模型 6 → 控件 "6" → 模型 6 的往返
-	m6 := sampleModel()
-	m6.AlertWindowHours = 6
-	p6 := NewSettingsPanel(m6)
-	if p6.winSel.Value != "6" {
-		t.Errorf("模型 6 未把控件置成 \"6\"，实得 %q", p6.winSel.Value)
-	}
-	if got := p6.model().AlertWindowHours; got != 6 {
-		t.Errorf("往返后模型值 = %d，期望 6", got)
-	}
-	// 非规范模型值（9）进面板 ⇒ 控件收口成 "3"，往返稳定
-	m9 := sampleModel()
-	m9.AlertWindowHours = 9
-	p9 := NewSettingsPanel(m9)
-	if p9.winSel.Value != "3" {
-		t.Errorf("模型 9 应把控件收口成 \"3\"，实得 %q", p9.winSel.Value)
-	}
-	if got := p9.model().AlertWindowHours; got != 3 {
-		t.Errorf("模型 9 收口后读出 %d，期望 3", got)
+	p.edAlertMin.SetText("abc")
+	if got := p.model().AlertMinMM; got != 0.2 {
+		t.Errorf("解析失败应保留模型现值 0.2，实得 %v", got)
 	}
 }
 

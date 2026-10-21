@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"log"
 	"math"
 	"net/http"
 	"os"
@@ -358,7 +359,7 @@ func toModel(c config.Config) ui.PanelModel {
 		AlertThresholdPct:   alertThreshold(c),
 		AlertYOffset:        c.AlertYOffset,
 		AlertPulse:          c.AlertPulse == nil || *c.AlertPulse,
-		AlertWindowHours:    alertWindowHours(c),
+		AlertMinMM:          alertMinMM(c),
 		LocationLat:         c.LocationLat,
 		LocationLon:         c.LocationLon,
 		LocationNameZh:      c.LocationNameZh,
@@ -383,12 +384,9 @@ func alertThreshold(c config.Config) int {
 	return ui.AlertThresholdPct
 }
 
-// alertWindowHours 取预警滚动窗口长度：
-// 合法值只允许 3 或 6，非法值（含未设的 0）回落默认 3。
-// config.Load 读盘时已做过同样的收口并写了日志；这里再收口一次，
-// 让内存里现值（含 /c 面板写回的值）也绝不会带非法值进渲染。
-func alertWindowHours(c config.Config) int {
-	v, _ := config.NormalizeAlertWindowHours(c.AlertWindowHours)
+// alertMinMM 取淋湿门槛（mm/15min）：合法 0.02–0.5，越界回落默认 0.05。
+func alertMinMM(c config.Config) float64 {
+	v, _ := config.NormalizeAlertMinMM(c.AlertMinMM)
 	return v
 }
 
@@ -404,11 +402,8 @@ func saveModel(c config.Config, m ui.PanelModel) error {
 	c.AlertThresholdPct = m.AlertThresholdPct
 	c.AlertYOffset = m.AlertYOffset
 	c.AlertPulse = &m.AlertPulse
-	// 预警滚动窗口长度：面板只给 3/6，写回前再收口一次
-	c.AlertWindowHours = alertWindowHours(c)
-	if h := m.AlertWindowHours; h == 3 || h == 6 {
-		c.AlertWindowHours = h
-	}
+	// 淋湿门槛：面板是自由文本输入，写回前收口到合法范围（越界回落 0.05）
+	c.AlertMinMM = alertMinMM(config.Config{AlertMinMM: m.AlertMinMM})
 	c.LocationLat = m.LocationLat
 	c.LocationLon = m.LocationLon
 	c.LocationNameZh = m.LocationNameZh
@@ -614,6 +609,10 @@ func run() {
 		logf("SCR_CACHED=无缓存，先显示空天气")
 	}
 	go refresher(cfg, st)
+	// 批次 b-alert-v2 第 6 步：官方信号**独立拉取**（10 min 节奏），
+	// 与 1 min 的自算刷新分开跑（spec/alert-latency-and-logic.md §11 末行逐字：
+	// 「拉取周期：官方信号 10 min（一次省级请求）；自算随 refresh_minutes=1」）。
+	go officialRefresher(cfg)
 
 	// gioui v0.10.3 把 ViewEvent 存进 coalesced.view 后从不投递
 	// （window.go:671 赋值，全文件无读取），w.Event() 收不到
@@ -1169,6 +1168,195 @@ func lastGood(key string) *weather.Sample {
 	return best
 }
 
+// ---- 预警判据的进程内存态（批次 b-alert-v1 第 7 步：滞回"状态存进程内存，不持久化"）----
+//
+// 一个采样周期 = 一次取数（refresh_minutes）—— 规格「待定点」第 3 条本批取此口径，已记未决。
+// refresher 每取到一次数据就推进一次滞回并缓存判据结果；渲染端 buildAlert 只读结果，
+// 不逐帧推进滞回（逐帧推进会把"连续 2 个采样周期"变成"连续 2 帧"）。
+type alertDiagState struct {
+	mu   sync.Mutex
+	hyst *weather.Hysteresis
+	eval weather.AlertEval
+	have bool
+}
+
+var alertDiag alertDiagState
+
+// advanceAlertEval 取到数据后算一次判据（推进滞回一个采样周期）并记下结果。
+func advanceAlertEval(cfg config.Config, s *weather.Sample, now time.Time) weather.AlertEval {
+	local := now.UTC().Add(time.Duration(s.UTCOffsetSeconds) * time.Second)
+	alertDiag.mu.Lock()
+	defer alertDiag.mu.Unlock()
+	if alertDiag.hyst == nil {
+		alertDiag.hyst = &weather.Hysteresis{}
+	}
+	e := weather.Evaluate(s, local, alertMinMM(cfg), alertDiag.hyst)
+	alertDiag.eval, alertDiag.have = e, true
+	return e
+}
+
+// getAlertEval 返回上一次取数算出的判据（无 ⇒ false，调用方按无状态现算）。
+func getAlertEval() (weather.AlertEval, bool) {
+	alertDiag.mu.Lock()
+	defer alertDiag.mu.Unlock()
+	return alertDiag.eval, alertDiag.have
+}
+
+// ---- 官方信号层（批次 b-alert-v2 第 6/7 步）----
+//
+// 节奏：10 min 一次省级请求（spec/b-alert-v2.md 第 6 步逐字），与自算层的 1 min 刷新分开。
+// 发请求的前置（spec 第 1 步）：**仅 country_code==CN 才发**，非 CN ⇒ 跳过。
+// 省名来源（§12 铁律）：坐标反查得 `ISO3166-2-lvl4` ⇒ 闭表查官方全称，
+// 绝不从地名推。运行时优先读反查缓存（设置里选点时已反查过 ⇒ 命中缓存零请求）。
+type officialState struct {
+	mu     sync.Mutex
+	page   weather.NMCPage
+	have   bool
+	fetchd time.Time
+}
+
+var officialStateVar officialState
+
+func setOfficial(p weather.NMCPage, at time.Time) {
+	officialStateVar.mu.Lock()
+	officialStateVar.page, officialStateVar.have, officialStateVar.fetchd = p, true, at
+	officialStateVar.mu.Unlock()
+}
+
+// clearOfficial 取不到官方数据 ⇒ 清空，显示回退自算层（态②/③）。
+func clearOfficial() {
+	officialStateVar.mu.Lock()
+	officialStateVar.page, officialStateVar.have = weather.NMCPage{}, false
+	officialStateVar.mu.Unlock()
+}
+
+func getOfficial() (weather.NMCPage, bool) {
+	officialStateVar.mu.Lock()
+	defer officialStateVar.mu.Unlock()
+	return officialStateVar.page, officialStateVar.have
+}
+
+// officialEvery 官方信号拉取节奏（spec/b-alert-v2.md 第 6 步逐字 = 10 min）。
+const officialEvery = 10 * time.Minute
+
+// nmcRequestAllowed 报告这个国家码是否允许发官方请求。
+//
+// spec/b-alert-v2.md 目标 1 逐字：**仅 country_code==CN 才发**，非中国区不发。
+// 单测钉死在 cmd/scr/nmc_test.go（闸门第 8 步的 `NMC=skipped` 同源口径）。
+func nmcRequestAllowed(countryCode string) bool {
+	return strings.EqualFold(strings.TrimSpace(countryCode), "CN")
+}
+
+// officialRefresher 官方信号的独立后台循环。
+func officialRefresher(cfg config.Config) {
+	for {
+		refreshOfficial(cfg)
+		time.Sleep(officialEvery)
+	}
+}
+
+// refreshOfficial 跑一次官方拉取并打带外日志（spec 第 7 步逐字格式）。
+//
+// 带外日志逐字：`nmc: province=%s count=%d top=%s/%s`
+// 且 **count=0 必须打 `NOTE=count0-unknown`**（§15.1：无效省名也返回 0，
+// 不得当"该省无预警"上报）。
+func refreshOfficial(cfg config.Config) {
+	if cfg.LocationLat == 0 && cfg.LocationLon == 0 {
+		log.Printf("nmc: skipped reason=no-coords")
+		clearOfficial()
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	se := &geo.Searcher{BaseURL: cfg.WeatherBaseURL}
+	r, ok := geo.ReverseCachedOnly(cfg.LocationLat, cfg.LocationLon)
+	if !ok {
+		rr, err := se.Reverse(ctx, cfg.LocationLat, cfg.LocationLon, "zh")
+		if err != nil {
+			log.Printf("nmc: skipped reason=reverse-fail err=%v", err)
+			clearOfficial()
+			return
+		}
+		r = rr
+	}
+	if !nmcRequestAllowed(r.CountryCode) {
+		// spec/b-alert-v2.md 目标 1：非中国区不发官方请求。
+		log.Printf("nmc: skipped reason=not-cn country=%s", r.CountryCode)
+		clearOfficial()
+		return
+	}
+	prov, ok := geo.NMCProvince(r.ISO3166)
+	if !ok {
+		log.Printf("nmc: skipped reason=no-province-mapping iso=%s", r.ISO3166)
+		clearOfficial()
+		return
+	}
+	page, err := weather.FindAlarms(ctx, &http.Client{Timeout: 15 * time.Second}, prov)
+	if err != nil {
+		log.Printf("nmc: province=%s err=%v", prov, err)
+		clearOfficial()
+		return
+	}
+	setOfficial(page, time.Now())
+	top, ok := weather.NMCTop(page)
+	switch {
+	case page.Count == 0:
+		// §15.1 判据缺陷：count=0 不能证明省名被接受，也不能证明该省无预警。
+		log.Printf("nmc: province=%s count=%d top=%s/%s NOTE=%s",
+			prov, page.Count, "-", "-", weather.NMCCount0Unknown)
+	case !ok:
+		// 标题正则不匹配（§15.3 的 3 条样本）⇒ 降级，不静默丢弃：日志里点名条数。
+		log.Printf("nmc: province=%s count=%d top=%s/%s NOTE=title-unparsed n=%d",
+			prov, page.Count, "-", "-", len(page.Items))
+	default:
+		log.Printf("nmc: province=%s count=%d top=%s/%s", prov, page.Count, top.TypeZh, top.TitleColor)
+		if !top.CrossOK {
+			log.Printf("nmc: crosscheck province=%s alertid=%s pic=%s title=%q NOTE=cross-mismatch-degraded-title-only",
+				prov, top.AlertID, top.Pic, top.Title)
+		}
+	}
+}
+
+// officialAlert 由官方结果构造 §11 态①（取不到 ⇒ nil ⇒ 回退自算层）。
+//
+// 触发条件（§11 态①）：country_code==CN 且 NMC 返回有效信号（`issuetime` ≤12 h、
+// 地名匹配到本机层级）。12 h 上限逐字取既有常量 officialMaxWindowHours（禁改清单内）。
+//
+// TODO(未取证)：「地名匹配到本机层级」本批只做到**省级**（省名由坐标反查的
+// ISO3166-2 闭表给出 ⇒ 请求本身就是省级过滤），市/区层级的匹配表未取证。
+func officialAlert(cfg config.Config, now time.Time) *ui.Alert {
+	page, ok := getOfficial()
+	if !ok {
+		return nil
+	}
+	top, ok := weather.NMCTop(page)
+	if !ok {
+		return nil
+	}
+	age := now.UTC().Sub(top.Issued.UTC())
+	if age > weather.OfficialMaxWindowHours*time.Hour || age < -time.Hour {
+		return nil // 超 12 h 的旧信号不显示；时间明显在未来也不显示
+	}
+	pulseOn := true
+	if cfg.AlertPulse != nil {
+		pulseOn = *cfg.AlertPulse
+	}
+	ph := math.Mod(float64(now.UnixNano())/1e9/1.2, 1.0)
+	return &ui.Alert{
+		State: ui.AlertOfficial,
+		Lang:  displayLang(cfg),
+		Pulse: ph,
+		// §11 态① 逐字：橙/红 1.2 s 呼吸，蓝/黄 恒定
+		PulseOn:        pulseOn && (top.TitleLevel >= 3),
+		YOff:           cfg.AlertYOffset,
+		AsOf:           top.Issued,
+		OfficialTypeZh: top.TypeZh,
+		OfficialTypeEn: weather.NMCTypeEn(top.TypeZh),
+		OfficialLevel:  top.TitleLevel,
+		OfficialIssued: top.Issued,
+	}
+}
+
 // refresher 后台刷新天气：启动即取一次，之后按 refresh_minutes 循环。
 // 失败保留上一次成功值，绝不清空。
 func refresher(cfg config.Config, st *weatherState) {
@@ -1206,6 +1394,13 @@ func refresher(cfg config.Config, st *weatherState) {
 			}
 			st.set(s)
 			fmt.Printf("SCR_FETCH_OK=%s %.1f°C code=%d\n", s.Condition, deref(s.Temperature), s.WeatherCode)
+			// b-alert-v1 第 4 步：数据闸门带外日志（逐字格式）。
+			// PROB_N < 12（灾害层官方配对里最长的窗口，weather.officialMaxWindowHours）
+			// ⇒ 判据置「数据不可用」态（见 weather.Evaluate）。
+			log.Printf("alertdiag: HOURLY_SLOTS=%d PROB_N=%d MM_N=%d MIN15_N=%d",
+				len(s.HourlyTime), s.ProbN, s.MMN, s.Min15N)
+			// 判据 + 滞回：一个采样周期 = 这一次取数。
+			advanceAlertEval(cfg, s, time.Now())
 		}
 		time.Sleep(interval)
 	}
@@ -1239,60 +1434,65 @@ func speedFromBudget(budget time.Duration) float64 {
 	return fps / 15.0
 }
 
-// buildAlert 按配置与天气样本构造降雨提醒。
+// buildAlert 按配置与天气样本构造降雨提醒（批次 b-alert-v1 第 9 步的三态）。
 //
-// 数据源：**未来 N 小时滚动窗口** = weather.WindowProb(s, 当地时间, N)
-// - Pct = 窗口内逐小时 precipitation_probability 的最大值
-// - MM  = 窗口内逐小时 precipitation 的求和
-//
-// 逐字定为：
-//
-//	"预警应该是如果接下来要出门有雨的概率，比如早上出门那显示全天没问题，
-//	  比如晚上出门那就应该是晚上是否会下雨了，**它应该是动态的，而不是一天的最大值**"
-//	"**默认3小时，设置项可以改成6小时**"
-//
-// ⇒ 不再用 daily.precipitation_probability_max（一天的最大值）。
-// 时基：响应顶层 utc_offset_seconds 已存进 Sample.UTCOffsetSeconds，
-// "现在"按当地时间算：local := now.UTC().Add(utc_offset_seconds 秒)。
-// 窗口长度 N = cfg.AlertWindowHours（默认 3，可设 6）。
-// 触发线：cfg.AlertThresholdPct（默认 30 = 官方"有机会出现降水"下限）**不变**。
-// 版式：panelrow = 天气面板下沿内的居中胶囊（定案"贴紧-60"）。
+// 判据来自 weather.Evaluate（灾害层官方配对 + 日常层锚定 + 滞回 + 数据闸门）。
+// 滞回状态由 refresher 每取一次数推进一次（见 advanceAlertEval）；这里只读结果，
+// 取数还没跑过时（首帧 / 面板预览）按无状态现算一次（门槛直达，无滞回）。
+// 优先级（spec/alert-latency-and-logic.md §11，本批无①官方信号）：灾害 > 日常 > 不可用。
+// 版式：panelrow = 天气面板下沿内的居中胶囊（定案"贴紧-60"，绘制代码不动）。
 // 脉动相位：1.2 秒一个周期，按墙钟时间取相位 ⇒ 与帧率无关（时间积分，口径）。
 func buildAlert(cfg config.Config, s *weather.Sample, now time.Time) *ui.Alert {
-	if s == nil || cfg.AlertEnabled != nil && !*cfg.AlertEnabled {
+	if cfg.AlertEnabled != nil && !*cfg.AlertEnabled {
 		return nil
 	}
-	hours := alertWindowHours(cfg)
-	// 时基：逐字口径
+	// §11 优先级 ① > ② > ③ > ④（批次 b-alert-v2 第 6 步）：
+	// 中国区官方信号优先出态①；取不到 ⇒ 回退自算层（态②/③/④，判据与常量不动）。
+	if oa := officialAlert(cfg, now); oa != nil {
+		return oa
+	}
+	if s == nil {
+		return nil
+	}
 	local := now.UTC().Add(time.Duration(s.UTCOffsetSeconds) * time.Second)
-	pct, mm, ok := weather.WindowProb(s, local, hours)
+	e, ok := getAlertEval()
 	if !ok {
-		return nil // 无可用条目 ⇒ 预警不显示
-	}
-	th := cfg.AlertThresholdPct
-	if th < 1 {
-		th = ui.AlertThresholdPct
-	}
-	if pct < th {
-		return nil
+		e = weather.Evaluate(s, local, alertMinMM(cfg), nil)
 	}
 	pulseOn := true
 	if cfg.AlertPulse != nil {
 		pulseOn = *cfg.AlertPulse
 	}
 	ph := math.Mod(float64(now.UnixNano())/1e9/1.2, 1.0)
-	return &ui.Alert{
-		Pct:         pct,
-		MM:          mm,
-		WindowHours: hours, // 逐字进文案
-		YOff:        cfg.AlertYOffset,
-		Pulse:       ph,
-		PulseOn:     pulseOn,
-		// 预警文案跟随 display_language（需求 5）：
-		// 口径与地名显示同一个 displayLang（本文件 :338-344）—— 只有恰好
-		// "zh" 走中文，其余一律英文。
-		Lang: displayLang(cfg),
+	a := &ui.Alert{
+		Lang:    displayLang(cfg),
+		Pulse:   ph,
+		PulseOn: pulseOn,
+		YOff:    cfg.AlertYOffset,
+		AsOf:    local,
 	}
+	switch {
+	case !e.Available:
+		// §11 态④：预警数据不可用 · 截至 HH:MM（灰，恒定）
+		a.State = ui.AlertUnavailable
+		a.PulseOn = false
+	case e.Disaster:
+		// §11 态②：自算灾害（官方配对判据命中，取满足的最高级）
+		a.State = ui.AlertDisaster
+		a.TierVal = e.Tier
+		a.MM = e.MM
+		a.DisasterHours = e.Hours
+	case e.Daily && e.On:
+		// §11 态③：带伞提醒（视野内第一个达门槛的 15 分钟格，蓝色恒定）
+		a.State = ui.AlertDaily
+		a.Pct = e.Prob
+		a.MMPerH = e.MMPerH
+		a.Start = e.Start
+		a.PulseOn = false
+	default:
+		return nil
+	}
+	return a
 }
 
 // displayLocation 返回显示用的地名。

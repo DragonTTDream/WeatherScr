@@ -38,6 +38,14 @@ const (
 	// （open_meteo_provider.py:331），实测 `hourly=precipitation_probability,precipitation`
 	// 接受，units `%` 与 `mm`（需求 1）。
 	hourlyFields = "precipitation_probability,precipitation,cloud_cover"
+	// minutely15Fields = 15 分钟层（批次 b-alert-v1 第 3 步）。
+	// 实测（本机直连，2026-10-21，坐标 29.2772,104.7044，forecast_days=6）：
+	// `minutely_15=precipitation,precipitation_probability` 被接受，
+	// 条数 = 逐小时条数 × 4（144 条 hourly ⇒ 576 条 minutely_15），
+	// 跨度与 hourly 对齐（2026-10-21T00:00 → 2026-10-26T23:45）。
+	// 带 `models=` 时同样只给逐模型后缀键（precipitation_<model> /
+	// precipitation_probability_<model>），⇒ 与 hourly 共用同一套中位数函数。
+	minutely15Fields = "precipitation,precipitation_probability"
 	// cloud_cover 是规格 1.6 加的第三项：三模型云量仲裁的原料。
 	// 实测：与 `models=gfs_seamless,icon_seamless,ecmwf_ifs025` 同时给出时，hourly 里
 	// 出现逐模型键 cloud_cover_gfs_seamless / cloud_cover_icon_seamless /
@@ -56,8 +64,11 @@ const (
 	// 23:xx 的 3/6 小时窗口必然跨午夜，只有 1 天数据时窗口在当日 23:00 之后无条目。
 	// 实测 forecast_days=1 → 24 条、=2 → 48 条（2026-10-16T00:00 … 2026-10-17T23:00），
 	// 跨午夜窗口有覆盖（需求 1）。现值 6 已满足 ≥2。
-	forecastDays  = "6"
-	forecastHours = "1"
+	forecastDays = "6"
+	// b-alert-v1 第 1 步：删 forecast_hours。
+	// 证据 E-P1/P2（spec/alert-latency-and-logic.md §2）：`forecast_hours=1` 把
+	// hourly 截成 **1 条** ⇒ 预警结构性拿不到数据。去掉后同一请求 48 条
+	// （forecast_days=6 ⇒ 实测 144 条）。
 )
 
 // RequestParams 构造 forecast 请求的参数集，逐键与上游一致（RequestShape 判据）。
@@ -71,7 +82,9 @@ func RequestParams(lat, lon float64) url.Values {
 	v.Set("models", ModelsParam)
 	v.Set("daily", dailyFields)
 	v.Set("forecast_days", forecastDays)
-	v.Set("forecast_hours", forecastHours)
+	// b-alert-v1 第 1 步：不再塞 forecast_hours（证据 E-P1：它把 hourly 截成 1 条）。
+	// 第 3 步：加 15 分钟层（证据 E-P4：minutely_15 被接受，条数 = 逐小时条数 × 4）。
+	v.Set("minutely_15", minutely15Fields)
 	v.Set("timezone", "auto")
 	return v
 }
@@ -111,7 +124,6 @@ type forecastResponse struct {
 		PrecipitationProbability *float64 `json:"precipitation_probability"`
 	} `json:"current"`
 	Hourly struct {
-		PrecipitationProbability []float64 `json:"precipitation_probability"`
 		// 逐小时条目：
 		// time 是 iso8601 **当地墙钟**（请求带 timezone=auto ⇒ 响应不带时区标记），
 		// precipitation 单位 mm。平行数组，原样存进 Sample 供 WindowProb 用。
@@ -124,7 +136,60 @@ type forecastResponse struct {
 		CloudCoverGFS   []int `json:"cloud_cover_gfs_seamless"`
 		CloudCoverIcon  []int `json:"cloud_cover_icon_seamless"`
 		CloudCoverECMWF []int `json:"cloud_cover_ecmwf_ifs025"`
+
+		// ---- b-alert-v1 第 2 步：逐模型 prob/mm ----
+		// 证据 E-P1/P2：请求带 `models=` 时 hourly 里**不存在无后缀的
+		// precipitation_probability / precipitation**，只有逐模型后缀键 ⇒
+		// 旧的无后缀解析解成空数组 ⇒ HourlyProb/HourlyMM 全空 ⇒ 预警结构性不显示。
+		// 指针数组 = 区分"该模型这一格没有值(null)"与"值为 0"：null 解成 nil ⇒
+		// 中位数按缺失跳过（实测 icon_seamless 的 probability 整条 144 格全 null）。
+		//
+		// 键名两套并存（实测差异，已记 out/notes-alert-v1.md「未决/对不上」）：
+		//   规格钉死（spec/b-alert-v1-brief.md §2，取证 P1）：p_probability_<model>
+		//   本机 2026-10-21 直连实测：precipitation_probability_<model>
+		//   且 `hourly=p_probability` 被 API 拒绝（HTTP 400，
+		//   "Cannot initialize ... from invalid String value p_probability"）
+		// ⇒ 两套键名都解，取先拿到非空的那套；钉死单测钉规格那套。
+		ProbBare []*float64 `json:"precipitation_probability"`
+		ProbGFS  []*float64 `json:"p_probability_gfs_seamless"`
+		ProbIcon []*float64 `json:"p_probability_icon_seamless"`
+		ProbECM  []*float64 `json:"p_probability_ecmwf_ifs025"`
+
+		// 本机 2026-10-21 直连实测的那套键名 = 同一家的**另一种拼法**，不是第四家：
+		// precipitation_probability_<model>（`hourly=p_probability` 被 API 拒 400）。
+		// 两套都解 ⇒ 规格钉死的键名与实测键名谁在响应里就用谁；
+		// 中位数函数按"家"去重（见 perSlotMedian 注释），不会把一家算成两家。
+		ProbGFSApi  []*float64 `json:"precipitation_probability_gfs_seamless"`
+		ProbIconApi []*float64 `json:"precipitation_probability_icon_seamless"`
+		ProbECMApi  []*float64 `json:"precipitation_probability_ecmwf_ifs025"`
+
+		MMGFS  []*float64 `json:"precipitation_gfs_seamless"`
+		MMIcon []*float64 `json:"precipitation_icon_seamless"`
+		MMECM  []*float64 `json:"precipitation_ecmwf_ifs025"`
 	} `json:"hourly"`
+	// Minutely15 = 15 分钟层（b-alert-v1 第 3 步）。
+	// 实测键形态与 hourly 同规则：带 models= 只给逐模型后缀键，
+	// 不带 models= 给无后缀键 ⇒ 两套都解，同一套中位数函数。
+	Minutely15 struct {
+		Time []string `json:"time"`
+
+		ProbBare []*float64 `json:"precipitation_probability"`
+		ProbGFS  []*float64 `json:"p_probability_gfs_seamless"`
+		ProbIcon []*float64 `json:"p_probability_icon_seamless"`
+		ProbECM  []*float64 `json:"p_probability_ecmwf_ifs025"`
+
+		// 本机 2026-10-21 直连实测的那套键名 = 同一家的**另一种拼法**，不是第四家：
+		// precipitation_probability_<model>（`hourly=p_probability` 被 API 拒 400）。
+		// 两套都解 ⇒ 规格钉死的键名与实测键名谁在响应里就用谁；
+		// 中位数函数按"家"去重（见 perSlotMedian 注释），不会把一家算成两家。
+		ProbGFSApi  []*float64 `json:"precipitation_probability_gfs_seamless"`
+		ProbIconApi []*float64 `json:"precipitation_probability_icon_seamless"`
+		ProbECMApi  []*float64 `json:"precipitation_probability_ecmwf_ifs025"`
+
+		MMGFS  []*float64 `json:"precipitation_gfs_seamless"`
+		MMIcon []*float64 `json:"precipitation_icon_seamless"`
+		MMECM  []*float64 `json:"precipitation_ecmwf_ifs025"`
+	} `json:"minutely_15"`
 	Daily struct {
 		Time             []string  `json:"time"`
 		Temperature2mMax []float64 `json:"temperature_2m_max"`
@@ -299,15 +364,36 @@ func (c *Client) Fetch(city string) (*Sample, error) {
 	if f.Current.PrecipitationProbability != nil {
 		v := *f.Current.PrecipitationProbability
 		s.PrecipitationProbability = &v
-	} else if len(f.Hourly.PrecipitationProbability) > 0 {
-		v := f.Hourly.PrecipitationProbability[0]
+	} else if len(f.Hourly.ProbBare) > 0 && f.Hourly.ProbBare[0] != nil {
+		// b-alert-v1 第 2 步：无后缀键改由 ProbBare 承载（同一 JSON 键位只留一个字段，
+		// 重复 tag 会让 encoding/json 只认第一个 ⇒ 逐模型解析拿不到裸键）。
+		v := *f.Hourly.ProbBare[0]
 		s.PrecipitationProbability = &v
 	}
-	// 逐小时平行数组原样存：
-	// WindowProb 靠这三条数组 + utc_offset_seconds 算"未来 N 小时滚动窗口"。
+	// 逐小时平行数组：
+	// b-alert-v1 第 2 步 —— prob/mm 改读**逐模型后缀键**并逐格取三家中位数
+	// （证据 E-P1/P2：带 models= 时无后缀键根本不存在）。
+	// 三模型全缺的那一格 ⇒ prob=0、mm=0，并计入缺数据计数（第 2 步口径）。
+	// 计数进 Sample.ProbN/MMN ⇒ 第 4 步的数据闸门与 alertdiag 自检用它。
 	s.HourlyTime = f.Hourly.Time
-	s.HourlyProb = f.Hourly.PrecipitationProbability
-	s.HourlyMM = f.Hourly.Precipitation
+	prob, probN := perSlotMedian(len(f.Hourly.Time), f.Hourly.ProbBare,
+		f.Hourly.ProbGFS, f.Hourly.ProbIcon, f.Hourly.ProbECM,
+		f.Hourly.ProbGFSApi, f.Hourly.ProbIconApi, f.Hourly.ProbECMApi)
+	mmArr, mmN := perSlotMedian(len(f.Hourly.Time), ptrsFromFloats(f.Hourly.Precipitation),
+		f.Hourly.MMGFS, f.Hourly.MMIcon, f.Hourly.MMECM)
+	s.HourlyProb = prob
+	s.HourlyMM = mmArr
+	s.ProbN = probN
+	s.MMN = mmN
+	// b-alert-v1 第 3 步：15 分钟层（同一套中位数函数）。
+	m15 := f.Minutely15
+	m15Prob, _ := perSlotMedian(len(m15.Time), m15.ProbBare, m15.ProbGFS, m15.ProbIcon, m15.ProbECM,
+		m15.ProbGFSApi, m15.ProbIconApi, m15.ProbECMApi)
+	m15MM, _ := perSlotMedian(len(m15.Time), nil, m15.MMGFS, m15.MMIcon, m15.MMECM)
+	s.Min15Time = m15.Time
+	s.Min15Prob = m15Prob
+	s.Min15MM = m15MM
+	s.Min15N = len(m15.Time)
 	s.UTCOffsetSeconds = f.UTCOffsetSeconds
 	// 今日（daily 下标 0）最大降雨概率与累计降雨量。
 	// 概率取整存 int；降雨量 <=0 视为"无降雨"，不填。

@@ -94,7 +94,8 @@ func TestDumpFramesForPixelDiff(t *testing.T) {
 		}
 		var alert *Alert
 		if sc.alert {
-			alert = &Alert{Pct: 78, MM: 1.2, Pulse: 0.25, Lang: "zh"}
+			// b-alert-v1 第 9 步：显隐由 State 决定（旧 Pct 触发线口径作废）⇒ 夹具给灾害态
+			alert = &Alert{State: AlertDisaster, TierVal: 3, MM: 1.2, DisasterHours: 3, Pulse: 0.25, Lang: "zh"}
 		}
 		wp := WeatherRect.Px(PortraitW, PortraitH)
 		wp.Y += sc.yoff

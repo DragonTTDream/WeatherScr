@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"image/color"
 	"math"
 	"strconv"
 	"strings"
@@ -63,11 +64,10 @@ type PanelModel struct {
 	AlertThresholdPct int  // alert_threshold_pct（默认 30 = 官方"有机会出现降水"下限）
 	AlertYOffset      int  // alert_y_offset（提醒条垂直偏移 px，默认 -60 贴紧天气文字）
 	AlertPulse        bool // alert_pulse（缓慢呼吸；关掉则恒定）
-	// AlertWindowHours = 预警滚动窗口长度（小时）。
-	// 逐字定为：
-	// "它应该是动态的，而不是一天的最大值""默认3小时，设置项可以改成6小时"
-	// ⇒ 合法值只允许 3 或 6。
-	AlertWindowHours int // alert_window_hours
+	// 预警视野旋钮已在 b-alert-v1b 第 3 步从面板拆掉（视野 = 常量 2 h，
+	// 窗口由官方四级配对决定）⇒ 面板模型里不再有视野字段。
+	// AlertMinMM = 淋湿门槛（mm/15min，合法 0.02–0.5，默认 0.05）。
+	AlertMinMM float64 // alert_min_mm
 
 	// 位置：存坐标 + 搜索选点（定案）
 	LocationLat     float64 // location_lat（0,0 = 未存 ⇒ 回落按名地理编码）
@@ -95,6 +95,7 @@ type SettingsPanel struct {
 	edWeatherY  widget.Editor
 	edAlertTh   widget.Editor
 	edAlertY    widget.Editor
+	edAlertMin  widget.Editor
 	edLocSearch widget.Editor
 
 	cbShowBg          widget.Bool
@@ -112,12 +113,13 @@ type SettingsPanel struct {
 	locPlaces []geo.Place
 	locClicks []widget.Clickable
 	locStatus string
+	// locMismatch 非空 = 需要在「已选：」行下方出红字提示（裁决 C）。
+	locMismatch string
 
 	slBgOpacity      widget.Float
 	slClockBgOpacity widget.Float
 	units            widget.Enum
 	langSel          widget.Enum // display_language：en / zh
-	winSel           widget.Enum // alert_window_hours："3" / "6"
 
 	btnSave   widget.Clickable
 	btnCancel widget.Clickable
@@ -157,7 +159,7 @@ func NewSettingsPanel(m PanelModel) *SettingsPanel {
 	p.edWallpaper.SingleLine = true
 	for _, ed := range []*widget.Editor{&p.edFontSize, &p.edIconSize, &p.edMargin,
 		&p.edRefresh, &p.edInterval, &p.edClockY, &p.edWeatherY,
-		&p.edAlertTh, &p.edAlertY, &p.edLocSearch} {
+		&p.edAlertTh, &p.edAlertY, &p.edAlertMin, &p.edLocSearch} {
 		ed.SingleLine = true
 		ed.InputHint = key.HintNumeric
 	}
@@ -245,13 +247,8 @@ func (p *SettingsPanel) model() PanelModel {
 	m.AlertEnabled = p.cbAlert.Value
 	m.AlertPulse = p.cbAlertPulse.Value
 	m.DisplayLanguage = p.langSel.Value
-	// alert_window_hours：单选组只给 3 与 6（合法集）；
-	// 控件值不是 "6" 时读出 3 = 默认值口径。
-	if p.winSel.Value == "6" {
-		m.AlertWindowHours = 6
-	} else {
-		m.AlertWindowHours = 3
-	}
+	// alert_min_mm：解析失败保留旧值（与其它数值行同口径，不把面板写坏）。
+	m.AlertMinMM = floatOr(p.edAlertMin.Text(), m.AlertMinMM)
 	return m
 }
 
@@ -269,6 +266,7 @@ func (p *SettingsPanel) setModel(m PanelModel) {
 	p.edWeatherY.SetText(strconv.Itoa(m.WeatherYOffset))
 	p.edAlertTh.SetText(strconv.Itoa(m.AlertThresholdPct))
 	p.edAlertY.SetText(strconv.Itoa(m.AlertYOffset))
+	p.edAlertMin.SetText(strconv.FormatFloat(m.AlertMinMM, 'f', -1, 64))
 	p.units.Value = m.Units
 	p.cbShowBg.Value = m.ShowBackground
 	p.slBgOpacity.Value = float32(m.BgOpacity)
@@ -284,12 +282,6 @@ func (p *SettingsPanel) setModel(m PanelModel) {
 	p.langSel.Value = m.DisplayLanguage
 	if p.langSel.Value != "zh" {
 		p.langSel.Value = "en"
-	}
-	// alert_window_hours 同样写规范值：非 6 一律置 "3"（默认值口径），
-	// 否则 model() 读出 3 ≠ 夹具的 9 ⇒ 无事件帧也被判成"有改动"（同 DisplayLanguage 的坑）。
-	p.winSel.Value = "3"
-	if m.AlertWindowHours == 6 {
-		p.winSel.Value = "6"
 	}
 }
 
@@ -404,6 +396,7 @@ func (p *SettingsPanel) rows(th *material.Theme) []layout.Widget {
 		// 用按钮触发：gioui 的 Editor.Layout 内部把事件抽干，面板里拿不到 SubmitEvent。
 		p.locSearchRow(th),
 		p.locStatusRow(th),
+		p.locMismatchRow(th),
 		p.langRow(th),
 		p.fieldRow(th, "wallpaper_dir 壁纸目录（sources.folders）", &p.edWallpaper),
 		p.row2(th,
@@ -420,12 +413,17 @@ func (p *SettingsPanel) rows(th *material.Theme) []layout.Widget {
 		p.row2(th,
 			fieldSpec{label: "clock_y_offset 时钟 y 偏移(px)", ed: &p.edClockY},
 			fieldSpec{label: "weather_y_offset 天气 y 偏移(px)", ed: &p.edWeatherY}),
-		// 降雨提醒：阈值 = 触发线；偏移 = 提醒条上下位置（与上面同族可调）
+		// 降雨提醒：触发阈值只进措辞（b-alert-v1 第 9 步：概率不决定亮灭）；
+		// 偏移 = 提醒条上下位置（与上面同族可调）
 		p.row2(th,
-			fieldSpec{label: "alert_threshold_pct 触发阈值(%，默认30)", ed: &p.edAlertTh},
+			fieldSpec{label: "alert_threshold_pct 措辞阈值(%，默认30)", ed: &p.edAlertTh},
 			fieldSpec{label: "alert_y_offset 提醒 y 偏移(px，默认-60)", ed: &p.edAlertY}),
-		// 预警滚动窗口长度（3 与 6 小时单选，样式照语言单选那组）
-		p.windowRow(th),
+		// 淋湿门槛（mm/15min，默认 0.05，合法 0.02–0.5）
+		p.row2(th,
+			fieldSpec{label: "alert_min_mm 最小雨量(mm/15min，默认0.05)", ed: &p.edAlertMin},
+			fieldSpec{label: "越界回落 0.05", ed: nil}),
+		// 「视野小时」单选组已在 b-alert-v1b 第 3 步整组拆掉（视野 = 常量 2 h，
+		// 窗口由官方量级配对决定）⇒ 面板少一行，淋湿门槛那行保留。
 		p.unitsRow(th),
 		p.sliderRow(th, "bg_opacity 天气面板底不透明度（上游 0.3）", &p.slBgOpacity),
 		p.sliderRow(th, "clock_bg_opacity 时钟面板底不透明度（偏离上游，默认 0.45）", &p.slClockBgOpacity),
@@ -612,6 +610,13 @@ func (p *SettingsPanel) buttonRow(th *material.Theme) layout.Widget {
 
 // ── 地名搜索选点（定案"存坐标 + 搜索选点"）──
 
+// locMismatchText 裁决 C 的红字文案（spec/b-alert-v2.md 第 5 步逐字：
+// 「行政区与坐标不一致，已按你的选择保留」）。
+const locMismatchText = "行政区与坐标不一致，已按你的选择保留"
+
+// locMismatchColor 裁决 C 的红字颜色（红 = 提示级，不与预警四级共用）。
+var locMismatchColor = color.NRGBA{R: 226, G: 61, B: 61, A: 255}
+
 // locSearchRow 搜索输入框 "搜索"按钮。
 //
 // 为什么是按钮不是回车：gioui v0.10.3 的 widget.Editor.Layout 内部
@@ -641,6 +646,19 @@ func (p *SettingsPanel) locStatusRow(th *material.Theme) layout.Widget {
 	return p.plainRow(th, p.locStatus)
 }
 
+// locMismatchRow 裁决 C 的红字行（无提示 ⇒ 零尺寸，不占行）。
+func (p *SettingsPanel) locMismatchRow(th *material.Theme) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		if p.locMismatch == "" {
+			return layout.Dimensions{}
+		}
+		l := material.Body2(th, p.locMismatch)
+		l.TextSize = panelCaptionSp
+		l.Color = locMismatchColor
+		return layout.UniformInset(panelRowInsetDp).Layout(gtx, l.Layout)
+	}
+}
+
 // locCandidateRows 候选地名行（可点）。
 func (p *SettingsPanel) locCandidateRows(th *material.Theme) []layout.Widget {
 	for len(p.locClicks) < len(p.locPlaces) {
@@ -657,10 +675,27 @@ func (p *SettingsPanel) locCandidateRows(th *material.Theme) []layout.Widget {
 			return layout.UniformInset(panelRowInsetDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						l := material.Body2(th, place.Label())
-						l.TextSize = panelTextSp
-						l.Color = th.Palette.Fg
-						return l.Layout(gtx)
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								// 裁决 A（§13.4）：完整路径**允许换行** = gioui Label 在宽度
+								// 受限时自己折行 ⇒ 不截断、不加省略号，控件数不变。
+								l := material.Body2(th, place.PathOrLabel())
+								l.TextSize = panelTextSp
+								l.Color = th.Palette.Fg
+								return l.Layout(gtx)
+							}),
+							// 裁决 C（§13.4）：搜索侧 admin 与坐标反查侧不一致 ⇒ 红字明说，
+							// **保留用户原选择**，不阻断保存、不静默改点。
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								if !place.Mismatch {
+									return layout.Dimensions{}
+								}
+								l := material.Body2(th, locMismatchText)
+								l.TextSize = panelCaptionSp
+								l.Color = locMismatchColor
+								return l.Layout(gtx)
+							}),
+						)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						l := material.Caption(th, fmt.Sprintf("%.3f,%.3f", place.Lat, place.Lon))
@@ -725,18 +760,6 @@ func (p *SettingsPanel) langRow(th *material.Theme) layout.Widget {
 	})
 }
 
-// windowRow 预警滚动窗口长度单选（alert_window_hours）。
-//
-// 需求：默认 3 小时，设置项可以改成 6 小时
-// ⇒ 只给 3 与 6 两个 RadioButton，样式照上面语言单选那一组（widget.Enum + material.RadioButton）。
-// 读写的是 PanelModel.AlertWindowHours（与 config.Config 的 alert_window_hours 一一对应）。
-func (p *SettingsPanel) windowRow(th *material.Theme) layout.Widget {
-	return p.radioGroupRow(th, "alert_window_hours 预警窗口", &p.winSel, []radioOpt{
-		{key: "3", label: "3 小时"},
-		{key: "6", label: "6 小时"},
-	})
-}
-
 // LocSearchClicked 报告是否点了"搜索"（调用方据此发起后台搜索）。
 func (p *SettingsPanel) LocSearchClicked(gtx layout.Context) bool { return p.btnLocSearch.Clicked(gtx) }
 
@@ -747,6 +770,7 @@ func (p *SettingsPanel) SearchQuery() string { return p.edLocSearch.Text() }
 func (p *SettingsPanel) SetSearching(q string) {
 	p.locStatus = "搜索中：" + q + " …"
 	p.locPlaces, p.locClicks = nil, nil
+	p.locMismatch = ""
 }
 
 // SetLocationResults 回填搜索结果（成功给候选，失败给错误文案）。
@@ -754,6 +778,7 @@ func (p *SettingsPanel) SetLocationResults(places []geo.Place, status string) {
 	p.locPlaces = places
 	p.locClicks = make([]widget.Clickable, len(places))
 	p.locStatus = status
+	p.locMismatch = ""
 }
 
 // PickLocation 报告被点选的候选（返回索引）。
@@ -793,6 +818,12 @@ func (p *SettingsPanel) SetPickedLocation(pl geo.Place) {
 	}
 	p.m = m
 	p.setModel(p.m)
-	p.locStatus = "已选：" + pl.Label() + fmt.Sprintf(" (%.4f,%.4f)", pl.Lat, pl.Lon)
+	// §13.4 裁决 D 定案后的文案：`已选：` + **完整路径** + ` (%.4f,%.4f)` + 来源标记
+	// （完整路径在同一个 label 控件里自己折行 ⇒ 控件数不变、面板结构不变）。
+	p.locStatus = "已选：" + pl.PathOrLabel() + fmt.Sprintf(" (%.4f,%.4f)", pl.Lat, pl.Lon) + " · " + pl.Source
+	p.locMismatch = ""
+	if pl.Mismatch {
+		p.locMismatch = locMismatchText
+	}
 	p.locPlaces, p.locClicks = nil, nil
 }

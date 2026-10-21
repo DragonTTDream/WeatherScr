@@ -114,8 +114,10 @@ func TestRequestShape(t *testing.T) {
 	v := RequestParams(29.34, 104.77)
 
 	wantKeys := []string{
-		"current", "daily", "forecast_days", "forecast_hours",
-		"hourly", "latitude", "longitude", "models", "timezone",
+		// b-alert-v1 第 1 步：forecast_hours 去掉（证据 E-P1：它把 hourly 截成 1 条）；
+		// 第 3 步：加 minutely_15（15 分钟层）。
+		"current", "daily", "forecast_days",
+		"hourly", "latitude", "longitude", "minutely_15", "models", "timezone",
 	}
 	got := make([]string, 0, len(v))
 	for k := range v {
@@ -147,10 +149,14 @@ func TestRequestShape(t *testing.T) {
 		// 降雨提醒的数据源+ 今日月相。
 		// 上游无任何预警功能、daily 只有三键
 		// （open_meteo_provider.py:332）⇒ 这些偏离与上面的 cloud_cover 同类，是**已采纳的**。
-		"daily":          "temperature_2m_max,temperature_2m_min,weathercode,precipitation_probability_max,precipitation_sum,moon_phase",
-		"forecast_days":  "6",
-		"forecast_hours": "1",
-		"timezone":       "auto",
+		"daily":         "temperature_2m_max,temperature_2m_min,weathercode,precipitation_probability_max,precipitation_sum,moon_phase",
+		"forecast_days": "6",
+		// b-alert-v1 第 3 步：15 分钟层两字段（实测接受，条数 = 逐小时条数 × 4）
+		"minutely_15": "precipitation,precipitation_probability",
+		"timezone":    "auto",
+	}
+	if v.Get("forecast_hours") != "" {
+		t.Errorf("forecast_hours 应已删除（证据 E-P1），实得 %q", v.Get("forecast_hours"))
 	}
 	for k, wv := range want {
 		if got := v.Get(k); got != wv {
