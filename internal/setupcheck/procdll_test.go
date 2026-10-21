@@ -49,6 +49,9 @@ var nonUser32Exports = map[string]string{
 	"TerminateProcess":         "kernel32",
 	"CloseHandle":              "kernel32",
 	"CreateFileW":              "kernel32",
+	// kernel32.dll（publish-rename-swap 批次 B12：重命名让开，简报 §2 逐字 "MoveFileExW":"kernel32"，
+	// 声明在 cmd/setup/main.go 的 kernel32 句柄上，实现见 cmd/setup/renameswap_windows.go:moveFileEx）
+	"MoveFileExW": "kernel32",
 }
 
 var (

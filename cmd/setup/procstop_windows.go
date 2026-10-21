@@ -89,12 +89,66 @@ func waitFileDeletable(path string) bool {
 			0, // dwFlagsAndAttributes
 			0, // hTemplateFile
 		)
-		if h != uintptr(windows.InvalidHandle) && errno == nil {
+		// B14（定因证据：out/b45-run.log 18:17:59 = `openfiles` 指名占用者就是本安装器
+		// `1024 Administrator 1524 b9_setup.exe C:\Windows\System32\WeatherScr.scr`）。
+		// LazyProc.Call 的第三个返回值是 error（动态类型 syscall.Errno），**恒非 nil** ——
+		// 成功时它是 Errno(0)，不是 nil。原先写 `h != InvalidHandle && errno == nil` ⇒ 成功
+		// 分支永不进入 ⇒ 每轮泄漏一个 dwShareMode=0 的独占句柄，10 秒轮询泄漏 50 个，
+		// 把本函数自己的目标文件锁死（= 历史上安装写不进、卸载删不掉的真因）。
+		// 正确判据只看句柄：CreateFileW 成功必返回有效句柄（GetLastError 只在失败时有意义）。
+		if h != uintptr(windows.InvalidHandle) {
 			procCloseHandle.Call(h)
 			return true
 		}
 		if errno == errFileNotFound || errno == errPathNotFound {
 			return true
+		}
+		if i < stopPollMax-1 {
+			time.Sleep(time.Duration(stopPollEveryMS) * time.Millisecond)
+		}
+	}
+	return false
+}
+
+// waitFileWritable 轮询「目标可写」（安装侧 A1，spec publish-install-verify §1 A1；
+// 与 waitFileDeletable 同风格、同节奏 stopPollEveryMS=200 ms × stopPollMax=50 = 10 s）。
+// 判据 = CreateFileW(path, GENERIC_WRITE, 0, NULL, OPEN_EXISTING) 的返回值，
+// 逐档口径由纯函数 writableVerdict 给出（procname.go，Linux 侧 T5 断言）：
+//   - 成功 ⇒ 已存在且可写 ⇒ 通过（CloseHandle 后返回）
+//   - ERROR_FILE_NOT_FOUND(2) ⇒ 名字空闲、可创建 ⇒ 通过
+//   - ERROR_ACCESS_DENIED(5) / ERROR_SHARING_VIOLATION(32) ⇒ 被锁（delete-pending）⇒ 继续轮询
+//   - 其它错误 ⇒ 不通过且不再轮询（轮询下去也不会变好）
+//
+// dwShareMode 传 0（独占打开）：delete-pending 状态下请求独占写权会被拒 ⇒ 正是锁信号。
+// 证据 out/b18-run.log:100-105（删除成功后立刻 Copy-Item ⇒ Access is denied）、
+// out/b19-run.log:2（约 40 s 后 COPY_OK attempt=0）。
+func waitFileWritable(path string) bool {
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return true // 路径非法 ⇒ 交给复制调用本身报错，与现状一致
+	}
+	for i := 0; i < stopPollMax; i++ {
+		h, _, errno := procCreateFileW.Call(
+			uintptr(unsafe.Pointer(p)),
+			uintptr(windows.GENERIC_WRITE),
+			0, // dwShareMode=0 ⇒ 独占，锁未释放时直接失败
+			0, // lpSecurityAttributes=NULL
+			uintptr(windows.OPEN_EXISTING),
+			0, // dwFlagsAndAttributes
+			0, // hTemplateFile
+		)
+		// B14：同 waitFileDeletable —— 成功判据只看句柄，句柄必关（errno 恒非 nil，
+		// 原先的 `errno == nil` 让独占句柄每轮泄漏一个，自己把目标锁死）。
+		if h != uintptr(windows.InvalidHandle) {
+			procCloseHandle.Call(h)
+			return true
+		}
+		ok, retry := writableVerdict(errno)
+		if ok {
+			return true
+		}
+		if !retry {
+			return false
 		}
 		if i < stopPollMax-1 {
 			time.Sleep(time.Duration(stopPollEveryMS) * time.Millisecond)

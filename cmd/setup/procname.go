@@ -54,3 +54,39 @@ const (
 	stopPollEveryMS = 200
 	stopPollMax     = 50
 )
+
+// writableVerdict 判定「以 GENERIC_WRITE 打开目标」的失败含义（安装侧 A1，
+// spec publish-install-verify §1 A1；证据 out/b18-run.log:100-105 与 out/b19-run.log:2：
+// 卸载删除成功后同名路径长时间不可创建 ⇒ Copy-Item : Access is denied，约 40 s 后 COPY_OK attempt=0）。
+// 判据来自 CreateFileW 的 GetLastError：
+//   - nil（打开成功）⇒ 文件已存在且可写 ⇒ 通过（ok=true）
+//   - ERROR_FILE_NOT_FOUND(2) ⇒ 名字空闲、可创建 ⇒ 通过
+//   - ERROR_ACCESS_DENIED(5) / ERROR_SHARING_VIOLATION(32) ⇒ 被锁（delete-pending）⇒ 继续轮询
+//   - 其它（含 ERROR_PATH_NOT_FOUND(3)）⇒ 不是锁信号，轮询无意义 ⇒ 不通过且不重试
+//
+// 证据 T5（spec §5）：nil / 2 / 5 / 32 / 3 五档断言在 procname_test.go。
+func writableVerdict(err error) (ok bool, retry bool) {
+	if err == nil {
+		return true, false
+	}
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		switch errno {
+		case syscall.Errno(2): // ERROR_FILE_NOT_FOUND
+			return true, false
+		case syscall.Errno(5), syscall.Errno(32): // ERROR_ACCESS_DENIED / ERROR_SHARING_VIOLATION
+			return false, true
+		}
+	}
+	return false, false
+}
+
+// shaMatches 比较两个 SHA256 十六进制串（安装侧 A2，spec §1 A2）：大小写无关；
+// 任一侧为空 ⇒ 不匹配（marker 里没带 SHA 的旧写法、读文件失败 ⇒ 一律视作校验不过）。
+// 证据 T6（spec §5）：ABCD/abcd=true；AB/AC=false；""/ab=false；ab/""=false。
+func shaMatches(got, want string) bool {
+	if got == "" || want == "" {
+		return false
+	}
+	return strings.EqualFold(got, want)
+}

@@ -68,3 +68,42 @@ func TestStopPollBudget(t *testing.T) {
 		t.Errorf("stopPollMax = %d，期望 50", stopPollMax)
 	}
 }
+
+// T5 安装侧「目标可写」判据（spec publish-install-verify §5，逐字五档）
+func TestWritableVerdict(t *testing.T) {
+	type C struct {
+		in    error
+		ok    bool
+		retry bool
+		desc  string
+	}
+	for _, c := range []C{
+		{nil, true, false, "打开成功 ⇒ 已存在且可写"},
+		{syscall.Errno(2), true, false, "ERROR_FILE_NOT_FOUND ⇒ 名字空闲、可创建"},
+		{syscall.Errno(5), false, true, "ERROR_ACCESS_DENIED ⇒ 被锁，继续轮询"},
+		{syscall.Errno(32), false, true, "ERROR_SHARING_VIOLATION ⇒ 被锁，继续轮询"},
+		{syscall.Errno(3), false, false, "ERROR_PATH_NOT_FOUND ⇒ 非锁信号，不重试"},
+	} {
+		ok, retry := writableVerdict(c.in)
+		if ok != c.ok || retry != c.retry {
+			t.Errorf("writableVerdict(%v) = (ok=%v, retry=%v)，期望 (ok=%v, retry=%v)（%s）",
+				c.in, ok, retry, c.ok, c.retry, c.desc)
+		}
+	}
+}
+
+// T6 SHA256 比对（spec publish-install-verify §5，逐字四档）
+func TestShaMatches(t *testing.T) {
+	if !shaMatches("ABCD", "abcd") {
+		t.Errorf(`shaMatches("ABCD","abcd") 应为 true（大小写无关）`)
+	}
+	if shaMatches("AB", "AC") {
+		t.Errorf(`shaMatches("AB","AC") 应为 false`)
+	}
+	if shaMatches("", "ab") {
+		t.Errorf(`shaMatches("","ab") 应为 false（marker 未带 SHA ⇒ 校验不过）`)
+	}
+	if shaMatches("ab", "") {
+		t.Errorf(`shaMatches("ab","") 应为 false（期望值缺失 ⇒ 校验不过）`)
+	}
+}

@@ -10,3 +10,6 @@ func stopRunningScrImages(target string) int { return 0 }
 
 // waitFileDeletable 非 Windows 侧无镜像锁概念 ⇒ 恒可删。
 func waitFileDeletable(path string) bool { return true }
+
+// waitFileWritable 非 Windows 侧无 delete-pending 锁概念 ⇒ 恒可写（安装侧 A1 的空实现）。
+func waitFileWritable(path string) bool { return true }
