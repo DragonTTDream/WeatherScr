@@ -55,6 +55,9 @@ var (
 	user32  = windows.NewLazySystemDLL("user32.dll")
 	gdi32   = windows.NewLazySystemDLL("gdi32.dll")
 	shell32 = windows.NewLazySystemDLL("shell32.dll")
+	// kernel32：卸载前停运行中的屏保进程 + 轮询「文件可删除」（证据 out/notes-b5c.md §3：
+	// 运行中的同名进程以镜像方式占用 System32 文件 ⇒ 删除被拒；终止后锁仍短暂残留）。
+	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
 
 	procRegisterClassExW = user32.NewProc("RegisterClassExW")
 	procCreateWindowExW  = user32.NewProc("CreateWindowExW")
@@ -84,6 +87,16 @@ var (
 	procSystemParametersInfoW = user32.NewProc("SystemParametersInfoW")
 
 	procShellExecuteW = shell32.NewProc("ShellExecuteW")
+
+	// 进程枚举与终止（kernel32）。过程名与 DLL 的配对由 internal/setupcheck/procdll_test.go
+	// 闸门强制登记（挂错 DLL 会在首次调用处 panic，Linux 侧编译发现不了）。
+	procCreateToolhelp32Snapshot = kernel32.NewProc("CreateToolhelp32Snapshot")
+	procProcess32FirstW          = kernel32.NewProc("Process32FirstW")
+	procProcess32NextW           = kernel32.NewProc("Process32NextW")
+	procOpenProcess              = kernel32.NewProc("OpenProcess")
+	procTerminateProcess         = kernel32.NewProc("TerminateProcess")
+	procCloseHandle              = kernel32.NewProc("CloseHandle")
+	procCreateFileW              = kernel32.NewProc("CreateFileW")
 )
 
 const (
@@ -760,6 +773,16 @@ func runUninstall() {
 	}
 
 	// 删 System32 里的文件需要提权
+	// 证据 E-uninstall（spec publish-uninstall-stopscr §0，源 out/notes-b5c.md §3）：
+	// 运行中的同名进程以镜像方式占用该文件 ⇒ 提权删除也被拒（DEL_FAIL Access is denied），
+	// 且进程刚被终止后镜像锁仍会短暂残留 ⇒ 先停进程、再轮询「可删」，最后才请求提权。
+	// 轮询在提权**之前**，不替换下面的 marker 轮询（120×500 ms 口径不变）。
+	if n := stopRunningScrImages(warmupExe); n > 0 {
+		logf("已停止 %d 个运行中的屏保进程", n)
+	} else {
+		logf("无运行中的屏保进程")
+	}
+	waitFileDeletable(warmupExe)
 	if fileExists(warmupExe) {
 		marker := filepath.Join(os.TempDir(), fmt.Sprintf("wssetup_del_%d.txt", os.Getpid()))
 		_ = os.Remove(marker)
@@ -816,7 +839,9 @@ func runUninstall() {
 			}
 		}
 	}
-	if err := removeARP(); err != nil {
+	// 证据 E-arp（spec §0 / §1 A3，卸载页日志实测 b17_u1.png）：键本就不存在时
+	// RegDeleteKey 返回 ERROR_FILE_NOT_FOUND，旧代码打印「失败」属噪声 ⇒ 幂等视作成功。
+	if err := removeARP(); !arpDeleteIsOk(err) {
 		logf("删除 Add/Remove Programs 项失败：%v", err)
 	} else {
 		logf("已删除 Add/Remove Programs 项")
@@ -1154,6 +1179,14 @@ func main() {
 		return
 	case len(args) >= 2 && args[0] == "--delete-only":
 		marker := args[2]
+		// 提权侧兜底（spec §1 A1/A2）：子进程在 os.Remove 之前做同一件事
+		// （停同名进程 + 轮询可删；提权侧对 System32 有 DELETE 权，轮询判据在此最有效）。
+		if n := stopRunningScrImages(args[1]); n > 0 {
+			logf("已停止 %d 个运行中的屏保进程", n)
+		} else {
+			logf("无运行中的屏保进程")
+		}
+		waitFileDeletable(args[1])
 		err := os.Remove(args[1])
 		if err == nil || os.IsNotExist(err) {
 			_ = os.WriteFile(marker, []byte("DEL_OK"), 0o644)

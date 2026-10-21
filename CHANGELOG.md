@@ -145,6 +145,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   frame.
 - The installer wizard window is sized to the primary monitor's work area, so its buttons
   are reachable without resizing the window by hand.
+- Uninstall now stops the running screensaver process before deleting
+  `C:\Windows\System32\WeatherScr.scr`, then polls until the file is deletable
+  (200 ms x 50 = 10 s) before requesting elevation. Deleting the file while the
+  screensaver was running used to fail with `Access is denied` (the running image
+  locks the file; the lock also lingers briefly after the process is terminated).
+  Measured on the target machine with the screensaver running
+  (`已停止 1 个运行中的屏保进程` -> `已删除 C:\Windows\System32\WeatherScr.scr` ->
+  `已恢复 SCRNSAVE.EXE = "C:\Windows\System32\SRPSS.scr"`, uninstall page log).
+- Uninstall no longer reports a failure when the Add/Remove Programs key does not
+  exist: `RegDeleteKey` returning `ERROR_FILE_NOT_FOUND` is now treated as success
+  (`已删除 Add/Remove Programs 项`), matching the idempotent intent of the step.
 
 ## [1.0.0] - 2026-10-18
 

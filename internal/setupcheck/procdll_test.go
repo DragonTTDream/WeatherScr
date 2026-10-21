@@ -40,6 +40,15 @@ var nonUser32Exports = map[string]string{
 	// kernel32.dll
 	"GetModuleHandleW":     "kernel32",
 	"GetSystemPowerStatus": "kernel32",
+	// kernel32.dll（publish-uninstall-stopscr 批次：卸载前停进程 + 轮询可删，
+	// 声明在 cmd/setup/main.go 的 kernel32 句柄上，实现见 cmd/setup/procstop_windows.go）
+	"CreateToolhelp32Snapshot": "kernel32",
+	"Process32FirstW":          "kernel32",
+	"Process32NextW":           "kernel32",
+	"OpenProcess":              "kernel32",
+	"TerminateProcess":         "kernel32",
+	"CloseHandle":              "kernel32",
+	"CreateFileW":              "kernel32",
 }
 
 var (
