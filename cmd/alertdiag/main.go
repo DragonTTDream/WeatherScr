@@ -62,4 +62,11 @@ func main() {
 	if tier, mm, hrs := weather.DisasterTier(s, local); tier != weather.TierNone {
 		fmt.Printf("DISASTER tier=%d mm=%.1f hours=%d\n", tier, mm, hrs)
 	}
+	// 带伞行（态③）判据的取证：2 h 视野内第一个达门槛的 15 分钟格。
+	// 视野与门槛逐字取渲染端同一常量口径（weather/window.go: umbrellaViewHours=2、默认 0.05 mm/15min）。
+	if at, prob, mmh, ok := weather.FirstWetCell(s, local, 2, 0.05); ok {
+		fmt.Printf("UMBRELLA at=%s prob=%d mmph=%.2f\n", at.Format("15:04"), prob, mmh)
+	} else {
+		fmt.Printf("UMBRELLA none\n")
+	}
 }

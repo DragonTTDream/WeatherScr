@@ -224,16 +224,26 @@ func main() {
 
 	case scrargs.ActionPassword:
 		// /a：现代 Windows 由系统管理密码 → 直接退出，不做任何事
+		logf("SCR_ARGC=%d ARG0=%q ACTION=%s", len(args), first(args), sa.Action)
 		os.Exit(0)
 		return
 
 	case scrargs.ActionHelp:
+		logf("SCR_ARGC=%d ARG0=%q ACTION=%s", len(args), first(args), sa.Action)
 		usage()
 		os.Exit(0)
 		return
 
 	case scrargs.ActionUnknown:
-		// 规范：无法识别 → 立即退出，不弹窗不打印（协议表）
+		// 规范：无法识别 → 立即退出，不弹窗不打印（协议表）。
+		//
+		// 带外取证例外（2026-10-22 实机取证）：这条路径此前是**完全无声**的，
+		// 于是"进程不见了 + 零日志"与"启动失败 / argv 畸形 / 秒退"三种情况
+		// 在现场完全分不开（实测：tasklist 20 次全空、三处日志全零行）。
+		// 这里只往**标记文件开启的日志**里写一行：不弹窗、不打印 stdout、
+		// 不改协议行为 —— 生产态（无 scr.log / scr.debug / 临时目录标记）
+		// 下 dbgLogLine 直接 return，一个字节都不落。
+		logf("SCR_ARGC=%d ARG0=%q ACTION=%s", len(args), first(args), sa.Action)
 		os.Exit(0)
 		return
 	}
@@ -272,17 +282,42 @@ func logf(format string, args ...any) {
 var dbgLog *os.File
 var dbgOnce sync.Once
 
-// dbgLogLine 启用时把一行追加写进 exe 同目录的 scr_run.log 并立刻 Sync。
+// tempLogMarkerName = 临时目录标记文件名（第三个开关）。
+//
+// 为什么要有它（实机取证 2026-10-22）：exe 同目录的两个标记（scr.debug / scr.log）
+// 对装在 `C:\Program Files\WeatherScr` 与 `C:\Windows\System32` 的产物，
+// 都要跨过 ACL/完整性级别这道墙才能落 `scr_run.log`；取证路径一旦依赖系统目录写入，
+// "拿不到日志"与"写不进去"就分不开。临时目录标记把取证与安装位置解耦。
+const tempLogMarkerName = "WeatherScr-scr.log"
+
+// tempLogEnabled 临时目录里有没有标记文件。
+func tempLogEnabled() bool {
+	_, err := os.Stat(filepath.Join(os.TempDir(), tempLogMarkerName))
+	return err == nil
+}
+
+// dbgLogPath 决定日志落点（纯函数，钉死单测可测）：
+//   - 临时目录标记在 ⇒ 落临时目录（与安装位置、ACL 无关）；
+//   - 否则 exe 同目录（scr.debug / scr.log 的老口径）。
+func dbgLogPath(exeDir, tempDir string, useTemp bool) string {
+	if useTemp {
+		return filepath.Join(tempDir, "WeatherScr-scr_run.log")
+	}
+	return filepath.Join(exeDir, "scr_run.log")
+}
+
+// dbgLogLine 启用时把一行追加写进日志文件并立刻 Sync。
 func dbgLogLine(line string) {
 	dbgOnce.Do(func() {
-		if !scrDebug() && !scrLogOnly() {
+		useTemp := tempLogEnabled()
+		if !useTemp && !scrDebug() && !scrLogOnly() {
 			return
 		}
 		exe, err := os.Executable()
 		if err != nil {
 			return
 		}
-		f, err := os.OpenFile(filepath.Join(filepath.Dir(exe), "scr_run.log"),
+		f, err := os.OpenFile(dbgLogPath(filepath.Dir(exe), os.TempDir(), useTemp),
 			os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o666)
 		if err != nil {
 			return
@@ -1192,6 +1227,14 @@ func advanceAlertEval(cfg config.Config, s *weather.Sample, now time.Time) weath
 	}
 	e := weather.Evaluate(s, local, alertMinMM(cfg), alertDiag.hyst)
 	alertDiag.eval, alertDiag.have = e, true
+	// 带外取证（2026-10-22 实机）：提醒的判定过程此前在日志里**一行都没有**——
+	// 实测 5928 行进程内日志里只有 SCR_WEATHER=class=rain，画面亮了、为什么亮、
+	// 为什么不亮，命令行侧完全测不到（R-14「带外可观测是硬需求」：只在 GUI 里
+	// 取得到的信息 = 不存在）。每个采样周期（= 一次取数）落一行判据现场。
+	// 注：这行只在标记文件开启的日志里存在，生产态零字节。
+	logf("ALERTDIAG avail=%v on=%v tier=%d disaster=%v daily=%v prob=%d mmph=%.2f mm=%.1f hours=%d slots=%d min15=%d",
+		e.Available, e.On, e.Tier, e.Disaster, e.Daily, e.Prob, e.MMPerH, e.MM, e.Hours,
+		len(s.HourlyTime), s.Min15N)
 	return e
 }
 

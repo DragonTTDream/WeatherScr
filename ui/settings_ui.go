@@ -799,16 +799,42 @@ func (p *SettingsPanel) Candidate(i int) (geo.Place, bool) {
 	return p.locPlaces[i], true
 }
 
+// withCountry 把国家名并进显示地名（实机反馈"地名的国籍没了"，2026-10-22）。
+//
+// 口径：
+//   - 任一侧为空 ⇒ 原样返回（不凭空造国籍）；
+//   - 名字里已含国家名 ⇒ 原样返回（不重复，`Hangzhou, China` 不会变成 `Hangzhou, China, China`）；
+//   - 名字含中日韩文字 ⇒ 用「·」连接（`自流井区·中国`），拉丁文用「, 」（`Ziliujing, China`）。
+//
+// 只作用于**设置面板选点时写下的显示名**；屏保画面按裁决 B 不显示完整路径，
+// 完整路径（含州/省/市/区）只在设置面板里显示。
+func withCountry(name, country string) string {
+	if name == "" || country == "" {
+		return name
+	}
+	if strings.Contains(name, country) {
+		return name
+	}
+	sep := ", "
+	for _, r := range name {
+		if r >= 0x2E80 && r <= 0x9FFF {
+			sep = "·"
+			break
+		}
+	}
+	return name + sep + country
+}
+
 // SetPickedLocation 把选中的候选写进模型（坐标 + 中英文显示名）。
 func (p *SettingsPanel) SetPickedLocation(pl geo.Place) {
 	m := p.m
 	m.LocationLat, m.LocationLon = pl.Lat, pl.Lon
-	m.LocationNameEn = pl.Name
+	m.LocationNameEn = withCountry(pl.Name, pl.Country)
 	if pl.Source == "nominatim" {
-		m.LocationNameZh = pl.Name
+		m.LocationNameZh = withCountry(pl.Name, pl.Country)
 	}
 	if m.LocationNameZh == "" {
-		m.LocationNameZh = pl.Name
+		m.LocationNameZh = withCountry(pl.Name, pl.Country)
 	}
 	// 显示名跟随当前语言选择
 	if m.DisplayLanguage == "zh" {
