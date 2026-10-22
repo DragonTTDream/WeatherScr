@@ -671,7 +671,12 @@ func run() {
 		w := new(app.Window)
 		w.Option(
 			app.Title("WeatherScr"),
-			app.Fullscreen.Option(),
+			// 不申请 gioui 的 Fullscreen：它在 Windows 上 = 最大化显示态
+			// （app/os_windows.go:921-923 用 SW_SHOWMAXIMIZED），Win32 把最大化
+			// 窗口钳到工作区 ⇒ 底部任务栏那条 40 px 露出（实机取证：截图
+			// y=1880–1919 纯白、帧日志 size=1080x1880 共 400 帧）。
+			// 铺满由 applySaverStyle 独占：WS_POPUP|WS_VISIBLE + SW_SHOWNORMAL +
+			// SetWindowPos(HWND_TOPMOST, 整块 rcMonitor)。见 foreground_windows.go 头部。
 			app.Decorated(false),
 		)
 
@@ -931,7 +936,7 @@ func drainInput(gtx layout.Context, st *inputState, nPointer, nKey *int) bool {
 			continue
 		}
 		*nPointer++
-		fmt.Printf("SCR_PTR kind=%s pos=%.0f,%.0f\n", pe.Kind, pe.Position.X, pe.Position.Y)
+		logf("SCR_PTR kind=%s pos=%.0f,%.0f\n", pe.Kind, pe.Position.X, pe.Position.Y)
 		switch pe.Kind {
 		case pointer.Press:
 			if st.pressExit(pe.Buttons) {
@@ -959,25 +964,25 @@ func drainInput(gtx layout.Context, st *inputState, nPointer, nKey *int) bool {
 		if ke.Name == key.NameEscape || ke.Name == "Q" {
 			// 实测：DEBUG 下退出只保留 Esc（Ctrl+C 是进程级，天然可用）
 			if ke.Name == key.NameEscape || !st.debug {
-				fmt.Printf("SCR_KEY=%s 退出\n", ke.Name)
+				logf("SCR_KEY=%s 退出\n", ke.Name)
 				return true
 			}
-			fmt.Printf("SCR_KEY=%s DEBUG 下不退出\n", ke.Name)
+			logf("SCR_KEY=%s DEBUG 下不退出\n", ke.Name)
 			continue
 		}
 		// 热键层（指定 Z X C Space ↑ ↓ PageUp PageDown Home End；
 		// 上游键策略还含 ←/→ 换轨道，偏差已记入工程记录。
 		// 本复刻没有幻灯片 → 无对应功能：打印一行后**不退出**。
 		if isHotkey(ke.Name) {
-			fmt.Printf("SCR_KEY=%s 无对应功能\n", ke.Name)
+			logf("SCR_KEY=%s 无对应功能\n", ke.Name)
 			continue
 		}
 		// 其余任意键一律退出（上游 :378-379）；DEBUG 下不退出
 		if st.debug {
-			fmt.Printf("SCR_KEY=%s DEBUG 下不退出(其余键)\n", ke.Name)
+			logf("SCR_KEY=%s DEBUG 下不退出(其余键)\n", ke.Name)
 			continue
 		}
-		fmt.Printf("SCR_KEY=%s 退出(其余键)\n", ke.Name)
+		logf("SCR_KEY=%s 退出(其余键)\n", ke.Name)
 		return true
 	}
 	// 焦点诊断：窗口没有 OS 焦点时按键不会路由过来
@@ -987,7 +992,7 @@ func drainInput(gtx layout.Context, st *inputState, nPointer, nKey *int) bool {
 			break
 		}
 		if fe, isF := ev.(key.FocusEvent); isF {
-			fmt.Printf("SCR_FOCUS=%v\n", fe.Focus)
+			logf("SCR_FOCUS=%v\n", fe.Focus)
 		}
 	}
 	return false
@@ -1416,6 +1421,8 @@ func refresher(cfg config.Config, st *weatherState) {
 		c := &weather.Client{
 			HTTP:    &http.Client{Timeout: timeout},
 			BaseURL: cfg.WeatherBaseURL,
+			// 带外可观测：每次取数把完整 URL 打进日志（实机取证"走没走代理"）。
+			OnRequest: func(u string) { logf("WXURL=%s", u) },
 		}
 		// 设置里"搜索选点"存过坐标 ⇒ 运行时零地理编码请求。
 		// 判据用 (0,0) 之外的坐标：赤道/本初子午线交点在海里，不是合法城镇。
@@ -1424,7 +1431,9 @@ func refresher(cfg config.Config, st *weatherState) {
 		}
 		s, err := c.Fetch(displayLocation(cfg))
 		if err != nil {
-			fmt.Printf("SCR_FETCH_FAIL=%v base=%q\n", err, cfg.WeatherBaseURL)
+			// 走文件日志：GUI 子系统下 fmt.Printf 的 stdout 是空的
+			// （bench/AGENTS.md 第 4 条；2026-10-22 W14 实机就因此看不见失败）。
+			logf("SCR_FETCH_FAIL=%v base=%q", err, cfg.WeatherBaseURL)
 			if g := lastGood(weather.NormalizeLocationKey(cfg.Location)); g != nil {
 				st.set(g)
 			}
@@ -1433,14 +1442,14 @@ func refresher(cfg config.Config, st *weatherState) {
 			cache := weather.LoadCache(cachePath())
 			cache[key] = *s
 			if err := weather.SaveCache(cachePath(), cache); err != nil {
-				fmt.Printf("SCR_CACHE_SAVE_FAIL=%v\n", err)
+				logf("SCR_CACHE_SAVE_FAIL=%v", err)
 			}
 			st.set(s)
-			fmt.Printf("SCR_FETCH_OK=%s %.1f°C code=%d\n", s.Condition, deref(s.Temperature), s.WeatherCode)
-			// b-alert-v1 第 4 步：数据闸门带外日志（逐字格式）。
+			logf("SCR_FETCH_OK=%s %.1f°C code=%d", s.Condition, deref(s.Temperature), s.WeatherCode)
+			// b-alert-v1 第 4 步：数据闸门带外日志（逐字格式，走 logf 才进文件）。
 			// PROB_N < 12（灾害层官方配对里最长的窗口，weather.officialMaxWindowHours）
 			// ⇒ 判据置「数据不可用」态（见 weather.Evaluate）。
-			log.Printf("alertdiag: HOURLY_SLOTS=%d PROB_N=%d MM_N=%d MIN15_N=%d",
+			logf("ALERTDIAG_SLOTS HOURLY=%d PROB_N=%d MM_N=%d MIN15_N=%d",
 				len(s.HourlyTime), s.ProbN, s.MMN, s.Min15N)
 			// 判据 + 滞回：一个采样周期 = 这一次取数。
 			advanceAlertEval(cfg, s, time.Now())

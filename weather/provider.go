@@ -227,6 +227,11 @@ type Client struct {
 	HTTP    *http.Client
 	BaseURL string
 
+	// OnRequest 非空时，每次发起 HTTP 请求前把**完整 URL** 交出去。
+	// 用途：带外可观测（R-14）——实机取证要能指名"这次取数走没走代理"；
+	// 没有这一行日志就只能靠服务端计数反推（2026-10-22 W13 正是卡在这）。
+	OnRequest func(url string)
+
 	// coordsMu/coords = 城市 → (lat, lon) 缓存。
 	// 对齐上游 weather/open_meteo_provider.py:112
 	// `self._cached_coords: Dict[str, Tuple[float, float]]  # City → (lat, lon)`。
@@ -270,6 +275,9 @@ func (c *Client) wxURL() string {
 
 func (c *Client) get(u string, params url.Values) ([]byte, error) {
 	full := u + "?" + params.Encode()
+	if c.OnRequest != nil {
+		c.OnRequest(full) // 带外可观测：每次取数的完整 URL 落到调用方的日志里
+	}
 	resp, err := c.client().Get(full)
 	if err != nil {
 		return nil, err

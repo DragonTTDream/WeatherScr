@@ -95,14 +95,8 @@ func winPID(hwnd uintptr) uint32 {
 }
 
 const (
-	// 指定的常量，逐字使用。
-	// WS_POPUP 按口径取 0x00000000（= WS_OVERLAPPED，
-	// gioui app/internal/windows/windows.go:397。
-	// 判据口径是"WS_OVERLAPPEDWINDOW 位为 0"，本值满足该判据。
-	// 注：Microsoft winuser.h 里 WS_POPUP = 0x80000000；差异已记入工程记录。
-	wsPopup   = 0x00000000
-	wsVisible = 0x10000000
-
+	// WS_POPUP / WS_VISIBLE / swShow* / hwndTop* 的官方值与口径改判记录
+	// 已下沉到可移植层 covermath.go（闸门单测钉死在那边跑）。
 	wsExTopmost    = 0x00000008
 	wsExToolwindow = 0x00000080
 	wsExAppwindow  = 0x00040000 // 必须清掉（实测 EXSTYLE=00040100 含它）
@@ -112,19 +106,8 @@ const (
 	swpNoZorder     = 0x0040
 	swpNoActivate   = 0x0010
 	swpFrameChanged = 0x0020
-	swpShowWindow   = 0x0040
-
-	swShow   = 5
-	swHide   = 0
-	swShowNa = 8 // 显示但不激活
 
 	monitorDefaultToNearest = 2
-
-	// HWND_TOPMOST = -1、HWND_TOP = 0
-	// 来源：gioui app/internal/windows/windows.go:211-213。
-	// 旧实现写的是 uintptr(0)（= HWND_TOP），所以实测 topmost=false。
-	hwndTopmost = ^uintptr(0)
-	hwndTop     = uintptr(0)
 
 	// GWL_STYLE = -16、GWL_EXSTYLE = -20、GWL_HWNDPARENT = -8
 	// 来源：winuser.h（Microsoft docs SetWindowLongA 参数表）；
@@ -196,10 +179,9 @@ func saverRect(hwnd uintptr, dbg bool) (x, y, w, h int32, ok bool) {
 		return
 	}
 	if dbg {
-		w4, h4 := w/4, h/4
-		x += (w - w4) / 2
-		y += (h - h4) / 2
-		w, h = w4, h4
+		// 几何口径在 covermath.go:dbgQuarterRect（纯函数，闸门单测钉死）。
+		qx, qy, qw, qh := dbgQuarterRect(x, y, w, h)
+		return qx, qy, qw, qh, qw > 0 && qh > 0
 	}
 	return
 }
@@ -227,11 +209,18 @@ var (
 // applySaverStyle 按实测顺序执行：
 //
 //	SetWindowLong(GWL_STYLE) → SetWindowLong(GWL_EXSTYLE) →
-//	SetWindowPos(insertAfter, rcMonitor, SWP_NOACTIVATE|SWP_FRAMECHANGED) →
-//	ShowWindow(SW_SHOW)
+//	ShowWindow(SW_SHOWNORMAL) →
+//	SetWindowPos(insertAfter, rcMonitor, SWP_NOACTIVATE|SWP_FRAMECHANGED|SWP_SHOWWINDOW) →
+//	ShowWindow(SW_SHOW) → SetForegroundWindow → SetFocus
 //
-// 理由：WS_EX_TOPMOST 必须经 SetWindowPos(HWND_TOPMOST) 才生效；
-// SWP_FRAMECHANGED 让样式变更立即重算非客户区。
+// 理由（2026-10-22 实机取证，b-cover-v1）：
+//   - WS_EX_TOPMOST 必须经 SetWindowPos(HWND_TOPMOST) 才生效；
+//     SWP_FRAMECHANGED 让样式变更立即重算非客户区。
+//   - gioui 的 Fullscreen 模式用 `SW_SHOWMAXIMIZED`（app/os_windows.go:921-923），
+//     Win32 的**最大化显示态**把窗口钳到工作区（实测帧日志 size=1080x1880、
+//     截图底部 y=1880–1919 共 40 px 纯白 = 任务栏）。⇒ 铺满前必须先
+//     `SW_SHOWNORMAL` 清掉最大化显示态，`SetWindowPos` 才能落到整块 rcMonitor。
+//   - 样式位 WS_POPUP 必须是真的 0x80000000（旧值 0 让窗口带边框并服从工作区）。
 //
 // **必须在窗口自己的线程上调用**（经 w.Run）。
 func applySaverStyle(hwnd uintptr, dbg bool) {
@@ -247,9 +236,11 @@ func applySaverStyle(hwnd uintptr, dbg bool) {
 	logf("COVER=step setWindowLong(style) 完成")
 	setWindowLong(hwnd, gwlExstyle, exstyle)
 	logf("COVER=step setWindowLong(exstyle) 完成")
+	procShowWindow.Call(hwnd, swShowNormal) // 清最大化/最小化显示态（同线程）
+	logf("COVER=step shownormal 完成")
 	procSetWindowPos.Call(hwnd, insert,
 		uintptr(x), uintptr(y), uintptr(w), uintptr(h),
-		swpNoActivate|swpFrameChanged)
+		swpNoActivate|swpFrameChanged|swpShowWindow)
 	logf("COVER=setwindowpos_done %dx%d", w, h)
 	procShowWindow.Call(hwnd, swShow) // 同线程调用（w.Run 内部），不阻塞
 	logf("COVER=showwindow_done")

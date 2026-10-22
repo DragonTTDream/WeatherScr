@@ -473,9 +473,100 @@ func drawPanelRow(gtx layout.Context, size image.Point, a *Alert, s *Screen, cy 
 // panelBottom = 天气面板矩形的下边界（像素）；行心 = panelBottom-52+Alert.YOff。
 //
 // 这就是出厂预警画面的全部绘制代码（原 fusion3 分支，改名 panelrow 胶囊，绘制逐字未动）。
+//
+// 例外（2026-10-22 用户拍板，plan b-alert-v2e）：**态④「数据不可用」不占整行胶囊**
+// —— 它不是预警，是盲区提示 ⇒ 改画左下角小信号（`drawCornerBadge`，ping 风格）。
+// 态①②③ 的胶囊版式逐字不动。
 func DrawAlertPanelRow(gtx layout.Context, size image.Point, a *Alert, s *Screen, panelBottom int) {
 	if !a.Visible() {
 		return
 	}
+	if !usesPanelRow(a) {
+		drawCornerBadge(gtx, size, a, s)
+		return
+	}
 	drawPanelRow(gtx, size, a, s, panelBottom-52+a.YOff)
+}
+
+// ── 态④ 左下角小信号（plan b-alert-v2e）──
+//
+// 版式语言取自游戏里的网络异常/ping 高指示：三段递高信号条 + 极短文字 + 极小圆角暗底。
+// 与胶囊行的差别（逐条对应用户要求"简易的标识"）：
+//   无细下划线、无光晕、不呼吸（恒定）、不居中、不随 YOff 动、字号降到 Sp(18)。
+const (
+	badgeMarginX = 28  // 左边距（px）
+	badgeMarginY = 28  // 底边距（px）
+	badgeBarW    = 7   // 信号条宽
+	badgeBarGap  = 3   // 信号条间距
+	badgeBarH3   = 14  // 最高一格的高（三格 = 6/10/14，底对齐）
+	badgePadX    = 10  // 盒内左右留白
+	badgePadY    = 7   // 盒内上下留白
+	badgeSp      = 18  // 文字字号
+)
+
+// usesPanelRow = 这个态走不走出厂胶囊行。态④ = false（走左下角小信号）。
+func usesPanelRow(a *Alert) bool { return a != nil && a.State != AlertUnavailable }
+
+// BadgeText = 小信号文字。语言口径与 Text 逐字一致：只有恰好 "zh" 走中文，其余一律英文。
+func BadgeText(lang string) string {
+	if lang == "zh" {
+		return "无数据"
+	}
+	return "No data"
+}
+
+// badgeRect = 小信号盒（左下角固定边距）。退化入参返回零矩形（调用方必须自查 Dx/Dy）。
+// 钳制（钉死单测）：盒不越出视口 ⇒ 小窗口/超大盒都不画到屏幕外。
+func badgeRect(size image.Point, w, h int) image.Rectangle {
+	if size.X <= 0 || size.Y <= 0 || w <= 0 || h <= 0 {
+		return image.Rectangle{}
+	}
+	minX, maxX := badgeMarginX, badgeMarginX+w
+	if maxX > size.X {
+		maxX = size.X
+	}
+	minY, maxY := size.Y-badgeMarginY-h, size.Y-badgeMarginY
+	if minY < 0 {
+		minY = 0
+		maxY = h
+		if maxY > size.Y {
+			maxY = size.Y
+		}
+	}
+	if maxX <= minX || maxY <= minY {
+		return image.Rectangle{}
+	}
+	return image.Rect(minX, minY, maxX, maxY)
+}
+
+// drawCornerBadge 画左下角小信号。灰 {128,128,132} 恒定（与态④ 色块同色），
+// 左格亮（A240）、右两格暗（A110）⇒ 读作"信号只有一格"= 取数异常。
+func drawCornerBadge(gtx layout.Context, size image.Point, a *Alert, s *Screen) {
+	lbl := s.label(BadgeText(a.Lang), unit.Sp(badgeSp), alertWhite, text.Middle)
+	d := measureText(gtx, lbl)
+	tw, th := d.Size.X, d.Size.Y
+	if tw <= 0 || th <= 0 {
+		return
+	}
+	barsW := 3*badgeBarW + 2*badgeBarGap
+	bw := badgePadX + barsW + 8 + tw + badgePadX
+	bh := max(th, badgeBarH3) + 2*badgePadY
+	box := badgeRect(size, bw, bh)
+	if box.Dx() <= 0 || box.Dy() <= 0 {
+		return
+	}
+	rrectFill(gtx, box, 10, color.NRGBA{R: 12, G: 12, B: 16, A: 120})
+	heights := [3]int{6, 10, badgeBarH3}
+	x0 := box.Min.X + badgePadX
+	yb := box.Min.Y + (box.Dy()-badgeBarH3)/2 + badgeBarH3 // 底对齐基线
+	for i := 0; i < 3; i++ {
+		al := uint8(110)
+		if i == 0 {
+			al = 240
+		}
+		x := x0 + i*(badgeBarW+badgeBarGap)
+		rrectFill(gtx, image.Rect(x, yb-heights[i], x+badgeBarW, yb), 2,
+			color.NRGBA{R: 128, G: 128, B: 132, A: al})
+	}
+	inPx(gtx, PxRect{X: x0 + barsW + 8, Y: box.Min.Y + (box.Dy()-th)/2, W: tw, H: th}, lbl)
 }
