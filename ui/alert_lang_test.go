@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 )
 
 // 批次 b-alert-v1 第 9 步的三态文案（规格逐字样例，spec/b-alert-v1.md:33-38）：
@@ -137,5 +138,72 @@ func TestAlertUnavailableColor(t *testing.T) {
 	red := (&Alert{State: AlertDisaster, TierVal: 4}).TierColor()
 	if !(red.R == 217 && red.G == 38 && red.B == 38) {
 		t.Errorf("红档色块 = %v，期望 {217,38,38}", red)
+	}
+}
+
+// 态①（中国区官方信号）文案逐字钉死（spec/b-alert-v2.md 第 6 步）：
+//
+//	zh `暴雨 黄色预警 · 22:44 发布`   en `Rainstorm Yellow · issued 22:44`
+//
+// 起因（2026-10-22 用户问）：「当前语言选的不是英文吗？为什么预警信息给的是中文」
+// —— 四态里只有态① 此前**没有任何单测**，语言口径全靠代码注释兜。
+func TestAlertTextOfficialVerbatim(t *testing.T) {
+	a := &Alert{State: AlertOfficial, OfficialTypeZh: "暴雨", OfficialTypeEn: "Rainstorm",
+		OfficialLevel: 2, OfficialIssued: at(22, 44)}
+	if got, want := a.Text("zh"), "暴雨 黄色预警 · 22:44 发布"; got != want {
+		t.Errorf("官方 zh = %q，期望逐字 %q", got, want)
+	}
+	if got, want := a.Text("en"), "Rainstorm Yellow · issued 22:44"; got != want {
+		t.Errorf("官方 en = %q，期望逐字 %q", got, want)
+	}
+	// 等级双语言逐字（1=蓝 2=黄 3=橙 4=红）
+	wantZh := map[int]string{1: "蓝色", 2: "黄色", 3: "橙色", 4: "红色"}
+	wantEn := map[int]string{1: "Blue", 2: "Yellow", 3: "Orange", 4: "Red"}
+	for lv := 1; lv <= 4; lv++ {
+		if got := officialLevelZh(lv); got != wantZh[lv] {
+			t.Errorf("officialLevelZh(%d) = %q，期望 %q", lv, got, wantZh[lv])
+		}
+		if got := officialLevelEn(lv); got != wantEn[lv] {
+			t.Errorf("officialLevelEn(%d) = %q，期望 %q", lv, got, wantEn[lv])
+		}
+	}
+	// 官方英文名缺失（实网标题解析不出英文类型）时，en 行**不得回落成中文**：
+	// 只能是缺名的英文行，不能出现汉字。
+	e := &Alert{State: AlertOfficial, OfficialTypeZh: "雷电", OfficialTypeEn: "",
+		OfficialLevel: 3, OfficialIssued: at(9, 5)}
+	line := e.Text("en")
+	for _, r := range line {
+		if unicode.Is(unicode.Han, r) {
+			t.Fatalf("官方英文名缺失时 en 行出现汉字 %q：整行 %q", r, line)
+		}
+	}
+}
+
+// 语言口径总闸：**任何态在 lang=en / 空串 / 大小写变体 / zh-CN 下都不得出现汉字**。
+// 口径逐字（alert.go:129-130 与 :261）：只有恰好 "zh" 走中文，其余一律英文。
+func TestAlertTextEnHasNoHan(t *testing.T) {
+	states := []*Alert{
+		{State: AlertDaily, Pct: 45, MMPerH: 0.6, Start: at(22, 15)},
+		{State: AlertDisaster, TierVal: 3, MM: 62, DisasterHours: 12},
+		{State: AlertUnavailable, AsOf: at(21, 11)},
+		{State: AlertOfficial, OfficialTypeZh: "暴雨", OfficialTypeEn: "Rainstorm",
+			OfficialLevel: 4, OfficialIssued: at(22, 44)},
+	}
+	for _, a := range states {
+		for _, lang := range []string{"en", "", "EN", "En", "zh-CN", "zh_CN", "zh-Hans"} {
+			got := a.Text(lang)
+			if got == "" {
+				t.Errorf("态 %d 在 lang=%q 下文案为空", a.State, lang)
+			}
+			for _, r := range got {
+				if unicode.Is(unicode.Han, r) {
+					t.Fatalf("态 %d 在 lang=%q 下出现汉字 %q：整行 %q", a.State, lang, r, got)
+				}
+			}
+		}
+		// 反向：恰好 "zh" 必须出中文（防把中文全删掉的"假绿"）
+		if !strings.ContainsFunc(a.Text("zh"), func(r rune) bool { return unicode.Is(unicode.Han, r) }) {
+			t.Errorf("态 %d 在 lang=zh 下没有汉字：%q", a.State, a.Text("zh"))
+		}
 	}
 }
