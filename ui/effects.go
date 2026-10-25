@@ -1817,6 +1817,11 @@ func (f *Field) Step(dt time.Duration, w, h int) {
 	f.sw = w     // 屏宽：云/雾进场落位的半宽分母
 	f.frameIdx++ // 启动期帧计数（C3 BootCap 的输入）
 
+	// 横屏云宽复查（缺陷 L1/L4，spec/b4-landscape.md:18-19）：建场（NewField）时屏未知
+	// ⇒ 云按竖屏目标 1080 口径反解（480–529 px）；同一批云到了 1920 横屏就是
+	// 0.25–0.28 W 的小云（横屏基线"最窄云 多云 207 px"同源，troubleshooting/横屏适配缺陷.md:13）。
+	f.enforceLandscapeCloudWidth()
+
 	// fps 自适应测量：以传入的 dt 累计出"最近 2 秒"实测帧率
 	// （dt 即调用方实测的帧间隔；生产路径 main.go 传 time.Since(last)）。
 	// 窗口每累计满 2 秒结算一次并调整活跃粒子数。
@@ -2338,6 +2343,39 @@ func bandWidthPx(w int) float64 {
 	return t
 }
 
+// landscapeCloudWidthRangePx 横屏云宽区间（缺陷 L1/L4，spec/b4-landscape.md:18-19）：
+// 云宽走 kinetics 的屏宽分制口径（下限 0.444W、间隙 0.0194W、同带 ≤2 朵，
+// evidence/p8-numbers-20261023.md:11-15），并把"屏幕左右边距 = 间隙同口径"一起留出
+// ⇒ 云永不铺满整屏（L1 根因是单片云铺满 1920 宽）：
+//
+//	lo = ceil(0.444·W) = kinetics 下限            ⇒ @1920 = 853 px
+//	hi = min(kinetics FloorHi = (W − gap)/2, (W − 3·gap)/2) = (W − 3·gap)/2  ⇒ @1920 = 904 px
+//	     （3·gap = 同带 2 朵之间的一条间隙 + 左右两条边距，均 0.0194W 同口径）
+//
+// 竖屏不走这条口径（竖屏云带宽 = bandWidthPx 逐字不变，480/529/21 @1080 不动）。
+func landscapeCloudWidthRangePx(w int) (lo, hi int) {
+	_, lo, gap := kinetics.BandCapacity(w)
+	hi = kinetics.FloorHi(w)
+	if cap := (w - 3*gap) / 2; cap < hi {
+		hi = cap
+	}
+	if hi < lo {
+		hi = lo
+	}
+	return lo, hi
+}
+
+// bandWidthFor 云带宽度（横屏 = kinetics 口径的区间上限，竖屏 = bandWidthPx 逐字）。
+// 双朝向判定 = w > h（spec/b4-landscape.md:34），屏高由调用方传入
+// （bandPlace 有 h；bandSpan 走 Field 每帧刷新的 f.sh，见 Step）。
+func (f *Field) bandWidthFor(w, h int) float64 {
+	if IsLandscape(w, h) {
+		_, hi := landscapeCloudWidthRangePx(w)
+		return float64(hi)
+	}
+	return bandWidthPx(w)
+}
+
 // bandSpan 所有云带共用的横向循环周期（像素）。
 //
 // P6 设计第 3 条（常量式）：span = w + 2·T，T = bandWidthPx(w)。
@@ -2350,7 +2388,8 @@ func (f *Field) bandSpan(w int) float64 {
 	if len(f.sp.cloudSz) == 0 {
 		return float64(w)
 	}
-	return float64(w) + 2*bandWidthPx(w)
+	// 周期公式 span = w + 2·T 不动（P6 设计第 3 条）；T 的朝向口径见 bandWidthFor。
+	return float64(w) + 2*f.bandWidthFor(w, f.sh)
 }
 
 func (f *Field) bandPlace(i int, t float64, w, h int) (bandPlace, bool) {
@@ -2366,7 +2405,7 @@ func (f *Field) bandPlace(i int, t float64, w, h int) (bandPlace, bool) {
 	frac := float64(i) / float64(n-1)
 	// P6 设计第 2 条：等宽 T ⇒ sc = T / sz.X（bandPlace 与 drawCloudBands 两处调用点
 	// 统一这一口径），dw = sz.X × sc = T 逐带相同；高度 dh = sz.Y × sc 保精灵比例。
-	sc := bandWidthPx(w) / float64(sz.X)
+	sc := f.bandWidthFor(w, h) / float64(sz.X)
 	dw := float64(sz.X) * sc
 	// P6 设计第 3 条：相位与周期**共用同一个 span = w + 2·T**（旧逐带 spanI 删除）。
 	span := f.bandSpan(w)
@@ -2411,6 +2450,39 @@ func (f *Field) bandPlace(i int, t float64, w, h int) (bandPlace, bool) {
 		x: x, y: float64(h) * (top + spread*frac),
 		dw: dw, dh: float64(sz.Y) * sc, mirror: i%2 == 1,
 	}, true
+}
+
+// BandRegionPx 云带在屏幕上的纵向区间（px，含精灵高度）：面板/信息层的**带区间接口**。
+//
+// 落位逐条取 bandPlace 的**同一套几何**（绘制与本接口同源 ⇒ 版式避让测的就是画出来的东西）。
+// 无云带类别（Clear/Snow/Dust）返回 (0,0) ⇒ 调用方退化为屏高比例口径。
+// 只读口径：本函数不动带数学（bandPlace/bandSpan 的公式与常量逐字不变）。
+func (f *Field) BandRegionPx(w, h int) (top, bottom int) {
+	if w <= 0 || h <= 0 || !f.hasCloudBands() {
+		return 0, 0
+	}
+	n := f.bandCount()
+	first := true
+	for i := 0; i < n; i++ {
+		bp, ok := f.bandPlace(i, f.t, w, h)
+		if !ok {
+			return 0, 0
+		}
+		t0 := int(math.Round(bp.y))
+		b0 := int(math.Round(bp.y + bp.dh))
+		if first {
+			top, bottom = t0, b0
+			first = false
+			continue
+		}
+		if t0 < top {
+			top = t0
+		}
+		if b0 > bottom {
+			bottom = b0
+		}
+	}
+	return top, bottom
 }
 
 // drawCloudBands 在天空**上部**画大云带，给雨/雷/阴/雾四类提供云层厚度。
@@ -4179,9 +4251,46 @@ func cloudDrawWidthPx(p *particle) float64 {
 // ⇒ 逐朵屏宽**逐字落在表内区间**（抖动 scaleMul 被反解掉，不再把区间撑宽）。
 // 速度：dw 归一化 = 屏宽 px ÷ 屏宽 px（与 airHalfN 的 hw 同口径），
 // vx = cloudVxByThickness(dw) ⇒ 薄小快、厚大慢，且逐朵确定（不随机）。
+// enforceLandscapeCloudWidth 横屏在场云的宽度复查：实画宽越出横屏 kinetics 区间
+// （lo = 0.444W = 853 px @1920、hi = (W − 3×0.0194W)/2 = 904 px @1920）的云，
+// 按 sizeCloudByClass 的**同一套反解式**重解 p.sc（速度沿用 cloudVxByThickness 原式，
+// 只是随新宽度取点 ⇒ 粒子运动口径逐字不动）。落在区间内的云逐条不动。
+func (f *Field) enforceLandscapeCloudWidth() {
+	if !IsLandscape(f.sw, f.sh) {
+		return
+	}
+	lo, hi := landscapeCloudWidthRangePx(f.sw)
+	for i := range f.parts {
+		p := &f.parts[i]
+		if p.kind != pkCloud {
+			continue
+		}
+		w := cloudDrawWidthPx(p)
+		if w >= float64(lo) && w <= float64(hi) {
+			continue
+		}
+		szX := float64(cloudSpriteSz(p.spr).X)
+		if szX <= 0 || p.scaleMul <= 0 {
+			continue
+		}
+		dwPx := float64(lo) + (float64(hi)-float64(lo))*f.rng.Float64()
+		p.sc = dwPx * bandNetDiv / (szX * p.scaleMul)
+		p.vx = cloudVxByThickness(dwPx / float64(f.sw))
+		p.vxBase = p.vx
+	}
+}
+
 func (f *Field) sizeCloudByClass(p *particle) {
 	cf := cloudFormOf(f.cls)
-	dwPx := cf.wLo + (cf.wHi-cf.wLo)*f.rng.Float64()
+	lo, hi := cf.wLo, cf.wHi
+	if IsLandscape(f.sw, f.sh) {
+		// 缺陷 L1/L4（spec/b4-landscape.md:18-19）：横屏逐朵**最终显示宽度**走
+		// kinetics 的屏宽分制（下限 0.444W=853 px @1920，上限留边距 ⇒ 904 px @1920）。
+		fw, _ := screenfit.Fallback(f.sw, f.sh)
+		l, hiPx := landscapeCloudWidthRangePx(fw)
+		lo, hi = float64(l), float64(hiPx)
+	}
+	dwPx := lo + (hi-lo)*f.rng.Float64()
 	szX := float64(cloudSpriteSz(p.spr).X)
 	if szX <= 0 || p.scaleMul <= 0 {
 		return

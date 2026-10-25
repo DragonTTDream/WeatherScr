@@ -321,6 +321,10 @@ func (s *Screen) Layout(gtx layout.Context, f Frame) layout.Dimensions {
 	}
 	// 类别切换期间先画旧场（淡出中），再画新场（淡入中）
 	// ⇒ 云不会在切换那一帧整片凭空出现/消失。
+	//
+	// z 序口径（缺陷 L1，spec/b4-landscape.md:19「先云带后信息层」）：
+	// 云带/粒子场（Field.Draw）恒在时钟、天气文字**之前**提交 ⇒ gioui 立即模式下
+	// 文字层永远画在云之上，云不得盖住日期/描述行。本批只确认次序，不改带数学。
 	if f.PrevField != nil && f.Layers.on(LayerField) {
 		f.PrevField.Draw(gtx, size.X, size.Y)
 	}
@@ -344,6 +348,8 @@ func (s *Screen) Layout(gtx layout.Context, f Frame) layout.Dimensions {
 	// 出厂版式 panelrow：画在天气面板下沿之内 + 绝对屏幕坐标水平居中。
 	// 走 flex 行盒时实测 chip 中心 766 vs 屏幕中心 540，右偏 226 px。
 	if f.Layers.on(LayerAlert) {
+		// TODO(未取证)：提醒行仍走竖屏 rect 口径 —— B4 spec 只点名面板/数据行/时钟
+		// （spec/b4-landscape.md 映射表 L1–L5），横屏下的提醒行版式未取证 ⇒ 本批不动。
 		wpx := shiftY(WeatherRect.Px(size.X, size.Y), f.WeatherYOff)
 		DrawAlertPanelRow(gtx, size, f.Alert, s, panelRect(wpx, f.Panel.Margin).Max.Y)
 	}
@@ -642,11 +648,48 @@ func italic(l *material.LabelStyle) { l.Font.Style = font.Italic }
 // 键不变 ⇒ 不重排、不重 shape，直接重放录好的绘制宏。
 // 时钟的可见输入每秒只变一次（TimeLine 带秒），15 fps 下约 15 帧里
 // 有 14 帧是重放。面板底 fillPanel 仍在块外逐帧画（1–2 个 op，不在缓存范围）。
+// clockLineWidthCache 横屏时钟行宽的单条记忆（键 = 文本|字号）。
+// 时钟行的可见输入每秒才变一次（TimeLine 带秒）⇒ 单条记忆足够，15 fps 下约 15 帧里
+// 只有 1 帧真正测量一次（其余走记忆），不引入新的每帧排版成本。
+type clockLineWidthCache struct {
+	key string
+	w   int
+}
+
+var clockLineWidth clockLineWidthCache
+
+// measureClockLineWidth 用现口径字号实测一行文字的实画宽（px）。
+func (s *Screen) measureClockLineWidth(gtx layout.Context, txt string, sp int) int {
+	key := txt + "|" + strconv.Itoa(sp)
+	if clockLineWidth.key == key {
+		return clockLineWidth.w
+	}
+	d := measureText(gtx, s.label(txt, unit.Sp(sp), color.NRGBA{}, text.Middle))
+	clockLineWidth.key, clockLineWidth.w = key, d.Size.X
+	return d.Size.X
+}
+
+// clockLineSp 时钟两行的字号（px）。
+//
+// 竖屏（w ≤ h）逐字返回现口径：时间行 ClockFontSizeShown=174、日期行 WeatherFontSize=40
+// （ui/layout.go:33-34，竖屏版式测试钉死，不许变）。
+// 横屏（w > h）走 L5 封顶：字号 = min(现口径, 由 0.30W 反解的字号) ⇒ 行宽 ≤ 0.30W
+// ⇒ 1920 横屏时钟宽 ≤ 576 px（判据见 ui/landscape_layout_test.go）。
+func (s *Screen) clockLineSp(gtx layout.Context, size image.Point, timeStr, dateStr string) (int, int) {
+	if !IsLandscape(size.X, size.Y) {
+		return ClockFontSizeShown, WeatherFontSize
+	}
+	return landscapeClockFontCapPx(ClockFontSizeShown, s.measureClockLineWidth(gtx, timeStr, ClockFontSizeShown), size.X),
+		landscapeClockFontCapPx(WeatherFontSize, s.measureClockLineWidth(gtx, dateStr, WeatherFontSize), size.X)
+}
+
 func (s *Screen) clockBlock(gtx layout.Context, size image.Point, f Frame) {
 	timeStr := f.Clock.TimeLine(f.Now)
 	dateStr := f.Clock.DateLine(f.Now)
 
 	px := shiftY(ClockRect.Px(size.X, size.Y), f.ClockYOff)
+	// 横屏时钟字号封顶（缺陷 L5，spec/b4-landscape.md:20）：竖屏逐字 = 现口径 174/40。
+	timeSp, dateSp := s.clockLineSp(gtx, size, timeStr, dateStr)
 	// 面板底画在文字之前、块定位之后。
 	// 时钟块用 clock_bg_opacity（默认 0.45，强于天气）—— 偏离上游
 	// 'clock' 块 show_background: False，理由见 PanelStyle.ClockBGOpacity
@@ -660,8 +703,8 @@ func (s *Screen) clockBlock(gtx layout.Context, size image.Point, f Frame) {
 			Spacing:   layout.SpaceEvenly,
 		}.Layout(gtx,
 			// 时间行、日期行都走阴影；偏移随字号走
-			layout.Rigid(s.shadowed(f.Panel, unit.Sp(ClockFontSizeShown), s.rowText(timeStr, unit.Sp(ClockFontSizeShown), nil), f.Layers)),
-			layout.Rigid(s.shadowed(f.Panel, unit.Sp(WeatherFontSize), s.rowText(dateStr, unit.Sp(WeatherFontSize), nil), f.Layers)),
+			layout.Rigid(s.shadowed(f.Panel, unit.Sp(timeSp), s.rowText(timeStr, unit.Sp(timeSp), nil), f.Layers)),
+			layout.Rigid(s.shadowed(f.Panel, unit.Sp(dateSp), s.rowText(dateStr, unit.Sp(dateSp), nil), f.Layers)),
 		)
 	}
 	key := textCacheKeyBase(gtx, px, f)
@@ -718,6 +761,25 @@ func (s *Screen) weatherTextColumn(f Frame, temp string) layout.Widget {
 // ui/textcache.go 的绘制缓存：键 = 地名/条件/温度/预报/详情三项文本 +
 // 落点/度量/字色/阴影。天气数据默认一分钟刷新一次 ⇒ 稳态下每帧都是重放。
 // 面板底 fillPanel 仍在块外逐帧画，不在缓存范围。
+// weatherPxRect 天气面板矩形（双朝向口径，缺陷 L2/L3）。
+//
+// 竖屏（w ≤ h）：逐字 = WeatherRect.Px + 布局偏移（现有竖屏版式测试钉死 29/1019/1021/558 @1080×1920）。
+// 横屏（w > h）：landscapePanelPx —— 顶沿 = 云带下沿 + 间隙（云带下沿从 Field 的带区间
+// 接口 BandRegionPx 取实际值），左右边距 = 0.0194W（= 37 px @1920），
+// 三列间距 = 面板宽/3 ⇒ 与 W 同分制（rowDetails 的 cellW = rowW/3 直接跟着变）。
+func (s *Screen) weatherPxRect(size image.Point, f Frame) PxRect {
+	if !IsLandscape(size.X, size.Y) {
+		return shiftY(WeatherRect.Px(size.X, size.Y), f.WeatherYOff)
+	}
+	bandBottom := 0
+	if f.Field != nil {
+		_, bandBottom = f.Field.BandRegionPx(size.X, size.Y)
+	}
+	px := landscapePanelPx(size.X, size.Y, bandBottom)
+	px.Y += f.WeatherYOff
+	return px
+}
+
 func (s *Screen) weatherBlock(gtx layout.Context, size image.Point, f Frame) {
 	w := f.Weather
 	if w == nil {
@@ -728,7 +790,7 @@ func (s *Screen) weatherBlock(gtx layout.Context, size image.Point, f Frame) {
 		temp = formatTemp(*w.Temperature)
 	}
 
-	px := shiftY(WeatherRect.Px(size.X, size.Y), f.WeatherYOff)
+	px := s.weatherPxRect(size, f)
 	// 面板底画在文字之前、块定位之后。
 	// 天气块沿用上游 bg_opacity 0.3。
 	fillPanel(gtx, panelRect(px, f.Panel.Margin), f.Panel, f.Panel.BGOpacity)
