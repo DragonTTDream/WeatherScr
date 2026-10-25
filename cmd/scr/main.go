@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -666,11 +667,19 @@ func run() {
 	if dbg {
 		logf("DBG=SCR_DEBUG=1 生效：1/4 尺寸居中、不置顶、不隐任务栏、输入不退出")
 	}
+	// P5b 测量件开关（spec/p5b-dbg.md）：WS_DBG_FRAMES=1 才启用全帧帧时长 +
+	// 每帧绘制次数日志。**未设时 dbgFrames=false ⇒ 下面每一处使用都短路**，
+	// 帧循环行为与本批次之前逐字一致（判据 4）。
+	dbgFrames := ui.WSDbgFrames()
+	if dbgFrames {
+		// 启用确认行只在开关内打（未启用时一行都不产生）。
+		logf("SCR_WSDBGFRAMES=1 生效：每帧一行 SCR_FRAME_MS，绘制计数开启")
+	}
 
 	go func() {
 		w := new(app.Window)
 		w.Option(
-			app.Title("WeatherScr"),
+			app.Title(os.Getenv("WS_TITLE")), // P7 取证用：环境变量决定窗口标题（空 = 与改前一致，不改默认行为）
 			// 不申请 gioui 的 Fullscreen：它在 Windows 上 = 最大化显示态
 			// （app/os_windows.go:921-923 用 SW_SHOWMAXIMIZED），Win32 把最大化
 			// 窗口钳到工作区 ⇒ 底部任务栏那条 40 px 露出（实机取证：截图
@@ -819,6 +828,18 @@ func run() {
 					lastActive = ac
 				}
 
+				// P3 判据 D 第 3 条：云/雾拥挤度**每 200 帧一条**（不得逐帧打，
+				// GUI 子系统下 stdout 为空 ⇒ 走 logf 文件日志，与 SCR_FETCH_* 同口径）。
+				// P6 设计第 6 条：行内**同时给两个口径** —— dualBandOnly（带-only 真落位，
+				// DriftOverlapBandOnly）与 dualIncl（含粒子云/雾团，DriftOverlapIncl），
+				// 实机复采看 dualBandOnly ≤5% / dualIncl ≤10% 两条线。
+				if frames%200 == 0 {
+					crowdLayers, crowdDualIncl := field.DriftOverlapIncl()
+					_, crowdDualBandOnly := field.DriftOverlapBandOnly()
+					logf("SCR_CROWD layers=%.2f dualBandOnly=%.1f%% dualIncl=%.1f%% active=%d",
+						crowdLayers, crowdDualBandOnly, crowdDualIncl, field.ActiveCount())
+				}
+
 				// 后台刷新换到了新天气 → 重建粒子场
 				cur := st.snapshot()
 				if cur.Class != snap.Class || cur.IsDay != snap.IsDay {
@@ -866,11 +887,26 @@ func run() {
 				// 才能知道是 CPU 侧绘制指令贵，还是 GPU 侧贴图贵。
 				fLayout := time.Since(frameStart)
 				e.Frame(gtx.Ops)
-				if frames <= 30 {
+				// P5b 测量件（spec/p5b-dbg.md 第 2 条）：`frames <= 30` 这个采样上限
+				// **只在 WS_DBG_FRAMES=1 时放开** ⇒ 追加的是 `|| dbgFrames`，
+				// 未启用时 dbgFrames=false，`frames <= 30 || false` 与改前逐字等价，
+				// 默认路径语义一字未改（判据 4）。
+				if frames <= 30 || dbgFrames {
 					logf("SCR_FRAME n=%d layout=%s frame=%s size=%dx%d active=%d",
 						frames, fLayout.Round(time.Millisecond),
 						time.Since(frameStart).Round(time.Millisecond),
 						size.X, size.Y, field.ActiveCount())
+				}
+				if dbgFrames {
+					// 每帧一行，走现成文件日志 logf（GUI 子系统下 stdout 为空，
+					// 与 SCR_CROWD / SCR_FETCH_* 同口径）。帧耗时口径 = 主循环现成的
+					// frameStart 计时（与上一行 SCR_FRAME 的 frame= 同一个量），
+					// **没有新增计时器**。draws 取本帧累计值，打印后清零。
+					draws := field.DrawCount()
+					field.ResetDrawCount()
+					logf("SCR_FRAME_MS n=%d ms=%d draws=%d active=%d w=%d h=%d",
+						frames, time.Since(frameStart).Milliseconds(),
+						draws, field.ActiveCount(), size.X, size.Y)
 				}
 				if dbg {
 					// 实测：SCR_DEBUG=1 时打 DBG= 前缀的每帧耗时
@@ -1296,10 +1332,20 @@ func nmcRequestAllowed(countryCode string) bool {
 }
 
 // officialRefresher 官方信号的独立后台循环。
+//
+// 批次 A1 S3（spec/a1-fetch-polite.md）：节奏 = officialEvery（常量逐字不动）
+// **+ OfficialJitter(seed)**，0–30 s 的**确定性**抖动（同一 seed 可复现），
+// 让官方拉取不与天气刷新钉在同一刻齐发。seed = 规范化地点名的 FNV-1a，
+// 不读时钟、不含随机源 ⇒ 同机同点每次算出同一个抖动。
 func officialRefresher(cfg config.Config) {
+	var h uint64 = 14695981039346656037
+	for _, b := range []byte(weather.NormalizeLocationKey(cfg.Location)) {
+		h = (h ^ uint64(b)) * 1099511628211
+	}
+	seed := int64(h)
 	for {
 		refreshOfficial(cfg)
-		time.Sleep(officialEvery)
+		time.Sleep(officialEvery + weather.OfficialJitter(seed))
 	}
 }
 
@@ -1417,6 +1463,10 @@ func refresher(cfg config.Config, st *weatherState) {
 	if interval < time.Minute {
 		interval = time.Minute
 	}
+	// 批次 A1 S2：连续失败计数（成功即复位）。**不在本周期内重试**
+	// （用户令「请求超时就下次再请求」保持），只把下一周期拉长：
+	// 阶梯 = weather.NextRefreshInterval，上游给了 Retry-After 时取两者较大值。
+	failCount := 0
 	for {
 		c := &weather.Client{
 			HTTP:    &http.Client{Timeout: timeout},
@@ -1430,14 +1480,24 @@ func refresher(cfg config.Config, st *weatherState) {
 			c.HasCoords, c.Lat, c.Lon = true, cfg.LocationLat, cfg.LocationLon
 		}
 		s, err := c.Fetch(displayLocation(cfg))
+		wait := interval
 		if err != nil {
+			failCount++
+			wait = weather.NextRefreshInterval(failCount, interval)
+			var pe *weather.ProviderError
+			if errors.As(err, &pe) && pe.RetryAfter > wait {
+				wait = pe.RetryAfter
+			}
 			// 走文件日志：GUI 子系统下 fmt.Printf 的 stdout 是空的
 			// （bench/AGENTS.md 第 4 条；2026-10-22 W14 实机就因此看不见失败）。
 			logf("SCR_FETCH_FAIL=%v base=%q", err, cfg.WeatherBaseURL)
 			if g := lastGood(weather.NormalizeLocationKey(cfg.Location)); g != nil {
 				st.set(g)
 			}
+			// 退避行同样走 logf（理由与 SCR_FETCH_FAIL 一致：GUI 下 stdout 为空）。
+			logf("SCR_FETCH_BACKOFF=%s FAILS=%d", wait, failCount)
 		} else {
+			failCount = 0
 			key := weather.NormalizeLocationKey(cfg.Location)
 			cache := weather.LoadCache(cachePath())
 			cache[key] = *s
@@ -1454,7 +1514,7 @@ func refresher(cfg config.Config, st *weatherState) {
 			// 判据 + 滞回：一个采样周期 = 这一次取数。
 			advanceAlertEval(cfg, s, time.Now())
 		}
-		time.Sleep(interval)
+		time.Sleep(wait)
 	}
 }
 

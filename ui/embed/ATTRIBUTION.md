@@ -16,8 +16,8 @@
 | `flashglow.png` | Kenney "Light Masks"（circle_a）— https://kenney.nl/assets/light-masks | CC0 1.0 | 转 RGBA → 512×512（源图原尺寸，LANCZOS 重采样一遍统一口径） |
 | `detail_umbrella.png` `detail_humidity.png` `detail_wind.png` | 上游 SRPSS（MIT, Copyright (c) 2026 Jayde Ver Elst / Basjohn），逐字节复制自上游 `ui/assets/weather/source/presented/`（含 `detail/` 子目录） | MIT | 无 |
 
-许可记录全文见 `../assets/LICENSE-ogazoo.txt`（OpenGameArt 两项 CC0 + NASA 公有领域）
-与 `../assets/LICENSE-kenney.txt`（Kenney，含"云/雾已被替换"的变更记录）。
+许可记录全文见 `../../assets/LICENSE-ogazoo.txt`（OpenGameArt 两项 CC0 + NASA 公有领域）
+与 `../../assets/LICENSE-kenney.txt`（Kenney，含"云/雾已被替换"的变更记录）。
 
 历史来源变更：`cloud1..9.png` 与 `fog1..4.png` 在早期版本里是 Kenney 素材
 （Background Elements 的云、Particle Pack 的 smoke_01/02/04/05），

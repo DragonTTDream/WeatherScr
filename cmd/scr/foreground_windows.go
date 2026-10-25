@@ -494,14 +494,30 @@ func coverLoop() {
 		// （= setWindowLong×2 + SetWindowPos + ShowWindow，40 次/秒），
 		// 每次窗口调用都会让 gioui 渲染线程收 WM_WINDOWPOSCHANGED 等消息重做工作。
 		// 现按注释口径：样式全量重申 500 ms 一次，topmost 单独 100 ms 一次。
+		// A3（C4 保层循环节流，spec/a3-coverloop.md 要求 1/2/3/5）：两条重申都改
+		// **检测式** —— 先读当前 style / exstyle，**只在漂移时才调 API**；稳态一轮
+		// 两条分支都不调 ⇒ 也不更新 tick ⇒ COVER= 系列日志只随真发生的 API 动作出。
+		// 节拍与阈值逐字不动：500 ms / 100 ms 阈值、!scrDbgFlag 门、Sleep 100 ms。
+		styleWant, exstyleWant, _ := saverStyle(scrDbgFlag) // 纯位运算，不调 API
 		if time.Since(styleTick) >= 500*time.Millisecond {
-			applySaverStyle(ownHwnd, scrDbgFlag)
-			styleTick = time.Now()
+			// 首轮零值语义保留（:481 注释口径）：styleTick 零值 ⇒ 首轮立即做一次全量
+			// 样式重申。走 IsZero() 短路 ⇒ **StyleDrift 判为 false 时绝不进这个调用**。
+			if styleTick.IsZero() || StyleDrift(
+				getWindowLong(ownHwnd, gwlStyle), styleWant,
+				getWindowLong(ownHwnd, gwlExstyle), exstyleWant) {
+				applySaverStyle(ownHwnd, scrDbgFlag)
+				styleTick = time.Now()
+			}
 		}
 		if time.Since(topmostTick) >= 100*time.Millisecond && !scrDbgFlag {
-			procSetWindowPos.Call(ownHwnd, hwndTopmost, 0, 0, 0, 0,
-				swpNoMove|swpNoSize|swpNoActivate)
-			topmostTick = time.Now()
+			// 阈值与门语义不变（零值 ⇒ 首轮立即判定；诊断态整条自动停 = 实机 A/B 开关）。
+			// 动作改检测式：**只在 WS_EX_TOPMOST 位缺失时**才 SetWindowPos（spec 要求 1），
+			// 漂移动作真发生后才更新 topmostTick。
+			if ExStyleDrift(getWindowLong(ownHwnd, gwlExstyle), coverExTopmost) {
+				procSetWindowPos.Call(ownHwnd, hwndTopmost, 0, 0, 0, 0,
+					swpNoMove|swpNoSize|swpNoActivate)
+				topmostTick = time.Now()
+			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

@@ -549,6 +549,13 @@ func TestSkyCacheCloudKey(t *testing.T) {
 func TestBoltRateByCode(t *testing.T) {
 	const secs = 300
 	step := time.Second / 15
+	// 批次 A2 / C1：一帧 1/15 s 的 dt 只推进追赶上限 3 步 = 0.05 s 动画时间
+	// （旧口径一帧 = dt 本身）。"300 秒模拟"量的是动画秒数 ⇒ 帧数按
+	// 300 s ÷ (3×fixedStep) = 6000 帧换算，判据区间（按秒分级）逐字不变。
+	framesPerSec := int(1.0 / (float64(fixedStepCatchup) * fixedStep.Seconds()))
+	if framesPerSec != 20 {
+		t.Fatalf("每秒帧数换算 = %d，期望 20（每帧 3×fixedStep = 0.05 s）", framesPerSec)
+	}
 	type tier struct {
 		code         int
 		lo, hi       float64
@@ -570,7 +577,7 @@ func TestBoltRateByCode(t *testing.T) {
 		for _, seed := range []int64{20261015, 23, 11} {
 			f := NewField(effect.Thunder, true, seed)
 			f.SetWeatherCode(c.code)
-			for k := 0; k < int(secs*15); k++ {
+			for k := 0; k < secs*framesPerSec; k++ {
 				f.Step(step, PortraitW, PortraitH)
 			}
 			n := f.boltCount
@@ -604,7 +611,7 @@ func TestBoltRateByCode(t *testing.T) {
 	for _, code := range []int{1, 2, 3, 61} {
 		f := NewField(effect.Thunder, true, 20261015)
 		f.SetWeatherCode(code)
-		for k := 0; k < int(secs*15); k++ {
+		for k := 0; k < secs*framesPerSec; k++ {
 			f.Step(step, PortraitW, PortraitH)
 		}
 		t.Logf("码=%d：300 秒闪 %d 次（判据 0）", code, f.boltCount)

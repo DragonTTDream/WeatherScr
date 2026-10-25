@@ -24,7 +24,7 @@ Coordinates are the storage format. A name is only a label.
 | --- | --- | --- | --- |
 | `units` | string | `"c"` | `c` metric, `i` imperial. |
 | `refresh_minutes` | int | `1` | Refresh interval, floored at 1. Geocoding is cached, so a refresh is one request of about 1.1 kB. |
-| `fetch_timeout_seconds` | int | `5` | HTTP timeout for the forecast request. |
+| `fetch_timeout_seconds` | int | `10` | HTTP timeout for the forecast request. |
 | `weather_base_url` | string | `""` | Optional proxy base for the forecast API. Empty means `https://api.open-meteo.com/v1/forecast`. |
 
 When the forecast request fails, the newest cached sample is used, selected

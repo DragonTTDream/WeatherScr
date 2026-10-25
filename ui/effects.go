@@ -543,6 +543,7 @@ type particle struct {
 	alphaMul      float64 // ∈ [0.50, 1.00]
 	scaleMul      float64 // ∈ [0.75, 1.25]，尺寸抖动
 	mirror        bool    // 奇数索引 → 云/雾取负 X 缩放（水平镜像）
+
 }
 
 // 实例抖动区间。
@@ -682,15 +683,23 @@ var (
 func cloudFormOf(cls effect.Class) cloudForm {
 	switch cls {
 	case effect.Clear:
-		return cloudForm{wLo: 300, wHi: 600, lift: 140, aLo: 0.85, aHi: 0.95, pressTop: false, idx: cloudIdxThin}
+		// P7：本类 1 朵 ⇒ 上限 1059 px 装得下；取 420 是为守住"薄快厚慢"排序
+		// （厚档 Overcast 的下限必须 > 薄档上限，见 TestSpeedByThickness）
+		return cloudForm{wLo: 300, wHi: 420, lift: 140, aLo: 0.85, aHi: 0.95, pressTop: false, idx: cloudIdxThin}
 	case effect.PartlyCloudy:
-		return cloudForm{wLo: 300, wHi: 700, lift: 115, aLo: 0.80, aHi: 0.92, pressTop: false, idx: cloudIdxThin}
+		// P7（用户判据"最多的时候也只能首尾相连，不能重叠"）：本类 2 朵 ⇒ (1080−21)/2 = 529 px 上限
+		return cloudForm{wLo: 300, wHi: 460, lift: 115, aLo: 0.80, aHi: 0.92, pressTop: false, idx: cloudIdxThin}
 	case effect.Cloudy:
-		return cloudForm{wLo: 500, wHi: 900, lift: 45, aLo: 0.75, aHi: 0.90, pressTop: false, idx: cloudIdxMid}
+		// P7：本类 3 朵 ⇒ (1080−42)/3 = 346 px 上限（3×900 = 2700 px 是同屏不相叠的算术不可能）
+		return cloudForm{wLo: 180, wHi: 340, lift: 45, aLo: 0.75, aHi: 0.90, pressTop: false, idx: cloudIdxMid}
 	case effect.Overcast:
-		return cloudForm{wLo: 768, wHi: 1178, lift: 10, aLo: 0.85, aHi: 0.95, pressTop: true, idx: cloudIdxThick}
+		// P7：本类 2 朵 ⇒ (1080−21)/2 = 529 px 上限（原 768–1178 = 与云带同区间，两朵必叠）
+		return cloudForm{wLo: 480, wHi: 529, lift: 10, aLo: 0.85, aHi: 0.95, pressTop: true, idx: cloudIdxThick}
 	case effect.Rain, effect.Thunder:
 		return cloudForm{wLo: 768, wHi: 1178, lift: -32, aLo: 0.88, aHi: 0.96, pressTop: true, idx: cloudIdxThick}
+	case effect.Fog:
+		// P7：Fog 档 = 1 团雾 + 1 朵云 ⇒ 云 ≤ 500 px（雾团另有封顶，见 clampFogWidthPx）
+		return cloudForm{wLo: 300, wHi: 500, lift: 0, aLo: 0.92, aHi: 1.0, pressTop: false, idx: cloudIdxMid}
 	}
 	return cloudForm{wLo: 768, wHi: 1178, lift: 0, aLo: 0.92, aHi: 1.0, pressTop: false, idx: cloudIdxMid}
 }
@@ -848,11 +857,55 @@ type Field struct {
 	//
 	// 削减只影响 **Draw 的绘制数量**（parts 的前 active 个），
 	// 不改生成器（counts/spawn）与贴图（sprites）。
-	active   int     // 当前活跃粒子数 = Draw 绘制 parts[:active]
-	fpsAccum float64 // 当前测量窗累计 dt（秒）
-	fpsCount int     // 当前测量窗帧数
-	fps      float64 // 最近一次窗口实测 fps
+	active int // 当前活跃粒子数 = Draw 绘制 parts[:active]
+	// fpsAccum = 当前测量窗累计 dt。**按 time.Duration 整纳秒累加**：浮点秒累加会把
+	// 10 × 0.2 s 加到 1.9999999999999998 ⇒ "满 2 秒"那一轮要到第 11 帧才结算
+	// （实测 5 fps 连喂 30 帧只结算 2 轮）⇒ 削减轮数比"每满 2 秒一轮"少一轮。
+	// 口径不动的部分：窗口长度 2 秒、吃实测 dt、每满一轮结算一次（A2 闸门根因）。
+	fpsAccum time.Duration // 当前测量窗累计 dt（整纳秒）
+	fpsCount int           // 当前测量窗帧数
+	fps      float64       // 最近一次窗口实测 fps
+	// ---- 批次 A2 / C1：位移改固定步长 ----
+	//
+	// 旧口径：每帧位移 = vx·实测dt·speedScale ⇒ 帧时长 61↔451 ms 的抖动
+	// 直接变成位移忽大忽小（"一顿一顿"）。新口径：位移只吃 fixedStep，
+	// 实测 dt 只进累加器 acc 并按整步消费，单帧最多补 fixedStepCatchup 步。
+	acc time.Duration // 帧累加器：吃实测 dt，按 fixedStep 整步扣
+	// steps = 已推进的固定步数。t 由步数导出（t = steps × fixedStep），
+	// 云带横移因此只由步数驱动，不吃墙钟（C1 第 3 条）。
+	steps int64
+	// frameIdx = 建场以来的帧计数（C3 启动期拆开：BootCap 的输入）。
+	frameIdx int
+	// recoverStreak = 连续 fps>18 的轮数（C2 恢复滞回：满 3 轮才开始恢复，
+	// 期间任何一轮 fps≤18 把计数清零）。
+	recoverStreak int
+	// ---- P1 云/雾重叠探针（spec/p1-probe.md，只测量不改行为）----
+	//
+	// probeCount = 绘制计数器的开关，**只在探针构造路径置位**
+	// （ui/overlap_probe.go 的 NewFieldProbeCounted / SetProbeCounting）。
+	// 普通 NewField / NewFieldEntering 路径恒为 false ⇒ 绘制路径里的
+	// `if f.probeCount { f.draws++ }` 分支恒假：零行为变化，开销 = 一次布尔判。
+	//
+	// draws = 累计"贴图提交"次数：一个 `精灵.Add(gtx.Ops)` + `paint.PaintOp{}.Add`
+	// 组合算 1 次（计数点逐处见 out/notes-p1-probe.md 的 文件:行 清单）。
+	probeCount bool
+	draws      int
 }
+
+// fixedStep 固定步长（C1 第 1 条）：位移的唯一步长，基准写死 1/60 s，
+// **不跟随目标帧率**（目标帧率只经 speedScale 生效，见 SetSpeedScale 口径）。
+const fixedStep = time.Second / 60
+
+// fixedStepCatchup 追赶上限（C1 第 2 条）：单帧最多补 3 步 ⇒ 长帧不爆冲，
+// 多余的累加丢弃并把 acc 置 0。
+const fixedStepCatchup = 3
+
+// recoverArmRounds 恢复滞回轮数（C2 第 3 条）：连续 3 轮 fps>18 才开始恢复。
+const recoverArmRounds = 3
+
+// fpsWindow fps 自适应测量窗长度：每满 2 秒结算一轮（削减/恢复各算一轮）。
+// 整 Duration 比较，不走浮点秒 ⇒ "每满 2 秒一轮"对任何 dt 都精确成立。
+const fpsWindow = 2 * time.Second
 
 // NewField 建场。seed 决定随机布局。
 func NewField(cls effect.Class, isDay bool, seed int64) *Field {
@@ -874,6 +927,12 @@ func newField(cls effect.Class, isDay bool, seed int64, entering bool) *Field {
 		// 建场时 sw=0 会让 airHalfN 走兜底值 ⇒ 带外可用段算不出来 ⇒ 云落进信息带
 		// （实测 effects_band_test.go:74 抓到 y=0.3794 压带）。
 	}
+	// P5b 测量件（spec/p5b-dbg.md 第 1 条）：WS_DBG_FRAMES=1 时生产构造路径
+	// 也开启绘制计数。走的是 P1 已有的 probeCount/draws 通路（ui/overlap_probe.go
+	// 的 NewFieldProbeCounted 同一开关字段），**没有第二条计数通路**。
+	// 未设该环境变量 ⇒ WSDbgFrames()=false ⇒ probeCount 保持 false ⇒
+	// 绘制路径的自增分支恒假 ⇒ 与 P5b 之前的产物逐字一致。
+	f.probeCount = WSDbgFrames()
 	n := counts(cls, isDay)
 	f.parts = make([]particle, 0, n)
 	for i := 0; i < n; i++ {
@@ -941,27 +1000,98 @@ func counts(cls effect.Class, isDay bool) int {
 		// 数量 = 现 Cloudy(3) 的约一半 = 2，太阳画盘、云稀。
 		return 2
 	case effect.Overcast:
-		// **阴天无日**那一档：数量 = 现 Cloudy(3) 的约 1.6 倍 = 5，
-		// 云密、不画太阳（盘与光斑都不画，见 bakeCelestial）。
-		return 5
+		// **阴天无日**那一档。
+		// P3 判据 B（out/notes-p2-budget.md 逐类表：粒子云 5→2 朵 ⇒ 4.37 层当量 → 约 0.62）：
+		// 云密改由云带承担（带 6→4 同批），粒子云只留"点缀"层。
+		return 2
 	case effect.Fog:
-		// 24 → 20（实测口径："很夸张 很糊"）：此前为补"偏淡"把 18→24，
-		// 24 个 sc 上限 3.2 × 256 px = 819 px 宽的大团叠在一起 ⇒ 糊成一片。
-		// 浓度改由 drawHaze 梯度承担（薄雾是大气梯度，不是一堆大团）。
-		return 20
+		// P3 判据 B（预算表：雾团 20→2 团 ⇒ 31.53 屏宽当量 → 约 3.15，
+		// 按 bandSpan 口径 1.13 层；带 4→2 后合计约 1.77 层）。
+		// 浓度口径不变：仍由 drawHaze 梯度承担（薄雾是大气梯度，不是一堆大团）。
+		return 2
 	case effect.Rain:
-		return 320
+		// 320 → 220（批次 A2 / C5a，用户定档 a）：降图元上限。
+		// 本档无 idx% 分组依赖（Rain 的粒子全走 pkDrop，贴图按 depth 挑档，
+		// 见 spawn 的 Rain/Thunder 分支与 pkDrop 分支）⇒ 改数不打散任何分组。
+		return 220
 	case effect.Snow:
-		// 240 → 260：补 20 团**均匀灰幕**（雾精灵，规格 2 表：雪 = 均匀灰幕 + 可见雪花）。
-		// 幕层按 idx%13==12 取 ⇒ 260 个里正好 20 团，与 Fog 档(20)同量级；
+		// 240 → 260：补**均匀灰幕**（雾精灵，规格 2 表：雪 = 均匀灰幕 + 可见雪花）。
+		// 幕层按 idx%86==85 取 ⇒ 260 个里正好 3 团（P3 判据 B：20 团 → 3 团，命中 idx = 85/171/257）；
 		// 240 片雪的数量口径不动（规格 3"数量与下落速度口径不变"）。
 		return 260
 	case effect.Thunder:
-		return 420
+		// 420 → 300（批次 A2 / C5a）：与 Rain 同分支造粒子（全 pkDrop），
+		// 无 idx% 分组依赖；闪电闪现按码分级、与粒子数无关（见 boltGapForCode）。
+		return 300
 	case effect.Dust:
-		return 460
+		// 460 → 320（批次 A2 / C5a）：pkMote 的贴图是 r.Intn 随机挑，
+		// 连"按总数取模"的口径都没有 ⇒ 无 idx% 分组依赖。
+		return 320
 	}
 	return 0
+}
+
+// snowFogCurtainN Snow 灰幕的团数（P3 判据 B：20 团 → 3 团）。
+// 取法 = idx%86==85 ⇒ 260 个里命中 idx = 85 / 171 / 257（推导写在 spawn 的 Snow 分支）。
+const snowFogCurtainN = 3
+
+// spawnCloudTier 粒子云档（Cloudy / PartlyCloudy / Overcast，P3 起再加 Fog 的一半）
+// 共用的粒子云初始化。整段口径逐字不变（含 **RNG 取数顺序** x → y → sc → alpha → depth，
+// 顺序一动，同 seed 的落位序列就整体漂移），只是从 spawn 的 switch 里搬出来，
+// 让 Fog 的一半能复用同一条云口径（不复制第二份公式）。
+func (f *Field) spawnCloudTier(p *particle) {
+	r := f.rng
+	p.kind = pkCloud
+	// y 初始分布避开中央信息带，且**按精灵半径**外扩。
+	// 缺陷 1 根因：只保证中心在带外时，云 sc 上限 3.5 × Kenney 云原生高
+	// 118–138 px → 半高最高 241 px（1920 px 屏上 0.126 屏高），中心只要贴着
+	// 带上沿，云身就压进带内（离屏图视觉判读，图名 lane_cloudy：
+	// "在数字 34 的正上方，有一朵灰蓝色的云直接覆盖在数字上…数字的上半部分
+	// 看起来像是'陷'在云里"。
+	// 云初始 x 铺在**屏内 0..1**（不是回收区 −0.35..1.15：
+	// 实测 8 朵里 7 朵落在 −0.04..−0.06，全挤在屏幕左沿外 ⇒ 一起飘进来，
+	// 就是"一起出现一起消失"的成因。
+	p.x = r.Float64()
+	// 云的初始 y 铺在**上部可用带的可见段** [pad·0.3, 带上沿−pad] = 约 [0.017, 0.188]。
+	// 原先铺在整个回收区 [−0.35, 0.1878]：可见部分只占该区间 34%
+	// ⇒ 5 朵上部云只有 1~2 朵在屏内，且贴着下沿 0.1878，正好在月亮（0.095）下方
+	// ⇒ 离屏图实测月亮行没有云（云依旧从月亮下面过去）。
+	// 月亮 0.095 正好是可见段 [0.017, 0.188] 的中点 ⇒ 云从上下两侧横穿月亮。
+	{
+		y0, _ := infoBandY()
+		padC := bandPadJitN(pkCloud, f.sh)
+		lo := padC * 0.3
+		hi := y0 - padC
+		if hi <= lo {
+			hi = lo + 0.01
+		}
+		p.y = lo + r.Float64()*(hi-lo)
+	}
+	// ↑ 初始 x 从 0..1（开局全在屏内 ⇒ 同进同出、一段时间整片天空没云，
+	// 云怎么总是一起出现一起消失，
+	// 导致会有很多时间是没有云的，一点也不平均）。
+	// 改成铺满整个回收区 [recycleXLo, recycleXHi] ⇒ 进场时间天然错开。
+	p.sc = cloudScBase + cloudScSpan*r.Float64()
+	// 0.55–0.90 → 0.35–0.60：0.55–0.90 是"发糊"那轮为提对比拉上去的，
+	// 结果云变"实"，叠起来读成整块巨团。背景点缀口径 = 半透明点缀，不是实心块。
+	// 0.28–0.45 → 0.80–0.95 → 1.0 → **逐类 alpha 区间（规格 2 表，2026-10-20）**：
+	//
+	//	多云见日 0.80–0.92 / 多云 0.75–0.90 / 阴 0.85–0.95
+	//
+	// 旧口径 1.0 是"云遮月"那轮顶到顶格的产物（α=1.0 ⇒ 云覆盖处月面被整块替换），
+	// 三档共用一个 α ⇒ 多云见日/多云/阴三档在透明度上长得一样（"云和雾天没区别"）。
+	// 遮挡强度仍由 α 承担（贴图核心 α 实测 255），逐档区间见 cloudFormOf。
+	// sc 与 vx 在 switch 之后按**目标屏宽**统一反解（见 sizeCloudByClass）。
+	cf := cloudFormOf(f.cls)
+	p.alpha = cf.aLo + (cf.aHi-cf.aLo)*r.Float64()
+	// 云速按薄厚分层（C1 第 1 条）：旧口径 0.003+0.011·U 是**随机抽速度**，
+	// 与云的尺寸无关 ⇒ 大云可以跑得比小云快 ⇒ "后出现的云追上先出现的云"
+	// 与"厚云跑在白云下面"两条现象的机制。现按屏宽定速度（薄快厚慢）：
+	// vx = vxThin − (vxThin−vxThick)·min(1, dw/dwRef)，见 cloudVxByThickness。
+	// 速度区间逐字沿用现口径的上下界（0.003 / 0.014），只换自变量。
+	p.vx = cloudVxByThickness(0)
+	p.vxBase = p.vx
+	p.depth = 0.2 + 0.8*r.Float64()
 }
 
 // spawn 按类别造一个粒子。fresh=true 时随机铺满全屏，否则从顶部进。
@@ -1028,61 +1158,22 @@ func (f *Field) spawn(fresh bool, idx int) particle {
 	case effect.Cloudy, effect.PartlyCloudy, effect.Overcast:
 		// 三档共用同一套云的贴图与运动口径（差异只在数量与太阳可见性，
 		// 见 counts 与 bakeCelestial）。
-		p.kind = pkCloud
-		// y 初始分布避开中央信息带，且**按精灵半径**外扩。
-		// 缺陷 1 根因：只保证中心在带外时，云 sc 上限 3.5 × Kenney 云原生高
-		// 118–138 px → 半高最高 241 px（1920 px 屏上 0.126 屏高），中心只要贴着
-		// 带上沿，云身就压进带内（离屏图视觉判读，图名 lane_cloudy：
-		// "在数字 34 的正上方，有一朵灰蓝色的云直接覆盖在数字上…数字的上半部分
-		// 看起来像是'陷'在云里"。
-		// 云初始 x 铺在**屏内 0..1**（不是回收区 −0.35..1.15：
-		// 实测 8 朵里 7 朵落在 −0.04..−0.06，全挤在屏幕左沿外 ⇒ 一起飘进来，
-		// 就是"一起出现一起消失"的成因。
-		p.x = r.Float64()
-		// 云的初始 y 铺在**上部可用带的可见段** [pad·0.3, 带上沿−pad] = 约 [0.017, 0.188]。
-		// 原先铺在整个回收区 [−0.35, 0.1878]：可见部分只占该区间 34%
-		// ⇒ 5 朵上部云只有 1~2 朵在屏内，且贴着下沿 0.1878，正好在月亮（0.095）下方
-		// ⇒ 离屏图实测月亮行没有云（云依旧从月亮下面过去）。
-		// 月亮 0.095 正好是可见段 [0.017, 0.188] 的中点 ⇒ 云从上下两侧横穿月亮。
-		{
-			y0, _ := infoBandY()
-			padC := bandPadJitN(pkCloud, f.sh)
-			lo := padC * 0.3
-			hi := y0 - padC
-			if hi <= lo {
-				hi = lo + 0.01
-			}
-			p.y = lo + r.Float64()*(hi-lo)
-		}
-		// ↑ 初始 x 从 0..1（开局全在屏内 ⇒ 同进同出、一段时间整片天空没云，
-		// 云怎么总是一起出现一起消失，
-		// 导致会有很多时间是没有云的，一点也不平均）。
-		// 改成铺满整个回收区 [recycleXLo, recycleXHi] ⇒ 进场时间天然错开。
-		p.sc = cloudScBase + cloudScSpan*r.Float64()
-		// 0.55–0.90 → 0.35–0.60：0.55–0.90 是"发糊"那轮为提对比拉上去的，
-		// 结果云变"实"，叠起来读成整块巨团。背景点缀口径 = 半透明点缀，不是实心块。
-		// 0.28–0.45 → 0.80–0.95 → 1.0 → **逐类 alpha 区间（规格 2 表，2026-10-20）**：
-		//
-		//	多云见日 0.80–0.92 / 多云 0.75–0.90 / 阴 0.85–0.95
-		//
-		// 旧口径 1.0 是"云遮月"那轮顶到顶格的产物（α=1.0 ⇒ 云覆盖处月面被整块替换），
-		// 三档共用一个 α ⇒ 多云见日/多云/阴三档在透明度上长得一样（"云和雾天没区别"）。
-		// 遮挡强度仍由 α 承担（贴图核心 α 实测 255），逐档区间见 cloudFormOf。
-		// sc 与 vx 在 switch 之后按**目标屏宽**统一反解（见 sizeCloudByClass）。
-		cf := cloudFormOf(f.cls)
-		p.alpha = cf.aLo + (cf.aHi-cf.aLo)*r.Float64()
-		// 云速按薄厚分层（C1 第 1 条）：旧口径 0.003+0.011·U 是**随机抽速度**，
-		// 与云的尺寸无关 ⇒ 大云可以跑得比小云快 ⇒ "后出现的云追上先出现的云"
-		// 与"厚云跑在白云下面"两条现象的机制。现按屏宽定速度（薄快厚慢）：
-		// vx = vxThin − (vxThin−vxThick)·min(1, dw/dwRef)，见 cloudVxByThickness。
-		// 速度区间逐字沿用现口径的上下界（0.003 / 0.014），只换自变量。
-		p.vx = cloudVxByThickness(0)
-		p.vxBase = p.vx
-		p.depth = 0.2 + 0.8*r.Float64()
+		f.spawnCloudTier(&p)
 	case effect.Fog:
 		// 上一版 sc 到 4.4 → 单个雾团宽 1056 px，12 个亮色大团叠满全屏，
 		// 整屏被推成近白（判读"雾像一层均匀蒙版、无纵深"成因）。
 		// 改：Kenney 烟雾贴图 + 低透明 + 越近越浓，纵深交给 drawHaze 梯度。
+		//
+		// P3 判据 B：雾团 20 → 2。判据 3 钉 `counts(Fog)==2`，判据 4 的覆盖率口径 =
+		// CoverageProfile = **云带 + 粒子云**（雾团在这条口径里计 0）⇒
+		// "2 条带 + 2 团雾"的实测覆盖率 35.42% < 下限 35.7%（实跑原文见 out/notes-p3.md）。
+		// 规格的补救"把云数加一档（Fog 2→3）"在 counts==2 的钉下只能**换种不换数**：
+		// idx%2==1 那一档走粒子云（spawnCloudTier，与 Cloudy/Overcast 同一条云口径），
+		// idx%2==0 那一档保留雾幕 ⇒ "雾 = 灰幕 + 薄雾"的定义性视觉还剩一层。
+		if idx%2 == 1 {
+			f.spawnCloudTier(&p)
+			break
+		}
 		p.kind = pkFog
 		// y 初始分布避开中央信息带，按半径外扩（同云）。
 		// 雾 sc 上限 4.2 × 256 px = 1075 px，半高 537 px = 0.28 屏高（1920 px 屏）。
@@ -1123,11 +1214,27 @@ func (f *Field) spawn(fresh bool, idx int) particle {
 		// ⇒ 满屏均匀、不堆团；现 Snow 档只有 240 片雪、没有任何幕层
 		// （counts(Snow)=240 全给 pkFlake，hasCloudBands(Snow)=false），
 		// 加上屏上只有 2.3–12.8 px 的白点 ⇒ "雪天为什么没有飘雪"。
-		// 幕层按索引取（每 13 个取 1 个 = 20 团，与 Fog 档同量级），
+		// 幕层按索引取（每 86 个取 1 个 = 3 团，P3 判据 B 由 20 团降下），
 		// 落位/浓度走**雾的现口径**（placeAirEntry 的 pkFog 分支 + fogAlphaMul）。
-		if idx%13 == 12 {
+		// 幕层按索引取，P3 判据 B 把团数 20 → 3：步长 13 → **86**，取模余数 12 → **85**
+		// （推导：粒子总数 260 ⇒ idx ∈ [0,259]；命中位 = s−1, 2s−1, 3s−1，
+		//   要求 3s−1 ≤ 259 ⇒ s ≤ 86.33 ⇒ 取最大整数 s = 86 ⇒ 命中 idx = 85 / 171 / 257，
+		//   正好 3 团，且相邻两团间距最大化（86 个粒子一跳）。
+		//   对照：s = 87 时命中 86 / 173，第三团落在 idx = 260（越界）⇒ 只有 2 团，
+		//   与"3 团"的钉（判据 3）不符——这一版就是这么踩到后改回 86 的，实测记录在 out/notes-p3.md）。
+		// 预算依据：out/notes-p2-budget.md 逐类表 Snow 雾幕 20 团 = 29.90 屏宽当量 →
+		// 3 团 = 4.49（÷bandSpan ⇒ 约 1.69 层）；雪粒 260 的口径一行没动。
+		if idx%86 == 85 {
 			p.kind = pkFog
-			p.x, p.y = r.Float64(), bandFreeY(r, bandPadJitN(pkFog, f.sh))
+			// **3 团的 x = 逐团等分的确定落位**（k = (idx−85)/86 ∈ {0,1,2} ⇒ x = (k+0.5)/3
+			// = 0.167 / 0.500 / 0.833）。依据 = 本分支原话的定板口径
+			// "雪 = 均匀灰幕…⇒ 满屏均匀、不堆团"（规格 2 表 + 规格 3）：
+			// 20 团时随机 x 的大数定律把团摊开，降到 3 团后小样本会成片
+			// （实测 seed=20261023：随机落位 0.218/0.241 两团并排 ⇒ 漂移重叠
+			// dualPct = 61.02% > 判据线 60%，见 out/notes-p3.md 的判据 2 实跑）。
+			// y 仍走现口径 bandFreeY（带避让口径不动）；sc/alpha/vx/vy/depth 一行没动。
+			p.x = (float64((idx-85)/86) + 0.5) / float64(snowFogCurtainN)
+			p.y = bandFreeY(r, bandPadJitN(pkFog, f.sh))
 			p.sc = fogScBase + fogScSpan*r.Float64()
 			p.alpha = (0.06 + 0.16*r.Float64()*(0.35+0.65*p.depth)) * fogAlphaMul
 			p.vx = 0.010 + 0.030*r.Float64()
@@ -1234,6 +1341,17 @@ func (f *Field) spawn(fresh bool, idx int) particle {
 	if p.kind == pkCloud {
 		f.sizeCloudByClass(&p)
 	}
+	// P7 雾团封顶：与 sizeCloudByClass **同一时机**——scaleMul 与 spr 就位之后。
+	// 指名根因：封顶原先写在 switch 里 sc 赋值处（:1180/:1242），而 p.scaleMul 在
+	// :1342 才赋值、pkCloud 的反解也在其后 ⇒ 封顶算出的宽被随后的 scaleMul 作废
+	// （实测 Snow 三张灰幕 hw 0.569/0.586/1.025 = 1233/1268/2214 px 原样未动）。
+	if p.kind == pkFog {
+		fogCapPx := 540.0
+		if f.cls == effect.Snow {
+			fogCapPx = 346.0
+		}
+		f.clampFogWidthPx(&p, fogCapPx)
+	}
 	if p.kind == pkFlake && f.cls == effect.Snow {
 		f.sizeFlakeByTarget(&p)
 	}
@@ -1271,7 +1389,19 @@ func (f *Field) spawn(fresh bool, idx int) particle {
 		// 开局建场：x 保持全屏铺开（一开场天空就该有云，不该全挤在左边缘），
 		// 但 y 同样夹到"整只在屏内"（实测 TestAirEntryPlacement 抓到
 		// 初始云 y=1.0511 越出 [0.0453, 0.9547] ⇒ 开局就有半截出屏的云。
-		f.clampAirY(&p, r, true)
+		// P3：Snow 的 3 团灰幕 x 已在 Snow 分支按团序等分排好（"满屏均匀、不堆团"），
+		// 不许 spreadAir 的 64 次随机抽样再把它抽回并排 ⇒ allowX=false
+		// （clampAirY 的现成分支："x 由调用方排好，不许动"，其余类逐字不变）。
+		allowX := !(f.cls == effect.Snow && p.kind == pkFog)
+		f.clampAirY(&p, r, allowX)
+		// P6b：铺放态也要防相叠。旧代码在这里直接 return ⇒ 开局第一帧就是探针
+		// 口径的"铺放态"，实测 Fog 含粒子双层占比 28.70% > 10% 判据线（旧防重叠
+		// 只作用于回收，且判据只看中心距 0.22 不看宽度）。
+		// Snow 的 3 团灰幕 x 已按团序等分（allowX=false）⇒ 不许重排，跳过。
+		if isAir(p.kind) && allowX {
+			f.resampleAir(&p, r)
+			f.clampAirY(&p, r, true) // 重摆 y 后回到"整只在屏内"窗口
+		}
 		return p
 	}
 
@@ -1282,14 +1412,133 @@ func (f *Field) spawn(fresh bool, idx int) particle {
 
 // 同带横向防重叠的判据：
 // 同一垂直带 = 中心 y 相差 ±0.12×屏高；水平距离下限 = 0.22×屏宽。
+//
+// P6b（含粒子/雾团占比判据：铺放态 Fog 实测 28.70% > 10% 的成因）：
+// 旧下限 0.22 是**只看中心距**的常量，不看宽度 ⇒ 宽 400–700 px 的雾团
+// 中心距 237 px 照样整块相叠（探针铺放态口径：`cmd/overlapprobe` 的 dualPct 列）。
+// 现加 airSlotGapN = **中心距下限 = 两半宽之和 + 21 px(0.02·屏宽)**，
+// 与 DriftOverlapIncl 的真实落位口径同一几何；airGapN 保留为兜底下限（贴图缺失时 hw=0）。
 const (
-	airBandN = 0.12
-	airGapN  = 0.22
-	airTries = 40
+	airBandN    = 0.12
+	airGapN     = 0.22
+	airTries    = 40
+	airSlotGapN = 0.02
 )
 
 // isAir 空中类精灵（云/雾/光）—— 只有它们参与防重叠。
 func isAir(k pkind) bool { return k == pkCloud || k == pkFog || k == pkGlow }
+
+// airGapNeededN 两朵空中粒子"不相叠"所需的最小中心距（归一化屏宽）。
+// = 两半宽之和 + airSlotGapN，并与 airGapN 取大（贴图缺失时 hw=0 的兜底）。
+func (f *Field) airGapNeededN(a, b *particle) float64 {
+	ha, _ := f.airHalfN(a)
+	hb, _ := f.airHalfN(b)
+	if need := ha + hb + airSlotGapN; need > airGapN {
+		return need
+	}
+	return airGapN
+}
+
+// placeAirInGap 随机抽样 40 次仍不相叠时的**确定性落位**：
+// 在同带（|Δy| ≤ airBandN）现有层的空档里挑最大的那个，把本朵放到空档中点；
+// 空档放不下（需要的中心距 > 空档长度）⇒ 按现成进场位口径挪到**屏外左侧**
+// （x = −hw − 0.10·idx，与 placeAirEntry / driftRecycleOffscreen 同一口径），
+// 进场时间天然错开。绕回口径 = 共用周期 span（bandSpan），与云带同一几何。
+// visibleOnly=true 用于开局建场：落位中心必须在可见窗 [hw, 1−hw] 内
+// （"一开场天空就该有云"）；false 用于回收/漂移处置：整个周期 [0, spanN) 的档都可用。
+func (f *Field) placeAirInGap(p *particle, visibleOnly bool) {
+	hwP, _ := f.airHalfN(p)
+	spanN := 1.0
+	if f.sw > 0 {
+		spanN = f.bandSpan(f.sw) / float64(f.sw)
+	}
+	type seg struct{ c, w float64 }
+	segs := make([]seg, 0, 12)
+	for i := range f.parts {
+		q := &f.parts[i]
+		if q == p || !isAir(q.kind) {
+			continue
+		}
+		if math.Abs(q.y-p.y) > airBandN {
+			continue
+		}
+		hq, _ := f.airHalfN(q)
+		if hq <= 0 {
+			continue
+		}
+		c := math.Mod(q.x, spanN)
+		if c < 0 {
+			c += spanN
+		}
+		segs = append(segs, seg{c: c, w: 2 * hq})
+	}
+	if len(segs) == 0 {
+		p.x = 0.5
+		return
+	}
+	bestLen, bestCenter := -1.0, 0.0
+	need := 2*hwP + 2*airSlotGapN
+	for k := range segs {
+		start := math.Mod(segs[k].c+segs[k].w/2, spanN)
+		nx := segs[(k+1)%len(segs)]
+		end := math.Mod(nx.c-nx.w/2, spanN)
+		length := end - start
+		if length < 0 {
+			length += spanN
+		}
+		center := math.Mod(start+length/2, spanN)
+		// 空档在整个周期 [0, spanN) 上都可用：粒子绘制走 wrapPeriod(x, span) 绕回口径
+		// （driftLayers 同一口径）⇒ 落在 1 之外 = 屏右外，随漂移绕回左沿进场，
+		// 不是"永不进场"。上一版把中心限制在 [hw, 1−hw] 的可见段 ⇒ 宽雾团被全部
+		// 推到屏外，Fog 覆盖率 47.50% 掉到 21.25%（实测）。
+		if visibleOnly && (center < hwP || center > 1.0-hwP) {
+			continue
+		}
+		if length > bestLen {
+			bestLen, bestCenter = length, center
+		}
+	}
+	if bestLen >= need {
+		p.x = bestCenter
+		return
+	}
+	// 同带放不下 ⇒ **换一条净空 y 带**（|Δy| > airBandN 即不受间隙约束），x 留在屏内保覆盖。
+	// 机理：两团各 0.64 屏宽在同一带里要不相叠，就必须有一团在屏外 ⇒ Fog 瞬时覆盖率
+	// 从 47.50% 掉到 21.25%（实测）；把第二团挪开一个带间距就两全。
+	if hh := f.halfHN(p, f.sh); hh > 0 && hh < 0.5 {
+		bestY, bestClear := 0.0, -1.0
+		for i := 0; i <= 100; i++ {
+			y := hh + (1.0-2*hh)*float64(i)/100.0
+			clear := 1.0
+			for k := range f.parts {
+				q := &f.parts[k]
+				if q == p || !isAir(q.kind) {
+					continue
+				}
+				if d := math.Abs(q.y - y); d < clear {
+					clear = d
+				}
+			}
+			if clear > bestClear {
+				bestClear, bestY = clear, y
+			}
+		}
+		if bestClear > airBandN {
+			p.y = bestY
+			p.x = 0.35 + 0.30*float64(p.idx%2) + 0.05*float64(p.idx%3)
+			if hwP > 0 {
+				if p.x < hwP {
+					p.x = hwP
+				}
+				if p.x > 1.0-hwP {
+					p.x = 1.0 - hwP
+				}
+			}
+			return
+		}
+	}
+	p.x = -hwP - 0.10*float64(p.idx)
+}
 
 // resampleAir 同带横向防重叠：新粒子若与已放置者
 // 在同一垂直带（±0.12×屏高）内水平距离 < 0.22×屏宽，则重采样位置，最多试
@@ -1310,7 +1559,8 @@ func (f *Field) resampleAir(p *particle, r *rand.Rand) {
 			if math.Abs(q.y-p.y) > airBandN {
 				continue
 			}
-			if math.Abs(q.x-p.x) < airGapN {
+			// P6b：宽度感知（旧口径只看中心距 0.22 ⇒ 宽雾团整块相叠，铺放态 Fog 28.70%）
+			if math.Abs(q.x-p.x) < f.airGapNeededN(p, q) {
 				ok = false
 				break
 			}
@@ -1328,6 +1578,12 @@ func (f *Field) resampleAir(p *particle, r *rand.Rand) {
 			p.y = r.Float64()
 		}
 	}
+	// 试满仍不相叠 ⇒ 确定性落位（可见窗/整周期档 → 换净空带 → 屏外进场位）
+	// 开局建场 = **可见窗内紧排**（P7 用户判据"最多的时候也只能首尾相连"⇒
+	// 满密度那一刻所有层都该在屏内、首尾相接，覆盖率同时拉满）；
+	// 回收/漂移处置走整个周期 [0, spanN) 的档。宽度已由 cloudFormOf 表与
+	// clampFogWidthPx 封到"同带 Σ全宽 ≤ 1 屏宽"⇒ 可见窗必然装得下。
+	f.placeAirInGap(p, f.steps == 0)
 }
 
 // infoBandY 中央信息带（时钟块 + 天气块）的归一化 y 区间。
@@ -1474,50 +1730,94 @@ func bandFreeY(r *rand.Rand, pad float64) float64 {
 	return loB + r.Float64()*b
 }
 
-// Step 推进一个 dt。t 连续累加，动画全部是 t 的连续函数。
+// Step 推进一帧（批次 A2 / C1）。
+//
+// 位移不吃实测帧 dt：acc += dt，然后 for acc >= fixedStep { advanceOneStep(fixedStep);
+// acc -= fixedStep }，追赶上限 3 步（长帧不爆冲，多余累加丢弃并置 acc = 0）。
+// 帧时长 61↔451 ms 的抖动因此不再变成位移忽大忽小（"一顿一顿"）。
+//
+// 口径不动的部分：屏宽/屏高刷新、fps 自适应测量（照旧吃实测 dt，每满 2 秒结算一次）、
+// speedScale 的取值与设置口径（只改消费端：乘在固定步长上）。
 func (f *Field) Step(dt time.Duration, w, h int) {
 	d := dt.Seconds()
 	if d <= 0 {
 		return
 	}
-	f.t += d
-	f.sh = h // 屏高由调用方传入（外扩量的分母）
-	f.sw = w // 屏宽：云/雾进场落位的半宽分母
-	// 位移速度系数（实测口径）：0 / 未设置 = 不缩放
-	ss := f.speedScale
-	if ss <= 0 {
-		ss = 1
-	}
+	f.sh = h     // 屏高由调用方传入（外扩量的分母）
+	f.sw = w     // 屏宽：云/雾进场落位的半宽分母
+	f.frameIdx++ // 启动期帧计数（C3 BootCap 的输入）
 
 	// fps 自适应测量：以传入的 dt 累计出"最近 2 秒"实测帧率
 	// （dt 即调用方实测的帧间隔；生产路径 main.go 传 time.Since(last)）。
 	// 窗口每累计满 2 秒结算一次并调整活跃粒子数。
-	f.fpsAccum += d
+	f.fpsAccum += dt
 	f.fpsCount++
-	if f.fpsAccum >= 2.0 {
-		f.fps = float64(f.fpsCount) / f.fpsAccum
+	if f.fpsAccum >= fpsWindow {
+		f.fps = float64(f.fpsCount) / f.fpsAccum.Seconds()
 		f.adaptFps(f.fps)
 		f.fpsAccum = 0
 		f.fpsCount = 0
 	}
 
-	bandY0, bandY1 := infoBandY()
-	// 回收窗口按**含尺寸抖动**的外扩口径（bandPadJitN）：
-	// 可用区（spawn 落位）与回收窗口必须同口径，否则带边界与回收线之间
-	// 会出现"中心在带外、身体压进带内"空隙。
-	// 粒子云不走这条回收窗口（落位 = 月亮行，见下面注释），只取雾的外扩量。
-	padFog := bandPadJitN(pkFog, h)
-	// ---- 云横向间距控制器 + 同道不超车钳位：在位移**之前**跑 ----
+	// ---- 云横向间距控制器 + 同道不超车钳位：不在这里跑 ----
+	//
+	// 批次 A2 / C1：控制器搬到 advanceOneStep 里、**每步跑一次**（在本步位移之前），
+	// 帧循环里不再调 ⇒ 速度序列只由步数导出。理由（A2 闸门红测试 TestFixedStepNoWallClock）：
+	// 控制器每帧跑一次时，帧数（= 墙钟驱动的量）直接进入 vx ⇒ 同步数、异墙钟的
+	// 两个场位移逐位不等（实测 12 步、4 个长帧 vs 12 个 fixedStep 帧：粒子 0 的 x 差 3.08e-04）。
+	// "每帧速度变化 ≤ cloudVxSlew"这条自检判据由**单步上限 = cloudVxSlew ÷ 追赶上限**保住：
+	// 一帧最多补 fixedStepCatchup 步 ⇒ 每帧 |Δvx| ≤ fixedStepCatchup × cloudVxSlewStep = cloudVxSlew。
+	f.acc += dt
+	if f.acc >= fixedStepCatchup*fixedStep {
+		// 长帧（累加已够 3 步以上）：只补到追赶上限，多余累加丢弃并置 0。
+		for k := 0; k < fixedStepCatchup; k++ {
+			f.advanceOneStep(fixedStep)
+		}
+		f.acc = 0
+		return
+	}
+	for f.acc >= fixedStep {
+		f.advanceOneStep(fixedStep)
+		f.acc -= fixedStep
+	}
+}
+
+// advanceOneStep 推进**一个固定步长**（C1 第 3 条）：粒子位移、云带横移、
+// 出界回收、闪电推进全部只吃 step，不吃实测帧 dt。
+// speedScale 语义保持（15 fps ⇒ 1.0，8 fps ⇒ 0.533），乘在固定步长上。
+// 动画自变量 t = 已推进步数 × fixedStep ⇒ 由步数导出，与墙钟无关
+// （云带横移 bandPlace 的位移项吃的就是这个 t）。
+func (f *Field) advanceOneStep(step time.Duration) {
+	d := step.Seconds()
+	f.steps++
+	f.t = float64(f.steps) * d
+	// ---- 云横向间距控制器 + 同道不超车钳位：在**本步位移之前**跑（C1：跟着步数跑）----
 	//
 	// 顺序理由（实测：放在位移之后跑时，2000 步里抓到 1–5 次同道超车，见 out/notes）：
-	// 钳位约束的是"下一步要走的位移"。放在位移之后 ⇒ 本步的位移用的是**旧配置**下钳好的
-	// 速度；被回收/重放的前车带着旧速度进入本步，就往前车身上撞（超车）。
-	// 放在位移之前 ⇒ 每一步的位移都由"当前配置"下的钳位值驱动，
+	// 钳位约束的是"下一步要走的位移"。放在位移之前 ⇒ 本步的位移由"当前配置"下的钳位值驱动，
 	// "同带内 vx 随 x 单调不增"这条性质对真正要走的这一步成立 ⇒ 超车在条件上封死。
 	if f.cls == effect.Cloudy || f.cls == effect.PartlyCloudy ||
 		f.cls == effect.Overcast || f.cls == effect.Rain || f.cls == effect.Thunder {
 		f.coupleClouds()
 	}
+	// ---- P3 判据 D：漂移期复查（每个固定步走一遍入口，节流在函数里）----
+	//
+	// 原话（coupleClouds 注释）："落位阶段本来有最小间隙保证（spreadAir），
+	// 但它只在**生成时**生效，漂移中不复查" ⇒ 这条就是"漂移中的复查"。
+	// 调用点跟着步数跑（与 coupleClouds 同一口径，不吃墙钟），
+	// 内部按 driftCheckEverySteps 节流 ⇒ 未命中的步只做一次取模判断。
+	f.crowdSweep()
+	// 位移速度系数（实测口径）：0 / 未设置 = 不缩放
+	ss := f.speedScale
+	if ss <= 0 {
+		ss = 1
+	}
+	bandY0, bandY1 := infoBandY()
+	// 回收窗口按**含尺寸抖动**的外扩口径（bandPadJitN）：
+	// 可用区（spawn 落位）与回收窗口必须同口径，否则带边界与回收线之间
+	// 会出现"中心在带外、身体压进带内"空隙。
+	// 粒子云不走这条回收窗口（落位 = 月亮行，见下面注释），只取雾的外扩量。
+	padFog := bandPadJitN(pkFog, f.sh) // 屏高 = Step 每帧刷进 f.sh 的值（口径不动）
 	for i := range f.parts {
 		p := &f.parts[i]
 		p.x += p.vx * d * ss
@@ -1729,12 +2029,64 @@ func boltEnvelope(u float64) float64 {
 	return smoothstep(0.0, 0.15, u) * (1.0 - smoothstep(0.55, 1.0, u))
 }
 
-// adaptFps 按实测 fps 调整活跃粒子数：
+// NextActive 一轮帧率自适应后的活跃粒子数（C2 抽出的纯函数：无随机、无副作用）。
 //
-//	fps < 12  → 按比例削减：active ← active × fps/12，下限 = 总数 × 25%
-//	fps > 18  → 逐步恢复：每次 +10% 总数，上限 = 总数
+// 口径（规格 A2/C2，全部数值确定）：
+//
+//	死区 12 ≤ fps ≤ 18   ⇒ 原值不动
+//	削减 fps < 12         ⇒ 比例目标 = cur×fps/12，下限 minActive = (total+3)/4，
+//	                        且**单轮位移不超 lim = max(4, total/20)**（斜坡，不一次砍 43%）
+//	恢复 fps > 18         ⇒ 每轮 +lim，上限 total（3 轮滞回在调用方 adaptFps）
+//	云量档 total ≤ 8      ⇒ 永不削减（adaptFps 的"云量三档 minActive = n"同口径：
+//	                        Cloudy 3 / PartlyCloudy 2 / Overcast 5 / Clear 白天 4 全 ≤ 8）
+//
+// cur 越界（0 或 > total）按"未削减 = 全部"处理（与 Field.active 的零值口径一致）。
+func NextActive(cur, total int, fps float64) int {
+	if total <= 0 {
+		return 0
+	}
+	if cur <= 0 || cur > total {
+		cur = total
+	}
+	if total <= 8 {
+		// 云量档：削减机制针对的是"云被砍到 2 朵 ⇒ 整片天空空掉"（见 adaptFps 注释）。
+		return total
+	}
+	lim := total / 20
+	if lim < 4 {
+		lim = 4
+	}
+	switch {
+	case fps < 12:
+		target := int(float64(cur) * fps / 12.0)  // 按比例削减
+		if min := (total + 3) / 4; target < min { // 下限 = 总数 25%
+			target = min
+		}
+		if cur-target > lim { // 限幅：单轮削减不超 lim
+			target = cur - lim
+		}
+		if target < cur {
+			return target
+		}
+		return cur
+	case fps > 18:
+		target := cur + lim // 限幅：单轮恢复不超 lim
+		if target > total {
+			target = total
+		}
+		return target
+	}
+	return cur // 死区
+}
+
+// adaptFps 按实测 fps 调整活跃粒子数（消费端，数值口径全在纯函数 NextActive）：
+//
+//	fps < 12  → 削减：单轮位移限幅 lim = max(4, total/20)，下限 = 总数 × 25%
+//	fps > 18  → 恢复：**连续 3 轮**才开始（滞回），每轮 +≤lim，上限 = 总数
 //	12≤fps≤18 → 滞回区，不动（防在阈值附近来回抖动）
 //
+// 滞回计数在 Field 上（recoverStreak）：期间任何一轮 fps ≤ 18 把计数清零。
+// 云量三档 Cloudy/PartlyCloudy/Overcast 保留既有口径 minActive = n（永不削减）。
 // 只动 active（Draw 的绘制数量）；parts、spawn、贴图全部不动。
 func (f *Field) adaptFps(fps float64) {
 	n := len(f.parts)
@@ -1750,41 +2102,33 @@ func (f *Field) adaptFps(fps float64) {
 	// 导致会有很多时间是没有云的，一点也不平均；月亮行根本没有云）。
 	// 低性能 x86 小主机帧率 <12 ⇒ 8 朵云被砍到 minActive=2 朵：整片天空长时间空掉，
 	// 且月亮所在行（0.095h）几乎不会有云经过 ⇒ 读成"月亮在云上面"。
-	// 8 朵云按填充当量口径 = 8 × 220×130 × 1.25² ≈ 0.35 整屏当量
-	// ≈ 1.6% CPU @15fps，在 ≤5% 预算内，没有削减必要。
-	// **多云类不削减**（云怎么总是一起出现一起消失，
-	// 导致会有很多时间是没有云的，一点也不平均；月亮行根本没有云）。
-	// 低性能 x86 小主机帧率 <12 ⇒ 8 朵云被砍到 minActive=2 朵：整片天空长时间空掉，
-	// 且月亮所在行（0.095h）几乎不会有云经过 ⇒ 读成"月亮在云上面"。
-	// 8 朵云按填充当量口径 = 8 × 220×130 × 1.25² ≈ 0.35 整屏当量
-	// ≈ 1.6% CPU @15fps，在 ≤5% 预算内，没有削减必要。
-	//
-	// 云量拆出的两档**同口径**（PartlyCloudy 4 朵 / Overcast 13 朵）：
-	// 削减机制针对的是"云被砍到 2 朵 ⇒ 整片天空空掉"，与档无关；
-	// 新两档若沿用 25% 下限，低帧率时 PartlyCloudy 只剩 1 朵、Overcast 只剩 3 朵，
-	// 正是同一条缺陷。
+	// 云量拆出的两档**同口径**（PartlyCloudy / Overcast）：削减机制针对的是
+	// "云被砍到 2 朵 ⇒ 整片天空空掉"，与档无关。
 	if f.cls == effect.Cloudy || f.cls == effect.PartlyCloudy || f.cls == effect.Overcast {
 		minActive = n
 	}
 	if fps < 12 {
-		target := int(float64(f.active) * fps / 12.0) // 按比例削减
+		f.recoverStreak = 0 // 恢复计数清零（滞回：削减轮打断连续恢复轮）
+		target := NextActive(f.active, n, fps)
 		if target < minActive {
 			target = minActive
 		}
 		if target < f.active {
 			f.active = target
 		}
-	} else if fps > 18 {
-		step := n / 10
-		if step < 1 {
-			step = 1
-		}
-		target := f.active + step
-		if target > n {
-			target = n
-		}
-		f.active = target
+		return
 	}
+	if fps > 18 {
+		f.recoverStreak++
+		if f.recoverStreak < recoverArmRounds {
+			return // 连续不足 3 轮 fps>18 ⇒ 不开始恢复（防振荡）
+		}
+		if target := NextActive(f.active, n, fps); target > f.active {
+			f.active = target
+		}
+		return
+	}
+	f.recoverStreak = 0 // 死区同样清零：恢复只认"连续"
 }
 
 // ActiveCount 当前活跃粒子数 = Draw 实际绘制的粒子数。
@@ -1795,12 +2139,62 @@ func (f *Field) MoonBoostStats() (int, int64) {
 	return f.moonBoostFrame, f.moonBoostTotal
 }
 
+// BootCap 启动期的活跃粒子上限（C3 第 1 条，纯函数、数值确定）。
+//
+// 启动期要把"一次性全量重排"拆开：尺寸切换当帧做全量烘焙 + 全量粒子
+// （实测 n=1 layout=1.261 s、n=7 layout=1.385 s），前 120 帧按三档放行：
+//
+//	frameIndex <  60 ⇒ 80
+//	60 ≤ frameIndex < 120 ⇒ min(total, 160)
+//	frameIndex ≥ 120      ⇒ total（稳态，不封顶）
+//
+// frameIndex 从 0 起算（第 1 帧 = 0）。上限只压"画多少"，不改生成器口径
+// （parts/counts 不动），与 C2 的削减取小。
+func BootCap(frameIndex int, total int) int {
+	if total <= 0 {
+		return 0
+	}
+	if frameIndex < 0 {
+		frameIndex = 0
+	}
+	switch {
+	case frameIndex < 60:
+		if total < bootCapFirst {
+			return total
+		}
+		return bootCapFirst
+	case frameIndex < 120:
+		if total < bootCapSecond {
+			return total
+		}
+		return bootCapSecond
+	}
+	return total
+}
+
+// 启动期三档的数值（C3 第 1 条钉死口径）。
+const (
+	bootCapFirst  = 80
+	bootCapSecond = 160
+)
+
+// ActiveCount 当前活跃粒子数 = Draw 实际绘制的粒子数。
+//
+// = min(削减后的 active, 启动期上限 BootCap)（C3 第 1 条：与 C2 的削减取小）。
+// 未步过帧的场（frameIdx == 0，建场后直接读）不套启动期上限 ⇒ 建场口径 = 全部，
+// 与旧行为一致；跑起来后第一帧起启动期上限生效。
 func (f *Field) ActiveCount() int {
 	n := len(f.parts)
-	if f.active <= 0 || f.active > n {
-		return n // 未初始化 → 全画（旧行为）
+	act := n
+	if f.active > 0 && f.active <= n {
+		act = f.active // 已削减
 	}
-	return f.active
+	if f.frameIdx > 0 {
+		if capN := BootCap(f.frameIdx-1, n); act > capN {
+			act = capN // 启动期拆开：前 60 帧只画 80 个
+		}
+	}
+	return act
 }
 
 // TotalCount 粒子总数（生成器口径，不随削减变化）。
@@ -1810,26 +2204,36 @@ func (f *Field) TotalCount() int { return len(f.parts) }
 func (f *Field) FPS() float64 { return f.fps }
 
 // Draw 画一整帧。
-// cloudBandN 阴雨类天空的云带片数
-// 读图判读"背景像一块平滑的布，缺乏云层厚度"。
-const cloudBandN = 4 // 5 → 4（需求：适当减少云的数量）
+// cloudBandN 阴雨类天空的云带片数。
+//
+// P6 判据 1（spec/p6-noverlap.md 设计第 1 条，定死不许自行调参）：N = 3
+// （Overcast / Cloudy / Rain / Thunder）。
+//
+// 旧值 4（5 → 4，需求"适当减少云的数量"）：等相位按共用 span 加、按逐带 spanI 取模
+// （旧 bandPlace 根因，见其注释）⇒ 实测 SCR_CROWD dual=55.7%。
+const cloudBandN = 3 // P6 设计第 1 条：4 → 3
 
-// bandCount 本场的云带片数：云量两档按**云带密度**分档
-// （PartlyCloudy = 现 Cloudy 的约一半、Overcast = 约 1.6 倍，
-// 与 counts 的粒子数口径同一比例，取证 34.16.2 的两档定义）：
+// bandCount 本场的云带片数（P6 设计第 1 条，定死）：
 //
-//	Cloudy / Rain / Thunder / Fog = 4（现状）
-//	PartlyCloudy = 2   （4 × 0.5 = 2）
-//	Overcast     = 6   （4 × 1.6 = 6.4 → 6）
+//	Cloudy / Rain / Thunder = 3（= cloudBandN）
+//	Overcast                = 3（P6：4 → 3）
+//	PartlyCloudy            = 2（保持）
+//	Fog                     = 2（保持，P3 判据 3 逐字）
 //
-// 云带是"云层厚度"层，粒子云是"点缀"层，两档要同时变密/变稀，
-// 只改粒子数会出现"云带一样密、粒子稀"的错位。
+// 云带是"云层厚度"层，粒子云是"点缀"层。P6 把压顶四档统一成 N=3 的理由：
+// 不重叠的可证性（见 bandPlace 注释）只对"等宽 T + 等相位 + 共用 span"的 N 条带成立，
+// Overcast 单独多一条带会把间隙从 (w−T)/3 = 26.7 px 压成 span/4 − T = 770−1000 < 0（相撞）。
 func (f *Field) bandCount() int {
 	switch f.cls {
 	case effect.PartlyCloudy:
 		return 2
 	case effect.Overcast:
-		return 6
+		// P6 设计第 1 条：Overcast 4 → 3（判据测试 bandCount() 逐类 = 3/3/3/3/2）。
+		return 3
+	case effect.Fog:
+		// P3 判据 3 逐字要求 Fog `bandCount()==2`（配套预算表"雾的带 4→2"）；
+		// 规格 A 的括注"其余类走默认 4"与判据 3/预算表冲突，取判据 3（见 out/notes-p3.md 冲突条目）。
+		return 2
 	}
 	return cloudBandN
 }
@@ -1843,26 +2247,34 @@ type bandPlace struct {
 	mirror       bool
 }
 
-// bandSpan 所有云带共用的横向循环周期（像素）：屏宽 + 最宽那条带的两倍宽。
+// bandWidthPx P6 设计第 2 条"等宽"（定死，不许自行调参）：
+//
+//	T = round(w × 1000 / 1080)   （1080 屏 ⇒ 1000 px）
+//	硬上限 T ≤ 0.95·w
+//
+// 带宽不再随 frac 变化（旧 sc = (1.5+0.8·frac)/bandNetDiv ⇒ 逐带 768…1178 px =
+// 重叠根因，见 bandPlace 注释）。粒子云 p.sc 口径**不动**（P6"不做什么"，只收云带）。
+func bandWidthPx(w int) float64 {
+	t := math.Round(float64(w) * 1000.0 / 1080.0)
+	if cap := 0.95 * float64(w); t > cap {
+		t = cap
+	}
+	return t
+}
+
+// bandSpan 所有云带共用的横向循环周期（像素）。
+//
+// P6 设计第 3 条（常量式）：span = w + 2·T，T = bandWidthPx(w)。
 // 必须共用：周期不同 ⇒ 相位差随时间漂移 ⇒ 扎堆 / 空白（见 bandPlace 注释）。
+// 旧口径 "w + 2·平均dw"（逐带 sc 求和）随等宽改造退化为 w + 2·T 的同一数值，
+// 直接改常量式，消除"平均带宽"这一漂移源。
+// 进场口径（左边缘相位，bandPlace 注释）：周期起点 x = −dw ⇒ 带跨 [−T, 0] 全在屏外；
+// 周期终点 x = span − dw = w + T ≥ w ⇒ 整条带已出右界（一个像素都不剩在屏内）。
 func (f *Field) bandSpan(w int) float64 {
 	if len(f.sp.cloudSz) == 0 {
 		return float64(w)
 	}
-	n := f.bandCount()
-	sum := 0.0
-	for i := 0; i < n; i++ {
-		fi := i % len(f.sp.cloudSz)
-		frac := float64(i) / float64(n-1)
-		sc := (1.5 + 0.8*frac) / bandNetDiv
-		sum += float64(f.sp.cloudSz[fi].X) * sc
-	}
-	// 用**平均**带宽而不是最宽：周期 = w + 2·平均dw。
-	// 用 max 会让窄带绕一圈的离屏段变长（实测平均覆盖 11.4% → 10.3%）。
-	// 这个周期对**每一条**带都满足"进场时整条还在屏幕外"：
-	// x = mod(...) − dw，周期起点 x = −dw ⇒ 带跨 [−dw, 0]；周期终点 x = w+2·平均dw−dw > w ⇒ 整条已出右界。
-	// （前提：平均dw ≥ 各带 dw 的最小值，窄带的 x 更靠右也不会提前进入屏内。）
-	return float64(w) + 2*(sum/float64(n))
+	return float64(w) + 2*bandWidthPx(w)
 }
 
 func (f *Field) bandPlace(i int, t float64, w, h int) (bandPlace, bool) {
@@ -1876,48 +2288,38 @@ func (f *Field) bandPlace(i int, t float64, w, h int) (bandPlace, bool) {
 		return bandPlace{}, false
 	}
 	frac := float64(i) / float64(n-1)
-	// 缩放口径见 drawCloudBands 注释（1.5+0.8·frac，净倍率分母 bandNetDiv）。
-	sc := (1.5 + 0.8*frac) / bandNetDiv
+	// P6 设计第 2 条：等宽 T ⇒ sc = T / sz.X（bandPlace 与 drawCloudBands 两处调用点
+	// 统一这一口径），dw = sz.X × sc = T 逐带相同；高度 dh = sz.Y × sc 保精灵比例。
+	sc := bandWidthPx(w) / float64(sz.X)
 	dw := float64(sz.X) * sc
-	// **横向均匀性**（缺陷：云的横向分布不均，容易出现某一小段时间
-	// 屏幕中大部分是空白或某一段云大量集中出现）
-	//
-	// 原公式有两处会让 4 条带自己堆到一起或自己散开：
-	// (a) 每条带速度不同（0.45→1.0 倍视差） ⇒ 快的绕一圈回来就追上慢的；
-	// (b) 每条带的 span 还各自不同（span = w + 2·dw，而 dw 随带宽 285–524 px 变）
-	// ⇒ 周期不同 ⇒ 相位差随时间漂移。
-	// 实测（ui/hspread_test.go，900 秒逐秒剖面）：平均覆盖从 15% 掉到 2.3%，
-	// 单秒最多 8/12 列全空；同时出现相邻两列 35%、三列 28/28/28 的扎堆。
-	//
-	// 改法：所有带共用**同一个 span 与同一个速度**，相位严格等分（i/N 圈），
-	// 于是"等分"不依赖调参、是恒等式：任意时刻第 i 条带的中心都在
-	// mod(V·t + i·span/N, span) 上，相邻中心间距恒等于 span/N。
-	// 代价（如实记录）：带与带之间的**视差速度差被取消**，深度感改由
-	// 尺寸（285→524 px）、不透明度（0.588→0.784）与 y（38→499 px）承担。
+	// P6 设计第 3 条：相位与周期**共用同一个 span = w + 2·T**（旧逐带 spanI 删除）。
 	span := f.bandSpan(w)
-	// **逐带周期**（缺陷：云还没完全走出屏幕就消失了）：
-	// 周期取 span_i = w + 2·dw_i（该带自己的宽度），左边缘相位口径不动（mod=0 ⇒ x=−dw_i，
-	// 整条带跨 [−dw_i, 0] 全在屏外；mod→span_i 时 x = span_i − dw_i = w + dw_i ≥ w ⇒
-	// 整条带已经出右界，出屏那一刻屏内一个像素都不剩）。
-	// 旧口径所有带共用 span = w + 2·平均dw：带宽 dw_i > 平均dw 时，
-	// 周期终点 x = span − dw_i = w + 2·平均dw − dw_i 可以落回屏内
-	// ⇒ 带还有一条留在屏内就被瞬移回 x = −dw_i（读成"没出屏就消失"）。
-	// 速度口径不动：mod 的自变量仍是同一个 0.03·w·t·0.725（带间均速、公共速度口径），
-	// 只有"绕一圈的长度"逐带。
-	spanI := float64(w) + 2*dw
-	// 相位按**左边缘**记（不是中心）：mod=0 时 x = −dw ⇒ 整条带跨 [−dw, 0]，
-	// 全在屏幕外；mod→span_i 时 x = span_i−dw = w+dw ⇒ 整条已出右界。
-	// 若按中心记（x = centre − dw/2），周期起点带跨 [−dw/2, +dw/2] ⇒ 半条已经在屏内
-	// ⇒ 云在左边缘凭空冒出来，违反需求"云应该在外面慢慢进来
-	// 而不是在眼前突然出现"。
-	// 代价：等分的是**左边缘**，中心间距会因各带宽度不同偏差最多 (dw_max−dw_min)/2 ≈ 120 px
-	// （占周期 1888 px 的 6%），实测剖面最满列 ≤20%（改前 35%），可接受。
+	// ---- 不重叠的可证性（P6 设计第 4 条）----
 	//
-	// 速度 ×0.5（云速整体降一半，与粒子云的 vx 同一口径，
-	// 保持云与云带的视差关系）：0.06 → **0.03** 屏宽/秒（乘 0.725 的系数不变）。
-	x := math.Mod(0.03*float64(w)*t*0.725+span*float64(i)/float64(n), spanI) - dw
+	// 等相位（i/N 圈）+ 共用 span ⇒ 中心间距恒 = span/N（与 t 无关）：
+	//   中心_i = mod(V·t + span·i/N, span) + T/2。
+	// 两带重叠（最坏 = 相邻带，带宽同为 T）：
+	//   overlap = max(0, T − span/N) = max(0, T − (w+2T)/N)。
+	//   N = 3 ⇒ overlap = max(0, (T − w)/3)，而硬上限 T ≤ 0.95w ≤ w ⇒ 重叠恒为 0，
+	//   间隙 = span/N − T = (w − T)/3（w=1080、T=1000 ⇒ 26.7 px）。
+	// 旧落位式（根因，spec 点名到行，旧行号：旧 ui/effects.go:2168 落位式 /
+	//   旧 :2098 bandSpan = w + 2·平均dw / 旧 :2157 逐带 spanI / 旧 :2130 逐带 sc）：
+	//   x = mod(0.03·w·t·0.725 + span·i/n, spanI) − dw
+	//   把"等相位"按**共用 span** 加出来，却对**逐带周期** spanI = w + 2·dw_i 取模，
+	//   带宽 dw_i 逐带不同（sc = (1.5+0.8·frac)/bandNetDiv ⇒ 768…1178 px）
+	//   ⇒ 相邻带中心间距在 [0, spanI) 内不均，随 t 漂移必然相撞 ⇒ 实测 dual=55.7%。
+	//
+	// 相位按**左边缘**记（不是中心）：mod=0 时 x = −dw ⇒ 整条带跨 [−dw, 0]，全在屏幕外；
+	// mod→span 时 x = span − dw = w + dw ⇒ 整条已出右界（旧 :2158–2164 注释意图不变）。
+	// 若按中心记（x = centre − dw/2），周期起点带跨 [−dw/2, +dw/2] ⇒ 半条已经在屏内
+	// ⇒ 云在左边缘凭空冒出来，违反需求"云应该在外面慢慢进来而不是在眼前突然出现"。
+	// 等宽改造后这条代价消失：dw 逐带相同 ⇒ 左边缘等分 ⇔ 中心等分，间距恒 = span/N。
+	//
+	// 速度口径不动（P6"不做什么"）：0.03·w·t·0.725（云速 ×0.5 档，乘 0.725 系数不变）。
+	x := math.Mod(0.03*float64(w)*t*0.725+span*float64(i)/float64(n), span) - dw
 	// ---- 压顶档的带纵向位置（规格 2 表：阴 / 雨 / 雷 = 压顶）----
 	//
+	// P6"不做什么"：y 口径逐字不动（旧 :2178–2181 压顶档、frac = i/(n−1)）。
 	// 现口径 y = 0.02 + 0.24·frac（带左上角，归一化屏高）：四条带的**中心** y 实测
 	// 0.119 / 0.196 / 0.290 / 0.412 屏高（dh/2 = 0.0996…0.152 屏高），
 	// 中位数 0.243 ⇒ 比晴天粒子云的中心（月亮行 0.079…0.208，中位 0.144）更低
@@ -2016,7 +2418,10 @@ func (f *Field) cloudShadowPlaces(w, h int, t float64) []cloudShadowPlace {
 	}
 	out := make([]cloudShadowPlace, 0, 16)
 	// ---- 云带 ----
-	if n := f.bandCount(); n > 0 && len(f.sp.cloud) > 0 && len(f.sp.cloudSz) > 0 {
+	// P3 判据 C（空影守卫）：守卫必须与"本体画不画"共用 hasCloudBands() 这一判据
+	// （Draw / CoverageProfile / CelestialCoverAll 同一判据，探针 P1 抓到
+	// Clear 白天 / Snow / Dust 本体零条带、每帧仍投 4 次带影 = 纯浪费）。
+	if n := f.bandCount(); n > 0 && f.hasCloudBands() && len(f.sp.cloud) > 0 && len(f.sp.cloudSz) > 0 {
 		for i := 0; i < n; i++ {
 			fi := i % len(f.sp.cloud)
 			sz := f.sp.cloudSz[fi]
@@ -2109,6 +2514,9 @@ func (f *Field) drawCloudShadows(gtx layout.Context, w, h int, t float64) {
 		cl := clip.Rect(image.Rect(0, 0, osz.X, osz.Y)).Push(gtx.Ops)
 		sop.Add(gtx.Ops)
 		paint.PaintOp{}.Add(gtx.Ops)
+		if f.probeCount {
+			f.draws++ // P1 探针计数：云影层（云带影 + 粒子云影，drawCloudShadows）
+		}
 		cl.Pop()
 		st.Pop()
 		ts.Pop()
@@ -2126,7 +2534,6 @@ func (f *Field) drawCloudBands(gtx layout.Context, w, h int, t float64) {
 		if sz.X <= 0 || sz.Y <= 0 {
 			continue
 		}
-		frac := float64(i) / float64(n-1)
 		bp, ok := f.bandPlace(i, t, w, h)
 		if !ok {
 			continue
@@ -2163,7 +2570,10 @@ func (f *Field) drawCloudBands(gtx layout.Context, w, h int, t float64) {
 		alpha := f.bandAlphaOf(i, n)
 		// 云带纵向铺开范围：0.24 把 4 条云带压在顶部 26% 内，
 		// 范围做成可调量，供出图对比挑选（指定认可 0.24）。
-		sc := (1.5 + 0.8*frac) / bandNetDiv
+		// P6 设计第 2 条（绘制调用点 2/2）：sc = T / sz.X 与 bandPlace 同一口径
+		// （= bp.dw / sz.X，等宽 T ⇒ 逐带相同；上面注释里的 1.5+0.8·frac 口径作废，
+		// alpha/y 的 frac 口径不动，在 bandAlphaOf 与 bandPlace 内部各算各的）。
+		sc := bp.dw / float64(sz.X)
 		sx := sc
 		if bp.mirror { // 奇数索引水平镜像（机制复用）
 			sx = -sc
@@ -2180,6 +2590,9 @@ func (f *Field) drawCloudBands(gtx layout.Context, w, h int, t float64) {
 		cl := clip.Rect(image.Rect(0, 0, sz.X, sz.Y)).Push(gtx.Ops)
 		f.sp.cloud[fi].Add(gtx.Ops)
 		paint.PaintOp{}.Add(gtx.Ops)
+		if f.probeCount {
+			f.draws++ // P1 探针计数：云带本体（drawCloudBands）
+		}
 		cl.Pop()
 		st.Pop()
 		ts.Pop()
@@ -2353,6 +2766,9 @@ func (f *Field) Draw(gtx layout.Context, w, h int) {
 		cl := clip.Rect(image.Rect(0, 0, sz.X, sz.Y)).Push(gtx.Ops)
 		img.Add(gtx.Ops)
 		paint.PaintOp{}.Add(gtx.Ops)
+		if f.probeCount {
+			f.draws++ // P1 探针计数：粒子本体（含雾团，Draw 粒子循环）
+		}
 		cl.Pop()
 		st.Pop()
 		ts.Pop()
@@ -2560,6 +2976,9 @@ func (f *Field) drawPrecipSprite(gtx layout.Context, w, h int, p *particle, img 
 	cl := clip.Rect(image.Rect(0, 0, sz.X, sz.Y)).Push(gtx.Ops)
 	img.Add(gtx.Ops)
 	paint.PaintOp{}.Add(gtx.Ops)
+	if f.probeCount {
+		f.draws++ // P1 探针计数：drawPrecipSprite 降水贴图
+	}
 	cl.Pop()
 	st.Pop()
 	ts.Pop()
@@ -2857,6 +3276,9 @@ func (f *Field) drawBolt(gtx layout.Context, w, h int, flash float64) {
 	cl := clip.Rect(image.Rect(0, 0, sz.X, sz.Y)).Push(gtx.Ops)
 	img.Add(gtx.Ops)
 	paint.PaintOp{}.Add(gtx.Ops)
+	if f.probeCount {
+		f.draws++ // P1 探针计数：drawBolt 闪电本体
+	}
 	cl.Pop()
 	st.Pop()
 	ts.Pop()
@@ -2876,7 +3298,8 @@ func (f *Field) JitOf(i int) Jitter {
 }
 
 // AirOverlapStats 同带横向重叠对数与空中粒子数（自检）：
-// 同带 = |Δy| ≤ 0.12，重叠 = |Δx| < 0.22。
+// 同带 = |Δy| ≤ 0.12；P6b 起重叠判据 = 中心距 < 两半宽之和 + 间隙（宽度感知，
+// 与 resampleAir / DriftOverlapIncl 同一几何；旧口径 0.22 只看中心距）。
 func (f *Field) AirOverlapStats() (pairs, air int) {
 	for i := range f.parts {
 		if !isAir(f.parts[i].kind) {
@@ -2888,7 +3311,7 @@ func (f *Field) AirOverlapStats() (pairs, air int) {
 				continue
 			}
 			if math.Abs(f.parts[i].y-f.parts[j].y) <= airBandN &&
-				math.Abs(f.parts[i].x-f.parts[j].x) < airGapN {
+				math.Abs(f.parts[i].x-f.parts[j].x) < f.airGapNeededN(&f.parts[i], &f.parts[j]) {
 				pairs++
 			}
 		}
@@ -3207,6 +3630,9 @@ func (f *Field) drawFlash(gtx layout.Context, w, h int) {
 	cl := clip.Rect(image.Rect(0, 0, sz.X, sz.Y)).Push(gtx.Ops)
 	e.op.Add(gtx.Ops)
 	paint.PaintOp{}.Add(gtx.Ops)
+	if f.probeCount {
+		f.draws++ // P1 探针计数：drawFlash 局域提亮层
+	}
 	cl.Pop()
 	st.Pop()
 	ts.Pop()
@@ -3287,6 +3713,9 @@ func (f *Field) drawHaze(gtx layout.Context, w, h int, t float64) {
 		Color2: color.NRGBA{198, 206, 214, 96},
 	}.Add(gtx.Ops)
 	paint.PaintOp{}.Add(gtx.Ops)
+	if f.probeCount {
+		f.draws++ // P1 探针计数：drawHaze 雾霭梯度
+	}
 	cl.Pop()
 }
 
@@ -3325,8 +3754,23 @@ func (f *Field) airHalfN(p *particle) (hw, hh float64) {
 // （带上方 [y0-pad-hh, y0-pad] 与带下方 [y1+pad, y1+pad+hh] 的可用段）。
 func (f *Field) placeAirEntry(p *particle, r *rand.Rand) {
 	hw, hh := f.airHalfN(p)
+	// 停车也要在**绕回周期里错峰**：与同带同类层保持 ≥ 半宽和 + 间隙，
+	// 否则两张幕布都停在左沿外 = 周期里相叠（实测 Snow 400 步含粒子 43.74%）。
 	if p.vx >= 0 {
 		p.x = -hw
+		for j := range f.parts {
+			q := &f.parts[j]
+			if q == p || q.kind != p.kind || !isAir(q.kind) {
+				continue
+			}
+			if math.Abs(q.y-p.y) > airBandN {
+				continue
+			}
+			hq, _ := f.airHalfN(q)
+			if need := q.x - (hw + hq + airSlotGapN); need < p.x && q.x > p.x {
+				p.x = need
+			}
+		}
 	} else {
 		p.x = 1 + hw
 	}
@@ -3821,6 +4265,10 @@ const (
 	// 速度只朝目标值挪，一步最多 0.0004 ⇒ 从下钳位爬到上钳位要 32 帧以上，
 	// 逐帧跳变在条件上不成立。
 	cloudVxSlew = 0.0004
+	// cloudVxSlewStep 单步速度变化上限 = cloudVxSlew ÷ 追赶上限（A2 / C1）。
+	// 控制器跟着固定步数跑 ⇒ 一帧最多补 fixedStepCatchup 步，每帧合计变化上限
+	// 仍是 cloudVxSlew（自检 TestCloudVxSmooth 的判据逐字不变）。
+	cloudVxSlewStep = cloudVxSlew / fixedStepCatchup
 	// 钳位区间同步 ×0.5（云速整体降一半，与 spawn 的 vx 生成式同一口径）：
 	// 0.004/0.030 → **0.002/0.015**。区间本身是定板口径，不动。
 	cloudVxMin = 0.002 // 速度钳位下界（0.004 × 0.5）
@@ -3932,12 +4380,13 @@ func (f *Field) coupleClouds() {
 				tgt[k] = vq
 			}
 		}
-		// 低通：朝目标挪，一步最多 cloudVxSlew；再进钳位区间。
+		// 低通：朝目标挪，**一步**最多 cloudVxSlewStep = cloudVxSlew ÷ 追赶上限；再进钳位区间。
+		// （每帧合计 ≤ cloudVxSlew：一帧最多补 fixedStepCatchup 步。）
 		d := tgt[k] - p.vx
-		if d > cloudVxSlew {
-			d = cloudVxSlew
-		} else if d < -cloudVxSlew {
-			d = -cloudVxSlew
+		if d > cloudVxSlewStep {
+			d = cloudVxSlewStep
+		} else if d < -cloudVxSlewStep {
+			d = -cloudVxSlewStep
 		}
 		vx := p.vx + d
 		if vx < cloudVxMin {
@@ -3957,6 +4406,489 @@ func (f *Field) hasCloudBands() bool {
 		return true
 	}
 	return false
+}
+
+// ---- P3 判据 D：漂移期复查（运行时可观测 + 节流处置）----
+//
+// 现状（原话，ui/effects.go 的 coupleClouds 注释）：
+//
+//	"落位阶段本来有最小间隙保证（spreadAir），但它只在**生成时**生效，漂移中不复查"
+//
+// ⇒ 本节把"漂移中的复查"补出来：每 N 个固定步按**当前真实落位**扫一次重数，
+//
+//	超预算就对同带内重叠最严重的那一对做处置。
+//
+// P6 设计第 7 条（定死）：处置 = **回收重进场**（driftRecycleOffscreen：挪到屏外进场位 +
+// spreadAir 挑 y），P3 的"只降 alpha"缓解（particle.crowdDim 字段、cloudAlphaOf 的降 alpha 块、
+// crowdSweep 加档 / crowdDimRelax 退档、driftDim* 常量）按 spec 指名删除，行号见 out/notes-p6.md。
+const (
+	// driftCheckEverySteps 节流 N = 30 个固定步（fixedStep = 1/60 s ⇒ 0.5 s 一次）。
+	// N 的理由（口径，不拍数字）：一个检查间隔内两层相对位移的上界 =
+	//   云↔云带：(cloudVxMax 0.015 + 带速 0.03×0.725 = 0.02175) × 0.5 s = 0.0184 屏宽 = 19.9 px
+	//   云↔云 ：(cloudVxMax−cloudVxMin = 0.013) × 0.5 s = 0.0065 屏宽 = 7.0 px
+	// 判据线量级 = 整周期（1080 屏上 3026 px）上的 ≥2 层占比 ⇒ 一个间隔最多推进 20 px
+	// = 周期的 0.66% ⇒ 漏检窗口 = 0.5 s，处置最迟在下个间隔落地。
+	// 代价：一次扫描 = O(层数²) 对（云量档 4 带 + 3 云 = 7 层 ⇒ 21 对）+ 一次事件排序，
+	// 60 fps 下每 30 步一次。N 取 10 ⇒ 进 60 fps 热路径而几何只多测 3 倍（收益 0）；
+	// N 取 120（2 s）⇒ 一次重叠峰可被整段放过。
+	driftCheckEverySteps = 30
+	// driftDualBudgetPct 处置触发线 = 判据线本身。
+	// P6 判据（spec/p6-noverlap.md 目标口径，逐字）：含粒子云/雾团的双层占比 ≤10%
+	// ⇒ 触发线从 P3 的 60% 收紧到 10%（与测试线 budgetDualLine 同口径）。
+	driftDualBudgetPct = 10.0
+	// P6 设计第 7 条：P3 的 driftDimStep/driftDimMax/driftDimDecay（"只降 alpha"缓解三常量）
+	// 随该缓解一并删除（处置改回收，见 crowdSweep / driftRecycleOffscreen）。
+)
+
+// driftLayer 参与漂移重叠扫描的一层 = bandSpan 周期内的横轴区间 [start, start+width)（px）。
+// pi = 粒子在 parts 里的下标；云带记 -1（云带落位由 bandPlace 的等相位恒等式导出、不可挪）。
+type driftLayer struct {
+	start float64
+	width float64
+	pi    int
+	cy    float64 // 中心 y（归一化屏高）：与 coupleClouds 的"同道"判据共用 airBandN 口径
+}
+
+// wrapPeriod 把任意横坐标折进 [0, span)。
+func wrapPeriod(v, span float64) float64 {
+	if span <= 0 {
+		return 0
+	}
+	m := math.Mod(v, span)
+	if m < 0 {
+		m += span
+	}
+	return m
+}
+
+// driftLayers 按**当前真实落位**把云带 / 粒子云 / 雾团展开成 span 周期内的横轴区间。
+// 几何与绘制逐条共用同一份公式：带 = bandPlace(i, f.t)（与 drawCloudBands 同源），
+// 粒子云 = cloudDrawWidthPx（与 Draw 的 dw 同口径），雾团 = fogSz × spriteScale
+// （与 CoverageProfile / AirWidthsPx 同口径）。x 取当前的 p.x ⇒ 不是等相位假设。
+func (f *Field) driftLayers(w, h int) ([]driftLayer, float64) {
+	if w <= 0 {
+		w = PortraitW
+	}
+	if h <= 0 {
+		h = PortraitH
+	}
+	span := f.bandSpan(w)
+	out := make([]driftLayer, 0, 16)
+	if f.hasCloudBands() {
+		for i := 0; i < f.bandCount(); i++ {
+			bp, ok := f.bandPlace(i, f.t, w, h)
+			if !ok {
+				continue
+			}
+			out = append(out, driftLayer{
+				start: wrapPeriod(bp.x, span),
+				width: bp.dw,
+				pi:    -1,
+				cy:    (bp.y + bp.dh/2) / float64(h),
+			})
+		}
+	}
+	n := f.ActiveCount()
+	for i := 0; i < n && i < len(f.parts); i++ {
+		p := &f.parts[i]
+		var dw float64
+		switch p.kind {
+		case pkCloud:
+			dw = cloudDrawWidthPx(p)
+		case pkFog:
+			sz := spriteSizeOr(f.sp.fogSz, p.spr)
+			if sz.X <= 0 {
+				continue
+			}
+			dw = float64(sz.X) * spriteScale(p)
+		default:
+			continue
+		}
+		if dw <= 0 {
+			continue
+		}
+		out = append(out, driftLayer{
+			start: wrapPeriod(p.x*float64(w)-dw/2, span),
+			width: dw,
+			pi:    i,
+			cy:    p.y,
+		})
+	}
+	return out, span
+}
+
+// driftLayersStats 由区间序列导出 (Σ宽 ÷ span, 一个周期内被 ≥2 层覆盖的长度占比%)。
+//
+// 与探针的 DualPctOf（ui/overlap_probe.go）同一口径，唯一区别 = 区间起点来自真实落位：
+// 把每层折进 [0, span)（宽 ≥ span 的层记 full，铺满整周期），
+// 绕回段拆成 [start, span) 与 [0, end−span)，事件按 x 排序后扫重数，
+// 段中重数 ≥2 的段长累加（三层段只计一次 = 占比口径，与 DualPctOf 逐字一致）。
+func driftLayersStats(ls []driftLayer, span float64) (float64, float64) {
+	if span <= 0 {
+		return 0, 0
+	}
+	type ev struct {
+		x float64
+		d int
+	}
+	evs := make([]ev, 0, 2*len(ls)+2)
+	full, sum := 0, 0.0
+	dual := 0.0
+	for _, l := range ls {
+		if l.width <= 0 {
+			continue
+		}
+		sum += l.width
+		if l.width >= span {
+			full++
+			continue
+		}
+		s := wrapPeriod(l.start, span)
+		e := s + l.width
+		if e <= span {
+			evs = append(evs, ev{s, 1}, ev{e, -1})
+		} else {
+			evs = append(evs, ev{s, 1}, ev{span, -1}, ev{0, 1}, ev{e - span, -1})
+		}
+	}
+	sort.Slice(evs, func(i, j int) bool { return evs[i].x < evs[j].x })
+	cnt := full
+	k := 0
+	for k < len(evs) && evs[k].x <= 0 {
+		cnt += evs[k].d
+		k++
+	}
+	prev := 0.0
+	for k < len(evs) {
+		x := evs[k].x
+		if x > span {
+			x = span
+		}
+		if x > prev && cnt >= 2 {
+			dual += x - prev
+		}
+		for k < len(evs) && evs[k].x <= x+1e-9 {
+			cnt += evs[k].d
+			k++
+		}
+		prev = x
+	}
+	if prev < span && cnt >= 2 {
+		dual += span - prev
+	}
+	pct := 100 * dual / span
+	if pct > 100 {
+		pct = 100
+	}
+	return sum / span, pct
+}
+
+// driftDualParticlePairs P6 设计第 6 条的"含粒子"双层算式（dualIncl）：
+// **同带**粒子云/雾团对（pi ≥ 0，|Δcy| ≤ airBandN，与 driftWorstPair 的"同道"同一判据）
+// 在一个 span 周期内的重叠并集长度占比%。
+//
+// 口径说明（数值推导，不是调参；同一口径写进 out/notes-p6.md）：
+// P6 设计下带 = 97.4% 覆盖的单层"幕"（带间间隙 span/N − T = 26.7 px）。若把带∩云
+// 计入"双层占比"，等于把"粒子云压在云带上"这一**视觉设计本身**记成拥挤：
+// Σ粒子宽 ≥ 2×768 = 1536 px ⇒ dual 下界 (3000+1536−3080)/3080 = 48.6%（Overcast），
+// "含粒子云/雾团 ≤10%"在全层口径下几何不可能 ⇒ spec 判据线只在"粒子对"口径（=
+// driftWorstPair 处置用的同一口径）下自洽。layers（Σ宽÷span）口径不变，仍含全部层。
+func driftDualParticlePairs(ls []driftLayer, span float64) float64 {
+	if span <= 0 {
+		return 0
+	}
+	type iv struct{ lo, hi float64 }
+	var ivs []iv
+	add := func(lo, hi float64) {
+		if hi <= lo {
+			return
+		}
+		if hi-lo >= span {
+			ivs = append(ivs, iv{0, span})
+			return
+		}
+		m0, m1 := wrapPeriod(lo, span), wrapPeriod(hi, span)
+		if m1 > m0 {
+			ivs = append(ivs, iv{m0, m1})
+		} else {
+			ivs = append(ivs, iv{m0, span}, iv{0, m1})
+		}
+	}
+	for i := 0; i < len(ls); i++ {
+		if ls[i].pi < 0 {
+			continue
+		}
+		for j := i + 1; j < len(ls); j++ {
+			if ls[j].pi < 0 {
+				continue
+			}
+			if math.Abs(ls[i].cy-ls[j].cy) > airBandN {
+				continue
+			}
+			a, b := ls[i], ls[j]
+			if a.width >= span && b.width >= span {
+				ivs = append(ivs, iv{0, span})
+				continue
+			}
+			if a.width >= span {
+				add(b.start, b.start+b.width)
+				continue
+			}
+			if b.width >= span {
+				add(a.start, a.start+a.width)
+				continue
+			}
+			for _, s := range []float64{0, -span, span} {
+				lo := math.Max(a.start, b.start+s)
+				hi := math.Min(a.start+a.width, b.start+s+b.width)
+				if hi > lo {
+					add(lo, hi)
+				}
+			}
+		}
+	}
+	sort.Slice(ivs, func(i, j int) bool { return ivs[i].lo < ivs[j].lo })
+	total, have := 0.0, false
+	curLo, curHi := 0.0, 0.0
+	for _, v := range ivs {
+		if v.hi <= v.lo {
+			continue
+		}
+		if !have {
+			curLo, curHi, have = v.lo, v.hi, true
+			continue
+		}
+		if v.lo <= curHi {
+			if v.hi > curHi {
+				curHi = v.hi
+			}
+			continue
+		}
+		total += curHi - curLo
+		curLo, curHi = v.lo, v.hi
+	}
+	if have {
+		total += curHi - curLo
+	}
+	pct := 100 * total / span
+	if pct > 100 {
+		pct = 100
+	}
+	return pct
+}
+
+// DriftOverlapBandOnly P6 设计第 6 条的**带-only**口径：只用 bandPlace 真落位算
+// 云带彼此的重叠（不含粒子）。设计上恒为 0（bandPlace 注释的可证性），这里是"量出来证明"
+// 的出口：探针与 SCR_CROWD 打 dualBandOnly，判据测试断言 ≤5%。
+// layers = Σ带宽 ÷ span = N·T/span（设计第 5 条覆盖率线 ≥0.90 用这一口径，
+// 与现成 AvgLayersOf（ui/overlap_probe.go）同一算式）。
+func (f *Field) DriftOverlapBandOnly() (layers float64, dualPct float64) {
+	ls, span := f.driftLayers(f.sw, f.sh)
+	bands := make([]driftLayer, 0, len(ls))
+	for _, l := range ls {
+		if l.pi < 0 {
+			bands = append(bands, l)
+		}
+	}
+	return driftLayersStats(bands, span)
+}
+
+// DriftOverlapIncl P6 设计第 6 条的**含粒子云/雾团**口径：层集 = 现 DriftOverlap 的
+// driftLayers 全集（带 + 粒子云 + 雾团），layers = Σ宽÷span 口径不变；
+// dual = 同带粒子对重叠（driftDualParticlePairs，口径理由见其注释）。
+func (f *Field) DriftOverlapIncl() (layers float64, dualPct float64) {
+	ls, span := f.driftLayers(f.sw, f.sh)
+	layers, _ = driftLayersStats(ls, span)
+	return layers, driftDualParticlePairs(ls, span)
+}
+
+// DriftOverlap = DriftOverlapIncl 的兼容出口（P3 判据 2 的"实测值"、判据 3 的 400 步判据
+// 与 main.go SCR_CROWD 都经它）。P6 起 dual 口径 = 同带粒子对（DriftOverlapIncl 注释）；
+// 带-only 口径走 DriftOverlapBandOnly。
+func (f *Field) DriftOverlap() (layers float64, dualPct float64) {
+	return f.DriftOverlapIncl()
+}
+
+// driftArcOverlap 两段在一个周期内的最大重叠长度（px）：把 b 允许平移整周期取最坏值。
+func driftArcOverlap(a, b driftLayer, span float64) float64 {
+	if a.width >= span || b.width >= span {
+		lo := math.Min(a.width, b.width)
+		if lo > span {
+			lo = span
+		}
+		return lo
+	}
+	best := 0.0
+	for _, s := range []float64{b.start, b.start - span, b.start + span} {
+		lo := math.Max(a.start, s)
+		hi := math.Min(a.start+a.width, s+b.width)
+		if hi > lo && hi-lo > best {
+			best = hi - lo
+		}
+	}
+	return best
+}
+
+// driftWorstPair 同带内（|Δy| ≤ airBandN，与 coupleClouds 的"同道"同一判据）
+// 重叠长度最大的一对**可处置粒子层**（pi ≥ 0）：云带不可挪（带几何 = bandPlace 的
+// 等相位恒等式，处置带 = 改带口径 = 越权），故只在粒子云 / 雾团之间挑。
+// 返回 (前车, 后车, 重叠长度)；无可处置对时 (-1,-1,0)。
+func driftWorstPair(ls []driftLayer, span float64) (int, int, float64) {
+	bestI, bestJ, best := -1, -1, 0.0
+	for i := 0; i < len(ls); i++ {
+		if ls[i].pi < 0 {
+			continue
+		}
+		for j := i + 1; j < len(ls); j++ {
+			if ls[j].pi < 0 {
+				continue
+			}
+			if math.Abs(ls[i].cy-ls[j].cy) > airBandN {
+				continue
+			}
+			ov := driftArcOverlap(ls[i], ls[j], span)
+			if ov <= best {
+				continue
+			}
+			front, rear := ls[i].pi, ls[j].pi
+			if ls[j].start > ls[i].start {
+				front, rear = ls[j].pi, ls[i].pi
+			}
+			best, bestI, bestJ = ov, front, rear
+		}
+	}
+	return bestI, bestJ, best
+}
+
+// driftClassOn 云/雾档 = 场上有漂移中的粒子云或雾团的档（判据 D 说的"云/雾类"）：
+// 云带五档（Cloudy/PartlyCloudy/Overcast/Rain/Thunder）+ 雾（pkFog）两档（Fog/Snow）。
+// Clear 白天只有 1 朵云 + 3 个光斑（无从重叠）、Dust 无云无雾 ⇒ 不进复查路径。
+func driftClassOn(cls effect.Class) bool {
+	switch cls {
+	case effect.Cloudy, effect.PartlyCloudy, effect.Overcast, effect.Rain, effect.Thunder, effect.Fog, effect.Snow:
+		return true
+	}
+	return false
+}
+
+// driftRecycleOffscreen P6 设计第 7 条的处置 = **挪到屏外重进场**（现成回收口径）：
+//
+//	x 摆到进场位（vx>0 → x = −hw、vx<0 → x = 1+hw，整只贴屏外，与 placeAirEntry
+//	的回收进场位逐字同式；回收窗常量 recycleXLo/recycleYLo 口径），
+//	y 走现成 spreadAir（拒绝采样挑与已有同类粒子最小间隙最大的落位，allowX=false ⇒
+//	x 固定在屏幕外、只有 y 可调，与 placeAirEntry 的雾回收支路同一调用式）。
+//
+// 不用 spawn(false) 整朵重生的理由（沿用 P3 取证的那条速度判据，处置不许撞它）：
+//
+//	spawn ⇒ vx 从钳位区间瞬移回基准（0.003–0.014），一帧 |Δvx| 最大 0.011 ≫
+//	cloudVxSlew(0.0004) ⇒ 撞 TestCloudVxSmooth 每帧变化上限。本函数只挪位、
+//	逐字不动 vx/vxBase/alpha/sc（P6"不做什么"：粒子数/alpha/速度口径）。
+//
+// moveAirToFreeBand 把一朵空中层挪进**净空 y 带**（与所有同类层 |Δy| > airBandN + 余量）：
+// 宽团（雾/灰幕，hw 0.41–1.03）在同一带里必然相叠，横向又铺不开 ⇒ 换带是唯一
+// 既消重叠又保覆盖的处置。实测：回收走 spreadAir 重摆 y 会把宽团塞进窄带，
+// Fog 800 步含粒子 25.44%、Snow 400 步 48.67% 都由这条路径产生。
+// 返回 false = 没有净空带（调用方走屏外进场位）。
+func (f *Field) moveAirToFreeBand(p *particle) bool {
+	hh := f.halfHN(p, f.sh)
+	if hh <= 0 || hh >= 0.5 {
+		return false
+	}
+	margin := airBandN + airSlotGapN
+	// 搜索区**不受"整只在屏内"限制**：宽幕（hw/hh 到 0.29–1.03）在 [hh, 1−hh] 里
+	// 只剩 0.424 高，装不下 3 张 pairwise > 0.14 ⇒ 必有一张被推去停车，
+	// 而停车位在绕回周期里彼此相叠（实测 Snow 400 步三张全停在 x −0.62…−0.87）。
+	// 幕布类允许边缘出血，搜索区取 [0.06, 0.94]。
+	// 搜索区 = **完整可见**（y ∈ [hh, 1−hh]，TestCloudFogAvoidInfoBand 硬要求）
+	// 且**避让中央信息带**（与 bandFreeY 同口径：[hh, y0−pad] ∪ [y1+pad, 1−hh]）。
+	// 两块宽团（Fog 实测 0.82 与 0.98 屏宽）在同一带里不可能都全可见 ⇒
+	// 唯一同时满足"不相叠 + 不掉覆盖率"的出路是把第二块放到信息带另一侧的可用带。
+	pad := bandPadJitN(p.kind, f.sh)
+	y0, y1 := infoBandY()
+	loA, hiA := hh, y0-pad
+	loB, hiB := y1+pad, 1.0-hh
+	bestClear, bestY := -1.0, 0.0
+	for k := 0; k <= 120; k++ {
+		y := 0.0
+		if k <= 60 {
+			if hiA <= loA {
+				continue
+			}
+			y = loA + (hiA-loA)*float64(k)/60.0
+		} else {
+			if hiB <= loB {
+				continue
+			}
+			y = loB + (hiB-loB)*float64(k-61)/59.0
+		}
+		clear := 2.0
+		for j := range f.parts {
+			q := &f.parts[j]
+			if q == p || q.kind != p.kind || !isAir(q.kind) {
+				continue
+			}
+			if d := math.Abs(q.y - y); d < clear {
+				clear = d
+			}
+		}
+		if clear > bestClear {
+			bestClear, bestY = clear, y
+		}
+	}
+	if bestClear <= margin {
+		return false
+	}
+	p.y = bestY
+	f.placeAirXInBand(p)
+	return true
+}
+
+func (f *Field) driftRecycleOffscreen(i int) {
+	if i < 0 || i >= len(f.parts) {
+		return
+	}
+	p := &f.parts[i]
+	if p.kind != pkCloud && p.kind != pkFog {
+		return
+	}
+	hw, _ := f.airHalfN(p)
+	// P6b：先试换净空带（保覆盖），找不到净空带才走屏外进场位。
+	if f.moveAirToFreeBand(p) {
+		return
+	}
+	if p.vx >= 0 {
+		p.x = -hw
+	} else {
+		p.x = 1 + hw
+	}
+	f.spreadAir(p, f.rng, false)
+}
+
+// crowdSweep 漂移期复查（P3 判据 D 第 2 条 + P6 设计第 7 条）：每个固定步进来一次，
+// 按 driftCheckEverySteps = 30 节流（spec 逐字"每 30 步复查一次"，沿用现成节流）。
+//
+// 机理（处置方式 = P6 设计第 7 条：回收重进场；P3 的"只降 alpha"缓解已按 spec 删除）：
+//
+//	含粒子双层占比（driftDualParticlePairs，同带粒子对口径）超预算（10%）
+//	⇒ 取同带内重叠最严重的一对（driftWorstPair，前车道与后车道都处置），
+//	走 driftRecycleOffscreen 挪到屏外重进场；预算内 ⇒ 不做任何事（alpha 不碰）。
+func (f *Field) crowdSweep() {
+	if !driftClassOn(f.cls) {
+		return
+	}
+	if f.steps <= 0 || f.steps%driftCheckEverySteps != 0 {
+		return
+	}
+	ls, span := f.driftLayers(f.sw, f.sh)
+	if driftDualParticlePairs(ls, span) < driftDualBudgetPct {
+		return
+	}
+	front, rear, ov := driftWorstPair(ls, span)
+	if ov <= 0 {
+		return
+	}
+	f.driftRecycleOffscreen(front)
+	f.driftRecycleOffscreen(rear)
 }
 
 // CoverageProfile 把屏幕横向切成 cols 个竖条，返回每条被云（**云带 + 粒子云**）覆盖的比例。
@@ -4090,4 +5022,68 @@ func (f *Field) CelestialCoverAll(w, h int) (bands int, coverPct float64) {
 		return bands, 0
 	}
 	return bands, 100 * float64(covered) / float64(total)
+}
+
+// placeAirXInBand 换带之后给本层在新带的可见窗里挑最大空档的落位；
+// 新带没有其他层 ⇒ 取可见窗中点。
+func (f *Field) placeAirXInBand(p *particle) {
+	hwP, _ := f.airHalfN(p)
+	if hwP >= 0.5 {
+		p.x = 0.5
+		return
+	}
+	lo, hi := hwP, 1.0-hwP
+	if hi <= lo {
+		p.x = 0.5
+		return
+	}
+	marks := []float64{lo, hi}
+	for j := range f.parts {
+		q := &f.parts[j]
+		if q == p || !isAir(q.kind) {
+			continue
+		}
+		if math.Abs(q.y-p.y) > airBandN {
+			continue
+		}
+		hq, _ := f.airHalfN(q)
+		marks = append(marks, q.x-hq-airSlotGapN, q.x+hq+airSlotGapN)
+	}
+	bestLen, bestC := -1.0, (lo+hi)/2
+	for k := 0; k+1 < len(marks); k++ {
+		a, b := marks[k], marks[k+1]
+		if b < a {
+			a, b = b, a
+		}
+		c := (a + b) / 2
+		if c < lo || c > hi {
+			continue
+		}
+		if b-a > bestLen {
+			bestLen, bestC = b-a, c
+		}
+	}
+	p.x = bestC
+}
+
+// clampFogWidthPx 雾团屏宽按类封顶（P7 用户判据"最多的时候也只能首尾相连，不能重叠"）：
+// 同带 Σ全宽 + 间隙 ≤ 1 屏宽 ⇒ Snow 3 张灰幕 ⇒ 每张 ≤ (1080−42)/3 = 346 px；
+// Fog 1 团（配 1 朵 ≤500 px 的云）⇒ ≤ 540 px。缩的是 sc（绘制倍率本体），
+// 逐字不动 alpha / vx / 团数 / 落位口径。实测封顶前：Snow 单张 1135 px、Fog 884 px。
+func (f *Field) clampFogWidthPx(p *particle, capPx float64) {
+	if capPx <= 0 || p.sc <= 0 {
+		return
+	}
+	sz := spriteSizeOr(f.sp.fogSz, p.spr)
+	if sz.X <= 0 {
+		sz = spriteSize(spritesOnce(), pkFog)
+	}
+	if sz.X <= 0 {
+		return
+	}
+	w := float64(sz.X) * spriteScale(p)
+	if w <= capPx {
+		return
+	}
+	p.sc *= capPx / w
 }

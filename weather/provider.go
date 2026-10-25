@@ -100,6 +100,11 @@ func GeocodeParams(city string) url.Values {
 }
 
 type geoResponse struct {
+	// 批次 A1 S1（spec/a1-fetch-polite.md）：上游把过载/限流用 **HTTP 200 + body**
+	// 送回来，body 形如 {"error":true,"reason":"..."}。geocoding 侧同 forecast 侧口径。
+	Error  bool   `json:"error"`
+	Reason string `json:"reason"`
+
 	Results []struct {
 		Latitude  float64 `json:"latitude"`
 		Longitude float64 `json:"longitude"`
@@ -109,6 +114,11 @@ type geoResponse struct {
 }
 
 type forecastResponse struct {
+	// 批次 A1 S1：实测抓到的 body 层错误（**HTTP 200** + {"error":true,"reason":"The service is overloaded"}）。
+	// 没有这两字段时该响应被当正常数据解析：weather_code 缺键 ⇒ 0 ⇒ Clear ⇒ 判成"晴"。
+	Error  bool   `json:"error"`
+	Reason string `json:"reason"`
+
 	Current struct {
 		Temperature2m      *float64 `json:"temperature_2m"`
 		WeatherCode        int      `json:"weather_code"`
@@ -251,6 +261,39 @@ type Client struct {
 
 type geoCoord struct{ lat, lon float64 }
 
+// ProviderError = 上游**非 200** 响应的可判类型（批次 A1 S2）。
+//
+// 429（RFC 9110 §15.5.13）与 503（§15.5.17）都算"上游拒绝"；RetryAfter 来自
+// Retry-After 头（§8.4）。调用方用 errors.As(err, *ProviderError) 取它决定退避。
+type ProviderError struct {
+	Status     int
+	RetryAfter time.Duration
+	Body       string
+}
+
+// Error 文本必须含**状态码与 body 前 120 字节**（取证要能指名上游到底说了什么）。
+func (e *ProviderError) Error() string {
+	body := e.Body
+	if len(body) > 120 {
+		body = body[:120]
+	}
+	return fmt.Sprintf("open-meteo: 上游拒绝 status=%d body=%q", e.Status, body)
+}
+
+// retryAfterDuration = RFC 9110 §8.4 的 Retry-After。
+// 本项目**只需支持秒数形式**：非纯数字（HTTP-date 形式、空值、负数）⇒ 0，不阻塞。
+func retryAfterDuration(v string) time.Duration {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0
+	}
+	secs, err := strconv.Atoi(v)
+	if err != nil || secs < 0 {
+		return 0
+	}
+	return time.Duration(secs) * time.Second
+}
+
 func (c *Client) client() *http.Client {
 	if c.HTTP != nil {
 		return c.HTTP
@@ -283,12 +326,18 @@ func (c *Client) get(u string, params url.Values) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("open-meteo: %s 返回 %d", u, resp.StatusCode)
-	}
+	// 状态码与 body 一起读：非 200 也要把上游原文带进 ProviderError（S2 取证口径）。
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
 		return nil, fmt.Errorf("读取 %s 响应失败: %w", u, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		pe := &ProviderError{
+			Status:     resp.StatusCode,
+			RetryAfter: retryAfterDuration(resp.Header.Get("Retry-After")),
+			Body:       string(body),
+		}
+		return nil, fmt.Errorf("%s: %w", u, pe)
 	}
 	return body, nil
 }
@@ -308,6 +357,10 @@ func (c *Client) Geocode(city string) (lat, lon float64, err error) {
 	var g geoResponse
 	if err := json.Unmarshal(body, &g); err != nil {
 		return 0, 0, fmt.Errorf("解析 geocoding 响应失败: %w", err)
+	}
+	// 批次 A1 S1：与 forecast 侧同语义 —— body 层错误 ⇒ 不当正常数据用。
+	if g.Error {
+		return 0, 0, fmt.Errorf("上游 geocoding body 层错误 reason=%q", g.Reason)
 	}
 	if len(g.Results) == 0 {
 		return 0, 0, fmt.Errorf("城市无 geocoding 结果: %s", city)
@@ -352,6 +405,11 @@ func (c *Client) Fetch(city string) (*Sample, error) {
 	var f forecastResponse
 	if err := json.Unmarshal(body, &f); err != nil {
 		return nil, fmt.Errorf("解析 forecast 响应失败: %w", err)
+	}
+	// 批次 A1 S1：body 层错误 ⇒ 直接判失败，**此时绝不返回 Sample**
+	// （调用方拿到 nil sample + 非 nil err ⇒ 不进判类、不进缓存）。
+	if f.Error {
+		return nil, fmt.Errorf("上游 body 层错误 reason=%q", f.Reason)
 	}
 
 	s := &Sample{

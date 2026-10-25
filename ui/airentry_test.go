@@ -59,7 +59,11 @@ func TestAirEntryRecycleIsOffscreen(t *testing.T) {
 	if n == 0 {
 		t.Skip("本场无云粒子")
 	}
-	f.Step(time.Second, 1080, 1920)
+	// 批次 A2 / C1：推进**一个固定步长**（不是整帧）。
+	// 回收判据在步内、位移之后，回收后 `continue` ⇒ 这一步里新粒子不再被推；
+	// 一帧最多补 3 步，多跑几步会把进场位 x=−hw 推走（3×vx×fixedStep ≈ 0.7 px），
+	// 判据要的是"回收那一刻的进场位"，故钉在单步上，断言逐字不变。
+	f.advanceOneStep(fixedStep)
 	for i := range f.parts {
 		p := &f.parts[i]
 		if p.kind != pkCloud {

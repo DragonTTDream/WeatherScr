@@ -433,7 +433,15 @@ func TestCloudNoJerkyMotion(t *testing.T) {
 // 于是 t* = (k·span_i − span·i/N)/速度，取 t*∓1ms 两点就是瞬移前/后的带位置。
 // 速度口径 = 绘制用的 0.03·屏宽·0.725（带间均速，公共口径不动），span_i = w + 2·dw_i（逐带）。
 func TestBandWrapFullyOffscreen(t *testing.T) {
-	const frames = 400
+	// 批次 A2 / C1：位移改固定步长后，一帧 dt=1 s 只推进追赶上限 3 步 = fixedStepCatchup×fixedStep
+	// 的动画时间（旧口径一帧 = 1 s）。判据量的是 400 s 动画时长里的 wrap 次数 ⇒ 帧数必须按
+	// fixedStep 常量换算：400 s ÷ (fixedStepCatchup × fixedStep) = 8000 帧。
+	// 换算口径变了（产品语义按批准变更），判据本体（wrap 次数 ≥1 + 出屏/进场几何）逐字不变。
+	frameAnim := fixedStepCatchup * fixedStep // 一帧（dt=1 s）推进的动画时间
+	frames := int((400 * time.Second) / frameAnim)
+	if frames != 8000 {
+		t.Fatalf("帧数换算 = %d，期望 8000（400 s ÷ 每帧 %v = %d×fixedStep %v）", frames, frameAnim, fixedStepCatchup, fixedStep)
+	}
 	dt := time.Second
 	speed := 0.03 * float64(PortraitW) * 0.725
 	eps := 0.001

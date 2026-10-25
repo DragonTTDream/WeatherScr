@@ -952,7 +952,26 @@ func formatNum(v float64) string {
 // 逐像素复现 GPU 语义：`gradAlpha` = 从 (c,a1) 到 (c,a2) 的线性渐变，
 // src-over 合成 ⇒ CPU 侧按同一插值与同一合成公式逐像素算。
 
-const skyCacheScale = 2 // 烘焙分辨率 = 屏幕 / 2
+const skyCacheScale = 2 // 烘焙分辨率 = 屏幕 / 2（稳态口径，批次 A2 不许动）
+
+// skyCacheBootScale 尺寸变化首帧的烘焙尺度（C3 第 2 条）：比稳态**粗一档**，
+// 首帧只烘 1/16 面积（稳态 1/4），将"尺寸切换当帧全量烘焙"的那一笔重排拆开
+// （实测同刻 SCR_SKYCACHE bake=99.8ms 落在 layout>1 s 的那一帧上）。
+// 第二帧起回到 skyCacheScale 稳态尺度（见 skyCached 的升级重烘）。
+const skyCacheBootScale = skyCacheScale * 2
+
+// BakeScale 本次烘焙应使用的尺度（纯函数、数值确定，C3 钉死对象）：
+//
+//	尺寸变化后的首帧 ⇒ skyCacheBootScale（4，粗一档）
+//	其余帧（含稳态、含启动期之后）⇒ skyCacheScale（2，稳态口径不变）
+//
+// 尺度 = 屏幕 ÷ 该值 = 烘焙边长分母；越大越粗、越便宜。
+func BakeScale(firstFrameAfterSizeChange bool) int {
+	if firstFrameAfterSizeChange {
+		return skyCacheBootScale
+	}
+	return skyCacheScale
+}
 
 // ── 覆盖目录里的天体底图（预览工装，未启用时全部返回空 = 出厂路径不变）──
 //
@@ -1051,6 +1070,9 @@ type skyCacheEntry struct {
 type skyCacheType struct {
 	key skyCacheKey
 	ent *skyCacheEntry
+	// coarse = 当前缓存条目是"尺寸变化首帧"的粗尺度烘焙 ⇒
+	// 下一次同键命中时按稳态尺度升级重烘一次（C3 第 2 条：第二帧起回稳态）。
+	coarse bool
 }
 
 var skyCache skyCacheType
@@ -1090,15 +1112,20 @@ func skyCached(size image.Point, cls effect.Class, isDay bool, phase *float64, c
 		moon: moonPhaseKey(phase), tex: skyBakeTexKey(isDay),
 		cloud: cloudPct / 5,
 	}
-	if skyCache.key == k && skyCache.ent != nil {
+	if skyCache.key == k && skyCache.ent != nil && !skyCache.coarse {
 		skyStats.Hits++
 		return skyCache.ent
 	}
+	// 尺寸变化判据 = 键里的 w/h 与上一张不同（且上一张存在）：
+	// 只有这种情况的首帧用粗一档尺度，第二帧起（同键命中）升级回稳态尺度。
+	sizeChanged := skyCache.ent != nil && (skyCache.key.w != size.X || skyCache.key.h != size.Y)
+	scale := BakeScale(sizeChanged)
 	t0 := time.Now()
-	img := renderSkyCPU(size.X/skyCacheScale, size.Y/skyCacheScale, cls, isDay, phase, cloudPct)
+	img := renderSkyCPU(size.X/scale, size.Y/scale, cls, isDay, phase, cloudPct)
 	ent := &skyCacheEntry{img: img, ops: paint.NewImageOp(img)}
 	skyCache.key = k
 	skyCache.ent = ent
+	skyCache.coarse = scale != skyCacheScale
 	skyStats.Builds++
 	skyStats.LastKey = fmt.Sprintf("%s/%v/%dx%d/moon=%d/tex=%s/cloud=%d",
 		cls, isDay, size.X, size.Y, k.moon, k.tex, k.cloud)

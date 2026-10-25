@@ -33,7 +33,8 @@ type Config struct {
 	WeatherBaseURL string `json:"weather_base_url"`
 
 	// FetchTimeoutSeconds 单次天气请求超时。上游 timeout=10；
-	// 屏保启动不得被网络卡住，取小值并配合后台刷新。
+	// 批次 A1 S4（spec/a1-fetch-polite.md）：默认值 5 ⇒ 10，与上游 timeout=10 对齐。
+	// 取数在后台 goroutine 里跑 ⇒ 屏保启动照旧不被网络卡住。
 	FetchTimeoutSeconds int `json:"fetch_timeout_seconds"`
 
 	EffectEnabled []string `json:"effect.enabled"`
@@ -117,7 +118,7 @@ func Defaults() Config {
 		// 地理编码已缓存 ⇒ 一次刷新 = 1 个请求、平均 476 ms 网络等待、响应体 1090 B；
 		// 1 分钟刷新 = 60 次/小时 ≈ 60 KB/小时，等待在独立 goroutine 里，CPU 可忽略。
 		RefreshMinutes:      1,
-		FetchTimeoutSeconds: 5,
+		FetchTimeoutSeconds: 10,
 		EffectEnabled: []string{
 			"clear", "cloudy", "fog", "rain", "snow", "thunder", "dust",
 		},

@@ -28,7 +28,7 @@ import (
 //  3. "粒子云名义屏宽与云带同区间"**只对 overcast 保留**；
 //     clear/partly-cloudy/cloudy 是**故意**与云带不同区间（逐类表就是为此而设）
 //
-// 附带数量口径（不动）：Cloudy 3 / PartlyCloudy 2 / Overcast 5 / Clear 白天 4
+// 附带数量口径：Cloudy 3 / PartlyCloudy 2 / Overcast **2**（P3 判据 B 由 5 降）/ Clear 白天 4
 // （Clear 的 4 是全场粒子数 = 1 朵云 + 3 个光晕，云按 idx%5==0 取）；
 // Clear 夜间 110 是星不是云 ⇒ 云数应为 0。
 func TestCloudWidthMatchesBand(t *testing.T) {
@@ -42,28 +42,33 @@ func TestCloudWidthMatchesBand(t *testing.T) {
 	)
 	// 逐类实画屏宽区间 = cloudFormOf 的表（测试与实现共用同一张表 ⇒ 断言的是口径本身）
 	drawWant := map[effect.Class][2]float64{
-		effect.Clear:        {300, 600},
-		effect.PartlyCloudy: {300, 700},
-		effect.Cloudy:       {500, 900},
-		effect.Overcast:     {768, 1178},
+		// P7（用户判据"屏幕上的云或雾最多的时候也只能首尾相连，不能重叠"）：
+		// 逐类上限 = (1080 − (朵数−1)×21 px) ÷ 朵数 ⇒ 满密度时首尾相接恰好铺满一屏。
+		// 晴 1 朵 420 / 多云见日 2 朵 460 / 多云 3 朵 340 / 阴 2 朵 529。
+		effect.Clear:        {280, 460},
+		effect.PartlyCloudy: {280, 500},
+		effect.Cloudy:       {170, 370},
+		effect.Overcast:     {450, 580},
 	}
 	// "与云带同区间"只对压顶档保留
 	sameAsBand := map[effect.Class]bool{
 		effect.Clear:        false,
 		effect.PartlyCloudy: false,
 		effect.Cloudy:       false,
-		effect.Overcast:     true,
+		// P7：阴档云宽上限 529 px < 云带 1000 px ⇒ "与云带同区间"这条旧口径
+		// 与"首尾相连不相叠"算术互斥（2 朵 ×768 = 1536 px > 1080 px 必叠）⇒ 取消。
+		effect.Overcast: false,
 	}
 	counts := map[effect.Class]int{
 		effect.Cloudy:       3,
 		effect.PartlyCloudy: 2,
-		effect.Overcast:     5,
+		effect.Overcast:     2, // P3 判据 B：5 → 2
 		effect.Clear:        4,
 	}
 	cloudWant := map[effect.Class]int{
 		effect.Cloudy:       3,
 		effect.PartlyCloudy: 2,
-		effect.Overcast:     5,
+		effect.Overcast:     2, // P3 判据 B：5 → 2
 		effect.Clear:        1,
 	}
 	seeds := []int64{20261015, 20261016, 20261017, 23, 11}
@@ -138,13 +143,21 @@ func TestCloudWidthMatchesBand(t *testing.T) {
 				t.Errorf("%s seed=%d: 云带 dw 区间 [%.1f, %.1f] 越出 [%d, %d]", cls, seed, bandMin, bandMax, bandLo, bandHi)
 			}
 			if sameAsBand[cls] {
-				// 同区间的比较量 = **实画屏宽**（Draw 真正画出来的宽度）。
-				// 旧口径比的是"名义屏宽"（不含 scaleMul 抖动）：那轮 sc 是旋钮、
-				// 抖动把区间撑宽，所以只能比名义值。现口径 sc 由目标屏宽**反解**，
-				// 抖动被反解掉 ⇒ 实画屏宽就是口径本身，比它才是比屏幕上画出来的东西。
-				if drawMin < bandMin-tolNom || drawMax > bandMax+tolNom {
-					t.Errorf("%s seed=%d: 粒子云实画屏宽 [%.1f, %.1f] 与云带 [%.1f, %.1f] 不同区间（本档要求同区间）",
-						cls, seed, drawMin, drawMax, bandMin, bandMax)
+				// P6 设计第 2 条后云带改等宽 dw = T = round(w×1000/1080) = 1000 px（1080 屏），
+				// 粒子云 p.sc 口径**不动**（P6"不做什么"）⇒ "同区间"的比较方向随之定：
+				// 带（1000 px，逐字 = T）必须**落在本档粒子云区间 [768, 1178] 内**
+				// （旧方向"粒子云贴云带逐档同宽"随逐带 frac 口径一起作废）。
+				if math.Abs(bandMin-bandWidthPx(PortraitW)) > tolBand || math.Abs(bandMax-bandWidthPx(PortraitW)) > tolBand {
+					t.Errorf("%s seed=%d: 云带 dw [%.1f, %.1f] ≠ 等宽 T=%.1f px（P6 设计第 2 条）",
+						cls, seed, bandMin, bandMax, bandWidthPx(PortraitW))
+				}
+				if bandMin < want[0]-tolNom || bandMax > want[1]+tolNom {
+					t.Errorf("%s seed=%d: 云带 dw [%.1f, %.1f] 不落粒子云区间 [%.0f, %.0f]（P6 后同区间方向）",
+						cls, seed, bandMin, bandMax, want[0], want[1])
+				}
+				if drawMin < want[0]-tolDraw || drawMax > want[1]+tolDraw {
+					t.Errorf("%s seed=%d: 粒子云实画屏宽 [%.1f, %.1f] 越出本类区间 [%.0f, %.0f]",
+						cls, seed, drawMin, drawMax, want[0], want[1])
 				}
 			}
 			t.Logf("%s seed=%d 云=%d 朵 实画屏宽 [%.0f, %.0f] px（本类区间 [%.0f, %.0f]）名义屏宽 [%.0f, %.0f] px | 云带 dw [%.0f, %.0f] px | 与云带同区间要求=%v",

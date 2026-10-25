@@ -50,6 +50,7 @@ func TestNoOvertake(t *testing.T) {
 	// 云速 0.003–0.014 屏宽/秒 ⇒ 两次快照之间最多走 0.0047 屏宽 = 5 px，
 	// 超车必然落在某次快照对上（超车是连续事件，翻转后不会翻回来：同带内 y 恒定、vx 恒定）。
 	for _, cls := range []effect.Class{effect.Clear, effect.PartlyCloudy, effect.Cloudy, effect.Overcast, effect.Rain, effect.Thunder} {
+		pairSeenClass, tested := 0, false // P3：同带采样的"样本足否"判据从**每 seed** 改成**逐类合计**（理由见下面 Fatalf 的注释）
 		for _, seed := range []int64{20261015, 23, 11} {
 			f := NewField(cls, true, seed)
 			nCloud := 0
@@ -72,6 +73,7 @@ func TestNoOvertake(t *testing.T) {
 				t.Logf("%-13s seed=%d：粒子云 %d 朵 ⇒ 无前后对可言，跳过（晴档 counts=4，云按 idx%%5==0 取）", cls, seed, nCloud)
 				continue
 			}
+			tested = true // 本 seed 有 ≥2 朵粒子云 ⇒ 纳入逐类合计的样本足否判据
 			// 快照 = 每 5 步一次，记每朵云的 (x, y)。
 			// 实例同一性判据：粒子云的 vy = 0（spawn 不给云 vy）⇒ 一朵云在一次生命周期内 y 恒定，
 			// 于是 y 变了就是"被回收重放"（整朵出屏 → spawn → x 瞬移回左沿外），
@@ -138,12 +140,18 @@ func TestNoOvertake(t *testing.T) {
 			}
 			t.Logf("%-13s seed=%d：2000 步（每 5 步一采样）同带云对采样 %d 次，最大同带朵数 %d，回收重放排除 %d 对，交换次数 = %d",
 				cls, seed, pairSeen, bandMax, recycled, swaps)
-			if pairSeen < 100 {
-				t.Fatalf("%s seed=%d：同带云对采样只有 %d 次 ⇒ 样本不足，测试无意义（同带对太少）", cls, seed, pairSeen)
-			}
+			pairSeenClass += pairSeen
 			if swaps != 0 {
 				t.Errorf("%s seed=%d：同道超车 %d 次（应为 0）", cls, seed, swaps)
 			}
+		}
+		// 原断言：每个 seed 单独要求同带采样 ≥100 次（n=5 朵云时三 seed 各 399 次，必然过）。
+		// 新断言：**逐类三个 seed 合计** ≥100 次。理由 = P3 判据 B 把 Overcast 的粒子云
+		// 5 → 2 朵 ⇒ 同带对最多 1 对，且 2 朵按月亮行（跨度 2rc+2hh ≈ 0.15 屏高 > airBandN 0.12）
+		// 落位时可以分处两带 ⇒ 单 seed 采样 0 次是**结构**结果，不是"测试跑空"。
+		// 超车判据本身（swaps == 0）一条没放宽：有同带对的 seed 逐 seed 照判。
+		if tested && pairSeenClass < 100 {
+			t.Fatalf("%s：三个 seed 合计同带云对采样只有 %d 次 ⇒ 样本不足，测试无意义（同带对太少）", cls, pairSeenClass)
 		}
 	}
 }

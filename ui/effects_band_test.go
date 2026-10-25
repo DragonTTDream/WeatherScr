@@ -213,14 +213,28 @@ func TestRainSnowDustUnchanged(t *testing.T) {
 // 帧间隔，低于 12 fps 按比例削减（active ← active×fps/12，下限 25%），
 // 高于 18 fps 每次 +10% 总数恢复，上限为总数。削减只影响 Draw 绘制数量。
 func TestFpsAdaptiveCutsActive(t *testing.T) {
+	// 批次 A2 后的口径（C2 斜坡 + 滞回、C5a 新数、C3 启动期上限），期望值按新口径重钉，
+	// 断言强度不变（全部精确值）：
+	//
+	//	n(Rain) = 220（320 → 220）
+	//	lim     = max(4, 220/20) = 11 ⇒ 单轮削减/恢复位移上限
+	//	floor   = (220+3)/4 = 55     ⇒ 25% 下限（口径不动）
+	//	削减/恢复轮 = 每满 2 秒窗口一次（Step 里的 fps 测量口径不动）
+	//	启动期上限（前 60 帧 80、61–120 帧 160、之后不封顶）：下面所有 ActiveCount
+	//	判据都跑在帧数 > 120 之后，启动期结束 ⇒ ActiveCount = 削减值本身。
 	f := NewField(effect.Rain, true, 20261015)
 	n := f.TotalCount()
-	if n != 320 {
-		t.Fatalf("雨粒子总数应为 counts 的 320，got %d", n)
+	if n != 220 {
+		t.Fatalf("雨粒子总数应为 counts 的 220，got %d", n)
 	}
 	if got := f.ActiveCount(); got != n {
 		t.Fatalf("建场时活跃数应为全部: got %d want %d", got, n)
 	}
+	lim := 220 / 20
+	if lim < 4 {
+		lim = 4
+	}
+	floor := (n + 3) / 4
 
 	feed := func(dt time.Duration, windows int) {
 		framesPer := int(2.0 / dt.Seconds())
@@ -228,18 +242,22 @@ func TestFpsAdaptiveCutsActive(t *testing.T) {
 			f.Step(dt, 1080, PortraitH)
 		}
 	}
-	floor := (n + 3) / 4 // 25% 下限
 
-	// 1 5 fps（低帧率输入）× 3 个 2 秒窗口：按比例削减必须触底 25% 下限
+	// 1a 5 fps × 3 轮：每轮只砍 lim（旧口径一次砍 43% ⇒ "一卡卡的"）
 	feed(200*time.Millisecond, 3)
+	if got, want := f.active, n-3*lim; got != want {
+		t.Errorf("5 fps 三轮后 active = %d，期望 %d（每轮 −lim=%d）", got, want, lim)
+	}
+	// 1b 5 fps 连续喂到触底：(220−55)/11 = 15 轮 ⇒ 25% 下限
+	feed(200*time.Millisecond, 12)
 	if got := f.ActiveCount(); got != floor {
-		t.Errorf("5 fps 下应削减到 25%% 下限: got %d want %d (total=%d)", got, floor, n)
+		t.Errorf("5 fps 15 轮后应削减到 25%% 下限: got %d want %d (total=%d)", got, floor, n)
 	}
 	if got := f.ActiveCount(); got < n/4 {
-		t.Errorf("活跃数不得低于原值 25%%: got %d floor=%d", got, n/4)
+		t.Errorf("活跃数不得低于原值 25%%: got %d floor=%d", got, floor)
 	}
 
-	// 2 10 fps：按比例削减（320×10/12=266），且不低于下限、低于总数
+	// 2 10 fps 一轮：按比例削减 = 220−11 = 209（限幅生效，旧口径是 220×10/12 = 183）
 	f2 := NewField(effect.Rain, true, 20261015)
 	feed2 := func(dt time.Duration, windows int) {
 		framesPer := int(2.0 / dt.Seconds())
@@ -248,27 +266,39 @@ func TestFpsAdaptiveCutsActive(t *testing.T) {
 		}
 	}
 	feed2(100*time.Millisecond, 1)
-	if got, want := f2.ActiveCount(), int(float64(n)*10.0/12.0); got != want {
-		t.Errorf("10 fps 应按比例削减: got %d want %d", got, want)
+	if got := f2.active; got != 209 {
+		t.Errorf("10 fps 单轮削减 = %d，期望 209（220 − lim 11）", got)
 	}
-	if f2.ActiveCount() < n/4 {
-		t.Errorf("10 fps 削减不得低于 25%% 下限: got %d", f2.ActiveCount())
+	if got := f2.ActiveCount(); got != 80 {
+		t.Errorf("启动期（第 20 帧）ActiveCount = %d，期望 80（C3 前 60 帧上限）", got)
 	}
 
 	// 3 15 fps 滞回区（12–18）：不动（dt = 1s/15 ≈ 66.7 ms/帧）
-	before := f2.ActiveCount()
+	before := f2.active
 	feed2(time.Second/15, 2)
-	if got := f2.ActiveCount(); got != before {
+	if got := f2.active; got != before {
 		t.Errorf("15 fps 在滞回区不应变化: got %d want %d", got, before)
 	}
 
-	// 4 20 fps（>18）：逐步恢复，8 个窗口内回到总数
+	// 4 20 fps（>18）：连续 3 轮武装后每轮 +lim，8 个窗口内回到总数
 	feed2(50*time.Millisecond, 8)
 	if got := f2.ActiveCount(); got != n {
 		t.Errorf("20 fps 应逐步恢复到总数: got %d want %d", got, n)
 	}
+	// 4b 恢复限幅 + 滞回：从触底场单练一轮（未武装 ⇒ 不动，武装后 +lim）
+	f3 := NewField(effect.Rain, true, 20261015)
+	f3.active = floor
+	f3.adaptFps(20)
+	f3.adaptFps(20)
+	if got := f3.active; got != floor {
+		t.Fatalf("恢复前两轮（未武装）不应变化: got %d want %d", got, floor)
+	}
+	f3.adaptFps(20)
+	if got := f3.active; got != floor+lim {
+		t.Fatalf("第三轮恢复位移 = %d−%d，期望 +lim=%d", got, floor, lim)
+	}
 
-	// 5 小场（雾 18 个）同样受 25% 下限保护
+	// 5 小场（雾 20 个）同样受 25% 下限保护
 	fs := NewField(effect.Fog, true, 20261015)
 	ntot := fs.TotalCount()
 	feedF := func(dt time.Duration, windows int) {

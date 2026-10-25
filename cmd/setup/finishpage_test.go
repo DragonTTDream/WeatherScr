@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // D5 判据（spec §2）：installOK=false 时完成页标题常量 = 「安装失败（已回滚）」；
 // 正文三态：ok=true（现文案）/ ok=false 且 why 非空 / ok=false 且 why 为空（回落「未记录」）。
@@ -66,5 +69,74 @@ func TestFinishBodyByInstallResult(t *testing.T) {
 		} else {
 			t.Logf("%s: finishBody(%v, %q) 逐字相符（%d 字节）", c.name, c.ok, c.why, len(c.want))
 		}
+	}
+}
+
+// R13 判据（spec b1-r13-finish §1 + 测试节）：卸载态文案常量逐字钉死，
+// finishTitleFor / finishBodyFor 两态取值正确，且安装侧旧壳（finishTitle/finishBody）逐字不变。
+// 纯函数断言，无 build tag ⇒ Linux 侧 go test -run TestFinish 跑得到。
+func TestFinishUninstallTexts(t *testing.T) {
+	// ① 6 个新常量逐字钉死（含 \r\n）
+	wantConstants := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"finishTitleUninstallOK", finishTitleUninstallOK, "卸载完成"},
+		{"finishTitleUninstallFail", finishTitleUninstallFail, "卸载失败（文件仍在，未删除）"},
+		{"finishBodyUninstallOK", finishBodyUninstallOK, "屏保已从 C:\\Windows\\System32 删除。\r\n\r\n" +
+			"· 桌面快捷方式已删除\r\n" +
+			"· 屏保设置已恢复为安装前的值\r\n" +
+			"· 如需再次使用：运行本安装器重新安装"},
+		{"finishBodyUninstallFailFmt", finishBodyUninstallFailFmt, "卸载未完成：%s\r\n\r\n" +
+			"· 屏保文件 C:\\Windows\\System32\\WeatherScr.scr 未被删除\r\n" +
+			"· 常见原因：屏保正在运行占用文件，或 UAC 被取消\r\n" +
+			"· 关闭屏保后重新运行本安装器 --uninstall"},
+		{"opInstall", string(opInstall), "install"},
+		{"opUninstall", string(opUninstall), "uninstall"},
+	}
+	for _, c := range wantConstants {
+		if c.got != c.want {
+			t.Errorf("常量 %s = %q，期望 %q", c.name, c.got, c.want)
+		}
+	}
+
+	// ② 标题取值：安装态逐字等于既有常量；卸载失败态 = 卸载失败标题
+	if got := finishTitleFor(opInstall, true); got != finishTitleOK {
+		t.Errorf("finishTitleFor(opInstall,true) = %q，期望 %q", got, finishTitleOK)
+	}
+	if got := finishTitleFor(opInstall, false); got != finishTitleFail {
+		t.Errorf("finishTitleFor(opInstall,false) = %q，期望 %q", got, finishTitleFail)
+	}
+	if got := finishTitleFor(opUninstall, true); got != finishTitleUninstallOK {
+		t.Errorf("finishTitleFor(opUninstall,true) = %q，期望 %q", got, finishTitleUninstallOK)
+	}
+	if got := finishTitleFor(opUninstall, false); got != finishTitleUninstallFail {
+		t.Errorf("finishTitleFor(opUninstall,false) = %q，期望 %q", got, finishTitleUninstallFail)
+	}
+
+	// ③ 正文取值：卸载成功 / 卸载失败（why 空 ⇒ 未记录）/ 卸载失败（why 非空 ⇒ 原样带出）
+	if got := finishBodyFor(opUninstall, true, ""); !strings.Contains(got, "屏保已从") {
+		t.Errorf("finishBodyFor(opUninstall,true) = %q，期望含「屏保已从」", got)
+	}
+	if got := finishBodyFor(opUninstall, true, ""); got != finishBodyUninstallOK {
+		t.Errorf("finishBodyFor(opUninstall,true) = %q，期望逐字等于 finishBodyUninstallOK", got)
+	}
+	if got := finishBodyFor(opUninstall, false, ""); !strings.Contains(got, "未记录") || !strings.Contains(got, "未被删除") {
+		t.Errorf("finishBodyFor(opUninstall,false,\"\") = %q，期望含「未记录」与「未被删除」", got)
+	}
+	if got := finishBodyFor(opUninstall, false, "占用"); !strings.Contains(got, "占用") {
+		t.Errorf("finishBodyFor(opUninstall,false,\"占用\") = %q，期望含「占用」", got)
+	}
+
+	// ④ 安装侧回归：旧壳签名与返回逐字不变
+	if got := finishBody(true, ""); got != finishBodyOK {
+		t.Errorf("finishBody(true,\"\") = %q，期望逐字等于 finishBodyOK", got)
+	}
+	if got := finishTitle(false); got != finishTitleFail {
+		t.Errorf("finishTitle(false) = %q，期望 %q", got, finishTitleFail)
+	}
+	if got := finishBodyFor(opInstall, false, "占用"); !strings.Contains(got, "占用") || !strings.Contains(got, "已回滚") {
+		t.Errorf("finishBodyFor(opInstall,false,\"占用\") = %q，期望含「占用」与「已回滚」", got)
 	}
 }

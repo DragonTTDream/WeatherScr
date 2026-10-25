@@ -441,9 +441,18 @@ func TestBoltVisibleDuringFlash(t *testing.T) {
 	defer win.Release()
 	f := NewField(effect.Thunder, true, 20261015)
 	f.SetWeatherCode(95)
-	step := time.Second / 15
+	// 批次 A2 / C1：模拟时长按 fixedStep 换算成**步数**（C1 第 1 条把位移基准写死 fixedStep，
+	// flash 包络也随步数推进）⇒ "90 秒模拟" = 90 s ÷ fixedStep = 5400 步，
+	// 每帧喂一个 fixedStep ⇒ 一帧一步，逐**步**采样 flash（旧口径 1/15 s 一帧只采到
+	// 每第 3 步，0.15–0.30 s 的闪现只有 1–2 步落在 (0.12,0.30) 内 ⇒ 采不到）。
+	// 幅度区间 (0.12,0.30) 与"必须有区间落在其中"这条判据逐字不变。
+	step := fixedStep
+	stepsPerSec := int(time.Second / fixedStep)
+	if stepsPerSec != 60 {
+		t.Fatalf("每秒步数换算 = %d，期望 60（fixedStep = %v）", stepsPerSec, fixedStep)
+	}
 	seen := false
-	for k := 0; k < 15*90; k++ {
+	for k := 0; k < 90*stepsPerSec; k++ {
 		f.Step(step, PortraitW, PortraitH)
 		if f.flash > boltFlashMin && f.flash < 0.30 {
 			seen = true

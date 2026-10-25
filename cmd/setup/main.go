@@ -199,7 +199,9 @@ var (
 	uninstalling     bool
 	// D5（spec §1.1）：安装结果状态与失败原因，供完成页文案取值
 	installOK bool
-	lastFail  string
+	// R13（spec §2）：卸载结果状态（核验通过=true），供完成页文案取值
+	uninstallOK bool
+	lastFail    string
 
 	logLines []string
 )
@@ -366,9 +368,23 @@ func wndProc(hwnd windows.HWND, msg uint32, wp, lp uintptr) uintptr {
 			if hFinishBody != 0 {
 				setText(hFinishBody, finishBody(installOK, lastFail))
 			}
-		} else if !uninstalling {
-			// --uninstall 模式下安装按钮在本页创建时就已禁用（证据 E4），卸载结束后不恢复它
-			setButtonsEnabled(true)
+		} else if uninstalling {
+			// R13（spec §3，根因 main.go:369-372 旧 `else if !uninstalling` ⇒ 卸载跑完无任何 showPage，
+			// 页面停在 pageProgress）：卸载跑完（成功与失败都算跑完）也切完成页，并启用「完成」按钮。
+			// showPage 会重建页并把控件追加进 pageBtns（main.go:581/595），pageFinish 页只有「完成」按钮。
+			// 不调用 setButtonsEnabled（其本体禁改，且跳过 hBtnCancel 的语义与本页无关）。
+			showPage(pageFinish)
+			if hFinishTitle != 0 {
+				setText(hFinishTitle, finishTitleFor(opUninstall, uninstallOK))
+			}
+			if hFinishBody != 0 {
+				setText(hFinishBody, finishBodyFor(opUninstall, uninstallOK, lastFail))
+			}
+			for _, h := range pageBtns {
+				if h != 0 {
+					procEnableWindow.Call(uintptr(h), 1)
+				}
+			}
 		}
 		return 0
 	}
@@ -953,6 +969,9 @@ func runUninstall() {
 			setStatus("卸载失败")
 		}
 	}()
+	// R13（spec §4）：每次跑卸载都重置结果态，避免复用上一次的值污染完成页文案。
+	uninstallOK = false
+	lastFail = ""
 	logf("=== 卸载开始 ===")
 	prev, _ := loadState("PreviousScr")
 	logf("安装前记录的屏保程序 = %q", prev)
@@ -1060,10 +1079,14 @@ func runUninstall() {
 	if fileExists(warmupExe) {
 		logf("卸载核验失败：%s 仍然存在", warmupExe)
 		logf("=== 卸载未完成（文件仍在）===")
+		// R13（spec §4）：核验失败原因写进 lastFail，完成页正文的 %s 取它（finishBodyFor(opUninstall,false,…)）。
+		lastFail = "文件 C:\\Windows\\System32\\WeatherScr.scr 仍存在"
 		setStatus("卸载失败（文件仍在，未删除）")
 		return
 	}
 	logf("卸载核验通过：%s 已不存在", warmupExe)
+	// R13（spec §4）：核验通过 ⇒ 卸载成功态，完成页取「卸载完成」文案。
+	uninstallOK = true
 	logf("=== 卸载完成 ===")
 	setStatus("卸载完成")
 }
