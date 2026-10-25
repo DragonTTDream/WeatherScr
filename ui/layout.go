@@ -3,6 +3,8 @@
 // 布局基准 = 上游 settings_v2.json 的 custom_layout 归一化 rect（实测取证）。
 package ui
 
+import "github.com/DragonTTDream/WeatherScr/ui/screenfit"
+
 // Rect 是归一化矩形（0–1），与上游 custom_layout 同口径。
 type Rect struct {
 	X, Y, W, H float64
@@ -43,9 +45,10 @@ const (
 )
 
 // 竖屏目标分辨率（低性能 x86 小主机实测 DISPLAY1 Bounds Width=1080 Height=1920）。
-const (
-	PortraitW = 1080
-	PortraitH = 1920
+// B2 spec §3 薄壳：语义源在 ui/screenfit 的 Baseline 口径（float64 变量的 int 视图，逐字 1080/1920）。
+var (
+	PortraitW = int(screenfit.PortraitW) // 1080
+	PortraitH = int(screenfit.PortraitH) // 1920
 )
 
 // FontFamily 上游实况字体。gioui 走系统字体匹配，字体名仅作请求与记录用。

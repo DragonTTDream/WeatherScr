@@ -20,6 +20,8 @@ import (
 	"github.com/DragonTTDream/WeatherScr/effect"
 )
 
+import "github.com/DragonTTDream/WeatherScr/ui/screenfit"
+
 // 背景动效引擎 v2。
 //
 // v1 的两个缺陷，逐条对应低性能 x86 小主机反馈：
@@ -726,12 +728,11 @@ func cloudFormOf(cls effect.Class) cloudForm {
 const (
 	cloudVxThin  = 0.014
 	cloudVxThick = 0.003
-	cloudDwRef   = 1178.0 / 1080.0
 )
 
 // cloudVxByThickness 按屏宽占比取速度（薄快厚慢，单调递减）。
 func cloudVxByThickness(dw float64) float64 {
-	k := dw / cloudDwRef
+	k := dw / screenfit.RefWidth
 	if k > 1 {
 		k = 1
 	}
@@ -4019,10 +4020,8 @@ func (f *Field) sizeCloudByClass(p *particle) {
 		return
 	}
 	p.sc = dwPx * bandNetDiv / (szX * p.scaleMul)
-	sw := float64(f.sw)
-	if sw <= 0 {
-		sw = float64(PortraitW)
-	}
+	fw, _ := screenfit.Fallback(f.sw, 1)
+	sw := float64(fw)
 	p.vx = cloudVxByThickness(dwPx / sw)
 	p.vxBase = p.vx
 }
@@ -4466,12 +4465,7 @@ func wrapPeriod(v, span float64) float64 {
 // 粒子云 = cloudDrawWidthPx（与 Draw 的 dw 同口径），雾团 = fogSz × spriteScale
 // （与 CoverageProfile / AirWidthsPx 同口径）。x 取当前的 p.x ⇒ 不是等相位假设。
 func (f *Field) driftLayers(w, h int) ([]driftLayer, float64) {
-	if w <= 0 {
-		w = PortraitW
-	}
-	if h <= 0 {
-		h = PortraitH
-	}
+	w, h = screenfit.Fallback(w, h)
 	span := f.bandSpan(w)
 	out := make([]driftLayer, 0, 16)
 	if f.hasCloudBands() {

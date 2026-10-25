@@ -33,7 +33,7 @@ func bandCenterWrapped(t0 float64, f *Field, i, w, h int, span float64) [3]float
 }
 
 func TestNoverlapBandsGeometry(t *testing.T) {
-	const w, h = PortraitW, PortraitH // 1080×1920
+	w, h := PortraitW, PortraitH // 1080×1920
 	cases := []struct {
 		cls  effect.Class
 		want int
@@ -131,7 +131,7 @@ func n3Class(c effect.Class) bool {
 // 400/800 固定步两点已钉在上面的几何测试；这里再加一条"带-only 双层占比在
 // 全程 0–800 步每一拍都 ≤5%"的扫描（每 25 步取一拍，覆盖多个 span 圈）。
 func TestNoverlapBandsDriftSweep(t *testing.T) {
-	const w, h = PortraitW, PortraitH
+	w, h := PortraitW, PortraitH
 	for _, cls := range []effect.Class{effect.Overcast, effect.Cloudy, effect.Rain, effect.Thunder, effect.Fog} {
 		f := NewField(cls, true, budgetSeed)
 		worst := 0.0

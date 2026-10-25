@@ -27,7 +27,7 @@ func bandIntersectsHalf(y, half, y0, y1 float64) bool {
 // TestCloudFogAvoidInfoBand 云（pkCloud）与雾（pkFog）：初始分布与推进 3000 帧后，
 // 精灵**中心 ± 半高**都不得与信息带相交（按半径断言）。
 func TestCloudFogAvoidInfoBand(t *testing.T) {
-	const screenH = PortraitH // 1920，与 fxshot/屏保竖屏同口径
+	screenH := PortraitH // 1920，与 fxshot/屏保竖屏同口径
 
 	y0, y1 := infoBandY()
 	if !(y0 < y1) {
