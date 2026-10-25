@@ -61,15 +61,15 @@ func TestCountsC5a(t *testing.T) {
 		if got := counts(effect.Overcast, isDay); got != 2 {
 			t.Errorf("counts(Overcast,%v) = %d，期望 2（P3 判据 B：5 → 2）", isDay, got)
 		}
-		if got := counts(effect.Cloudy, isDay); got != 3 {
-			t.Errorf("counts(Cloudy,%v) = %d，期望 3（禁改）", isDay, got)
+		if got := counts(effect.Cloudy, isDay); got != 2 {
+			t.Errorf("counts(Cloudy,%v) = %d，期望 2（B3/R4：同带 ≤2 朵，kinetics.BandCapacity 封顶；原断言钉 3）", isDay, got)
 		}
 		if got := counts(effect.PartlyCloudy, isDay); got != 2 {
 			t.Errorf("counts(PartlyCloudy,%v) = %d，期望 2（禁改）", isDay, got)
 		}
 	}
-	if got := counts(effect.Clear, true); got != 4 {
-		t.Errorf("counts(Clear,true) = %d，期望 4（禁改）", got)
+	if got := counts(effect.Clear, true); got != 2 {
+		t.Errorf("counts(Clear,true) = %d，期望 2（B3/R4：云档封顶 2 朵，Clear 白天 = 1 云 + 1 光晕；原断言钉 4）", got)
 	}
 	if got := counts(effect.Clear, false); got != 110 {
 		t.Errorf("counts(Clear,false) = %d，期望 110（夜间是星，禁改）", got)
@@ -80,8 +80,8 @@ func TestCountsC5a(t *testing.T) {
 func TestCountsTotalCountMatches(t *testing.T) {
 	want := map[effect.Class]int{
 		effect.Rain: 220, effect.Thunder: 300, effect.Dust: 320,
-		effect.Snow: 260, effect.Fog: 2, effect.Cloudy: 3,
-		effect.PartlyCloudy: 2, effect.Overcast: 2, // P3 判据 B：Fog 20→2、Overcast 5→2（Rain/Thunder/Snow 的 220/300/260 不动）
+		effect.Snow: 260, effect.Fog: 2, effect.Cloudy: 2,
+		effect.PartlyCloudy: 2, effect.Overcast: 2, // P3 判据 B：Fog 20→2、Overcast 5→2；B3/R4：Cloudy 3→2（同带 ≤2 朵）
 	}
 	for cls, n := range want {
 		for _, isDay := range []bool{true, false} {
@@ -222,14 +222,14 @@ func TestIdxGroupCloudTiersIntact(t *testing.T) {
 		}
 	}
 	if cloud != 1 {
-		t.Errorf("Clear 白天云数 = %d，期望 1（idx%%5==0 在 counts=4 里取 1 个）", cloud)
+		t.Errorf("Clear 白天云数 = %d，期望 1（idx%%5==0 在 counts=2 里取 1 个）", cloud)
 	}
-	if other != 3 {
-		t.Errorf("Clear 白天非云粒子 = %d，期望 3", other)
+	if other != 1 {
+		t.Errorf("Clear 白天非云粒子 = %d，期望 1（B3/R4：counts 4→2 ⇒ 1 云 + 1 光晕；原断言钉 3）", other)
 	}
-	// P3 判据 B：Overcast 粒子数 5 → 2（原断言钉 5）；Cloudy/PartlyCloudy 不动。
+	// P3 判据 B：Overcast 粒子数 5 → 2（原断言钉 5）；B3/R4：Cloudy 3 → 2（同带 ≤2 朵）。
 	// 本测试的另一半（"这些档的粒子必须全是 pkCloud"）一条没动。
-	for cls, n := range map[effect.Class]int{effect.Cloudy: 3, effect.PartlyCloudy: 2, effect.Overcast: 2} {
+	for cls, n := range map[effect.Class]int{effect.Cloudy: 2, effect.PartlyCloudy: 2, effect.Overcast: 2} {
 		gf := NewField(cls, true, 20261023)
 		if gf.TotalCount() != n {
 			t.Fatalf("%s：总数 = %d，期望 %d", cls, gf.TotalCount(), n)

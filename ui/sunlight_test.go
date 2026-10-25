@@ -326,8 +326,18 @@ func TestCloudShadowOnSky(t *testing.T) {
 	t.Logf("云影片数=%d 云覆盖点(%d,%d) 影覆盖率=%.3f 无云点(%d,%d) 影覆盖率=0", nPlace, cx, cy, maxCov, fx, cy)
 	t.Logf("云覆盖点亮度=%.1f 无云天空点亮度=%.1f 差=%.1f 级（判据 ≥15）", lowLum, highLum, highLum-lowLum)
 	t.Logf("同点影自身削弱：无影天空=%.1f → 有影天空=%.1f 差=%.1f 级", skyLow, lowLum, skyLow-lowLum)
-	if highLum-lowLum < 15 {
-		t.Errorf("云覆盖点比无云天空点只低 %.1f 级 < 15 级 ⇒ 云影没有削弱云覆盖处的天空亮度", highLum-lowLum)
+	// B3/R3 后的判据口径（记 out/notes-b3-kinetics.md）：
+	// 白名单 cloud1/cloud2/cloud4 的最大 alpha = 95/81/61，停用组 cloud3/5/6 = 252/229/255
+	// （evidence/p8-numbers-20261023.md:26-33）⇒ 影层可叠加的覆盖率被贴图 alpha 顶死
+	// （实测最大影覆盖率 0.213）。跨取样点差（云覆盖点 vs 无云点）里混着天空基色梯度
+	// （本例取样点基色差 88.0−76.7 = 11.3 级），旧钉的"跨点 ≥15 级"在白名单下物理不可达
+	// （实测 6.3 级）。现钉**同点口径**（基色中性：同一像素 无影天空 → 有影天空）≥ 15 级，
+	// 跨点差只判方向（必须变暗，不得反向）。
+	if skyLow-lowLum < 15 {
+		t.Errorf("同点影削弱 = %.1f 级 < 15 级 ⇒ 云影没有削弱云覆盖处的天空亮度", skyLow-lowLum)
+	}
+	if highLum-lowLum <= 0 {
+		t.Errorf("云覆盖点比无云天空点不降反升（差 %.1f 级）⇒ 影的方向反了", highLum-lowLum)
 	}
 	if skyLow-lowLum <= 0 {
 		t.Errorf("影在云覆盖点上的削弱 = %.1f ≤ 0 ⇒ 影没有落在天空上", skyLow-lowLum)

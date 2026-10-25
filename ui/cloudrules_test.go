@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/kinetics"
 )
 
 // cloudRuleSeeds 五条判据共用的固定种子（固定 = 判据可复现）。
@@ -215,11 +216,40 @@ func TestSpeedByThickness(t *testing.T) {
 	t.Logf("公式端点：cloudVxByThickness(300px)=%.5f (600px)=%.5f (768px)=%.5f (1178px)=%.5f",
 		cloudVxByThickness(300/float64(PortraitW)), cloudVxByThickness(600/float64(PortraitW)),
 		cloudVxByThickness(768/float64(PortraitW)), cloudVxByThickness(1178/float64(PortraitW)))
-	if thinMin < thickMax {
-		t.Errorf("薄档最小 vx %.5f < 厚档最大 vx %.5f ⇒ 薄快厚慢不成立", thinMin, thickMax)
+	// B3/R4 后的判据口径（改测 R1 本身，记 out/notes-b3-kinetics.md）：
+	// R4 把四档云宽整档抬进同一条带 [480, 529] ⇒ "薄档 vs 厚档"的跨档宽度差被抹平，
+	// 旧断言"薄档最小 vx ≥ 厚档最大 vx"在算术上不再成立（两档同宽 ⇒ 同分布）。
+	// 现钉 R1 的两条本体（evidence/p8-numbers-20261023.md:17-23）：
+	//	① 最快的云不能比现在更快 ⇒ 全部 vxBase ≤ 0.0140（现云速上界，逐字）；
+	//	② 速度按屏宽单调不增（薄快厚慢的式子本身），且档内必须有分布（判据不空转）。
+	const vxHardCap = 0.0140 // R1 冻结上限 = kinetics.VxMax = cloudVxThin
+	for i, v := range append(append([]float64{}, thin.vxBase...), thick.vxBase...) {
+		if v > vxHardCap {
+			t.Errorf("第 %d 朵 vxBase=%.5f > 冻结上限 %.4f ⇒ R1「最快的云不能比现在更快」被破", i, v, vxHardCap)
+		}
+	}
+	type dwv struct {
+		dw, vx float64
+	}
+	var pool []dwv
+	for i := range thin.dwPx {
+		pool = append(pool, dwv{thin.dwPx[i], thin.vxBase[i]})
+	}
+	for i := range thick.dwPx {
+		pool = append(pool, dwv{thick.dwPx[i], thick.vxBase[i]})
+	}
+	sort.Slice(pool, func(i, j int) bool { return pool[i].dw < pool[j].dw })
+	for i := 1; i < len(pool); i++ {
+		if pool[i].vx > pool[i-1].vx+1e-12 {
+			t.Errorf("屏宽 %.0f px 的 vx %.5f > 更窄的 %.0f px 的 vx %.5f ⇒ 薄快厚慢单调性不成立",
+				pool[i].dw, pool[i].vx, pool[i-1].dw, pool[i-1].vx)
+		}
 	}
 	if thickMax <= thickMin || thinMax <= thinMin {
 		t.Errorf("档内 vx 无分布（薄 %.5f–%.5f 厚 %.5f–%.5f）⇒ 速度是常量，判据空转", thinMin, thinMax, thickMin, thickMax)
+	}
+	if hi(thin.dwPx) < kinetics.WidthFloor*float64(PortraitW) || lo(thick.dwPx) < kinetics.WidthFloor*float64(PortraitW) {
+		t.Errorf("云宽低于 R4 下限 %.3f·W = %.0f px @1080", kinetics.WidthFloor, kinetics.WidthFloor*float64(PortraitW))
 	}
 }
 

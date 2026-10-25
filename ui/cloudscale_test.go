@@ -42,13 +42,13 @@ func TestCloudWidthMatchesBand(t *testing.T) {
 	)
 	// 逐类实画屏宽区间 = cloudFormOf 的表（测试与实现共用同一张表 ⇒ 断言的是口径本身）
 	drawWant := map[effect.Class][2]float64{
-		// P7（用户判据"屏幕上的云或雾最多的时候也只能首尾相连，不能重叠"）：
-		// 逐类上限 = (1080 − (朵数−1)×21 px) ÷ 朵数 ⇒ 满密度时首尾相接恰好铺满一屏。
-		// 晴 1 朵 420 / 多云见日 2 朵 460 / 多云 3 朵 340 / 阴 2 朵 529。
-		effect.Clear:        {280, 460},
-		effect.PartlyCloudy: {280, 500},
-		effect.Cloudy:       {170, 370},
-		effect.Overcast:     {450, 580},
+		// B3/R4（evidence/p8-numbers-20261023.md:11-15）：最终显示宽度下限 480 px @1080、
+		// 同带 2 朵首尾相连 ⇒ 上限 (1080−21)/2 = 529 px ⇒ 四档同一区间 [480, 529]。
+		// P7 期的逐类分档（晴 420 / 多云见日 460 / 多云 340 / 阴 529）整档低于下限 ⇒ 废。
+		effect.Clear:        {480, 529},
+		effect.PartlyCloudy: {480, 529},
+		effect.Cloudy:       {480, 529},
+		effect.Overcast:     {480, 529},
 	}
 	// "与云带同区间"只对压顶档保留
 	sameAsBand := map[effect.Class]bool{
@@ -60,13 +60,13 @@ func TestCloudWidthMatchesBand(t *testing.T) {
 		effect.Overcast: false,
 	}
 	counts := map[effect.Class]int{
-		effect.Cloudy:       3,
+		effect.Cloudy:       2, // B3/R4：kinetics.BandCapacity 封顶 2 朵（原 3）
 		effect.PartlyCloudy: 2,
 		effect.Overcast:     2, // P3 判据 B：5 → 2
-		effect.Clear:        4,
+		effect.Clear:        2, // B3/R4：封顶 2 朵 ⇒ 1 云 + 1 光晕（原 4）
 	}
 	cloudWant := map[effect.Class]int{
-		effect.Cloudy:       3,
+		effect.Cloudy:       2, // B3/R4：3 → 2
 		effect.PartlyCloudy: 2,
 		effect.Overcast:     2, // P3 判据 B：5 → 2
 		effect.Clear:        1,

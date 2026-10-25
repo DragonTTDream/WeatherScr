@@ -90,17 +90,17 @@ func TestProbeBandFormulaMatchesBrief(t *testing.T) {
 // 判据 4 之一：Clear 白天（无云带、1 朵薄云 + 3 个光斑；云影层对晴天也投 4 条带影）。
 func TestProbeRowClearDay(t *testing.T) {
 	r := probeTestRow(t, effect.Clear, true)
-	if r.Total != 4 {
-		t.Errorf("total=%d 期望 4（counts 口径，Clear 白天 = 4）", r.Total)
+	if r.Total != 2 {
+		t.Errorf("total=%d 期望 2（B3/R4 counts 口径，Clear 白天 = 1 云 + 1 光晕；原钉 4）", r.Total)
 	}
 	if !near(r.AvgLayers, 0.11, 1) {
 		t.Errorf("avgLayers=%.2f 期望 0.11（整数容差 ±1）", r.AvgLayers)
 	}
 	// P3 判据 C（空影守卫）：Clear 白天本体没有一条云带 ⇒ 4 次带影不再投。
-	// 原断言 9（= 1 云影 + 4 带影 + 4 粒子本体）⇒ 新断言 5（= 1 云影 + 4 粒子本体），
-	// 逐字对上预算表"Clear 白天 9 → 5 次"；粒子本体一条没减。
-	if !near(float64(r.DrawsPerFrame), 5, 1) {
-		t.Errorf("drawsPerFrame=%d 期望 5（±1）= 1 云影 + 4 粒子本体（P3 判据 C 后无带影）", r.DrawsPerFrame)
+	// 原断言 9（= 1 云影 + 4 带影 + 4 粒子本体）⇒ 5（= 1 云影 + 4 粒子本体）；
+	// B3/R4 云档封顶 2 朵 ⇒ 再降到 3（= 1 云影 + 1 云本体 + 1 光晕），实跑见 out/notes-b3-kinetics.md。
+	if !near(float64(r.DrawsPerFrame), 3, 1) {
+		t.Errorf("drawsPerFrame=%d 期望 3（±1）= 1 云影 + 1 云本体 + 1 光晕（B3/R4 封顶 2 朵）", r.DrawsPerFrame)
 	}
 }
 
@@ -110,8 +110,8 @@ func TestProbeRowCloudy(t *testing.T) {
 	if !near(r.AvgLayers, 1.91, 1) {
 		t.Errorf("avgLayers=%.2f 期望 1.91（±1）", r.AvgLayers)
 	}
-	if !near(float64(r.DrawsPerFrame), 12, 1) {
-		t.Errorf("drawsPerFrame=%d 期望 12（±1）= 3 带本体 + 3 带影 + 3 云影 + 3 云本体（P6：带 4→3）", r.DrawsPerFrame)
+	if !near(float64(r.DrawsPerFrame), 10, 1) {
+		t.Errorf("drawsPerFrame=%d 期望 10（±1）= 3 带本体 + 3 带影 + 2 云影 + 2 云本体（B3/R4 云档 3→2 朵）", r.DrawsPerFrame)
 	}
 	// P3 判据 2 把 dualPct 口径换成**真实落位实测**；P6 设计第 6 条再拆两口径：
 	// dualPct = 含粒子（DriftOverlapIncl，同带粒子对），DualBandOnly = 带-only（设计上 0）。
@@ -127,8 +127,8 @@ func TestProbeRowCloudy(t *testing.T) {
 	if r.DualBandOnly > 5 {
 		t.Errorf("dualBandOnly=%.2f 越过 P6 判据线 5%%（设计上应恒 0）", r.DualBandOnly)
 	}
-	if !near(r.DualPctNominal, 38.36, 2) {
-		t.Errorf("dualPct 等相位=%.2f 期望 38.36（±2，P7 云宽封顶后重测，P1 基线口径）", r.DualPctNominal)
+	if !near(r.DualPctNominal, 33.75, 2) {
+		t.Errorf("dualPct 等相位=%.2f 期望 33.75（±2，B3/R4 云档 480–529 px 重测；P7 期钉 38.36）", r.DualPctNominal)
 	}
 }
 
@@ -255,8 +255,8 @@ func TestProbeToggleKeepsOpsStable(t *testing.T) {
 	f.SetProbeCounting(true)
 	f.ResetDraws()
 	f.Draw(probeGTX(new(op.Ops), PortraitW, PortraitH), PortraitW, PortraitH)
-	if f.Draws() != 12 {
-		t.Errorf("Cloudy 白天 draws=%d 期望 12（P6：3 带本体 + 3 带影 + 3 云影 + 3 云本体）", f.Draws())
+	if f.Draws() != 10 {
+		t.Errorf("Cloudy 白天 draws=%d 期望 10（B3/R4 云档 3→2：3 带本体 + 3 带影 + 2 云影 + 2 云本体）", f.Draws())
 	}
 	f.SetProbeCounting(false)
 	f.ResetDraws()

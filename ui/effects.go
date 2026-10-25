@@ -20,7 +20,10 @@ import (
 	"github.com/DragonTTDream/WeatherScr/effect"
 )
 
-import "github.com/DragonTTDream/WeatherScr/ui/screenfit"
+import (
+	"github.com/DragonTTDream/WeatherScr/ui/kinetics"
+	"github.com/DragonTTDream/WeatherScr/ui/screenfit"
+)
 
 // 背景动效引擎 v2。
 //
@@ -674,36 +677,59 @@ type cloudForm struct {
 // ⇒ 薄小那几张 = cloud7/2/8（fill ≤ .193、meanColH ≤ 120）；
 //
 //	中档 = cloud1/4/9；厚大那几张（积云系）= cloud3/6/5（fill ≥ .286 且 maxA ≥ 229）。
-var (
-	cloudIdxThin  = []int{6, 1, 7} // cloud7 薄卷云条 / cloud2 小棉团 / cloud8 散点薄云
-	cloudIdxMid   = []int{0, 3, 8} // cloud1 / cloud4 / cloud9
-	cloudIdxThick = []int{2, 5, 4} // cloud3 / cloud6 / cloud5
-)
+// cloudIdxAllowed = **R3 贴图白名单**（B3，evidence/p8-numbers-20261023.md:26-33）：
+// 可用 = cloud1 / cloud2 / cloud4 ⇒ 0 基索引 **{0,1,3}**；
+// 需求逐字"cloud3-5-6-7-8-9不使用" ⇒ 原三档表 cloudIdxThin{6,1,7} / cloudIdxMid{0,3,8} /
+// cloudIdxThick{2,5,4} 合并为单一表，三处 cloudForm.idx 全部指它（上面那段 9 张实测内容表保留做停用依据）。
+var cloudIdxAllowed = []int{0, 1, 3}
+
+// kineticsClassOf 把 effect.Class 映射到运动侧档名（kinetics 不吃 effect 包 ⇒ 映射写在消费点）。
+// Snow/Dust 无粒子云 ⇒ 走 RainThunder 占位口径（现口径的占位值就是 768–1178，见 cloudFormOf 头注）。
+func kineticsClassOf(cls effect.Class) kinetics.Class {
+	switch cls {
+	case effect.Clear:
+		return kinetics.ClassClear
+	case effect.PartlyCloudy:
+		return kinetics.ClassPartlyCloudy
+	case effect.Cloudy:
+		return kinetics.ClassCloudy
+	case effect.Overcast:
+		return kinetics.ClassOvercast
+	case effect.Rain, effect.Thunder:
+		return kinetics.ClassRainThunder
+	case effect.Fog:
+		return kinetics.ClassFogCloud
+	}
+	return kinetics.ClassRainThunder
+}
 
 // cloudFormOf 返回该天气类的云形态口径。雪/雾/尘没有粒子云（雪走雾精灵均匀灰幕、
 // 雾走雾精灵、尘走 mote），返回现口径占位值（wLo/wHi = 云带最宽档，不参与生成）。
 func cloudFormOf(cls effect.Class) cloudForm {
+	// R4 逐类**最终显示宽度**（B3，evidence/p8-numbers-20261023.md:11-15）：
+	// lo = ceil(0.444·W) ⇒ @1080 = 480 px（小于下限的云在生成侧直接不出）；
+	// hi = (W − gap)/2   ⇒ @1080 = 529 px（同带 2 朵 + 21 px 间隙恰好铺满 1080）。
+	// 口径宽取 B2 的 screenfit 基准（竖屏目标 1080）；Rain/Thunder 档 768–1178 逐字不动（kinetics 内豁免）。
+	loPx, hiPx := kinetics.WidthFor(kineticsClassOf(cls), screenfit.Baseline().W)
+	lo, hi := float64(loPx), float64(hiPx)
 	switch cls {
 	case effect.Clear:
-		// P7：本类 1 朵 ⇒ 上限 1059 px 装得下；取 420 是为守住"薄快厚慢"排序
-		// （厚档 Overcast 的下限必须 > 薄档上限，见 TestSpeedByThickness）
-		return cloudForm{wLo: 300, wHi: 420, lift: 140, aLo: 0.85, aHi: 0.95, pressTop: false, idx: cloudIdxThin}
+		// B3：原 300–420（"薄快厚慢"排序用的薄档）整档低于 R4 下限 ⇒ 抬到 480–529。
+		// 速度排序不再由档间宽度差承担（各档同带），由 kinetics 的档内速度式 + 进场排队承担。
+		return cloudForm{wLo: lo, wHi: hi, lift: 140, aLo: 0.85, aHi: 0.95, pressTop: false, idx: cloudIdxAllowed}
 	case effect.PartlyCloudy:
-		// P7（用户判据"最多的时候也只能首尾相连，不能重叠"）：本类 2 朵 ⇒ (1080−21)/2 = 529 px 上限
-		return cloudForm{wLo: 300, wHi: 460, lift: 115, aLo: 0.80, aHi: 0.92, pressTop: false, idx: cloudIdxThin}
+		return cloudForm{wLo: lo, wHi: hi, lift: 115, aLo: 0.80, aHi: 0.92, pressTop: false, idx: cloudIdxAllowed}
 	case effect.Cloudy:
-		// P7：本类 3 朵 ⇒ (1080−42)/3 = 346 px 上限（3×900 = 2700 px 是同屏不相叠的算术不可能）
-		return cloudForm{wLo: 180, wHi: 340, lift: 45, aLo: 0.75, aHi: 0.90, pressTop: false, idx: cloudIdxMid}
+		return cloudForm{wLo: lo, wHi: hi, lift: 45, aLo: 0.75, aHi: 0.90, pressTop: false, idx: cloudIdxAllowed}
 	case effect.Overcast:
-		// P7：本类 2 朵 ⇒ (1080−21)/2 = 529 px 上限（原 768–1178 = 与云带同区间，两朵必叠）
-		return cloudForm{wLo: 480, wHi: 529, lift: 10, aLo: 0.85, aHi: 0.95, pressTop: true, idx: cloudIdxThick}
+		return cloudForm{wLo: lo, wHi: hi, lift: 10, aLo: 0.85, aHi: 0.95, pressTop: true, idx: cloudIdxAllowed}
 	case effect.Rain, effect.Thunder:
-		return cloudForm{wLo: 768, wHi: 1178, lift: -32, aLo: 0.88, aHi: 0.96, pressTop: true, idx: cloudIdxThick}
+		return cloudForm{wLo: lo, wHi: hi, lift: -32, aLo: 0.88, aHi: 0.96, pressTop: true, idx: cloudIdxAllowed}
 	case effect.Fog:
-		// P7：Fog 档 = 1 团雾 + 1 朵云 ⇒ 云 ≤ 500 px（雾团另有封顶，见 clampFogWidthPx）
-		return cloudForm{wLo: 300, wHi: 500, lift: 0, aLo: 0.92, aHi: 1.0, pressTop: false, idx: cloudIdxMid}
+		// B3：云档 480–529；雾团封顶 clampFogWidthPx 不动（不动清单）。
+		return cloudForm{wLo: lo, wHi: hi, lift: 0, aLo: 0.92, aHi: 1.0, pressTop: false, idx: cloudIdxAllowed}
 	}
-	return cloudForm{wLo: 768, wHi: 1178, lift: 0, aLo: 0.92, aHi: 1.0, pressTop: false, idx: cloudIdxMid}
+	return cloudForm{wLo: lo, wHi: hi, lift: 0, aLo: 0.92, aHi: 1.0, pressTop: false, idx: cloudIdxAllowed}
 }
 
 // ---- C1 云速按薄厚（规格 1 第 1 条，公式逐字）----
@@ -726,8 +752,11 @@ func cloudFormOf(cls effect.Class) cloudForm {
 // https://calendar-holidays.com/how-fast-do-clouds-travel ）；
 // 视差近快远慢（https://wikiwand.com/en/Parallax_scrolling ）。
 const (
-	cloudVxThin  = 0.014
-	cloudVxThick = 0.003
+	// B3/R1（evidence/p8-numbers-20261023.md:17-23）：内插端点 = kinetics 的速度档，
+	// 快端逐字冻结在现云速上界 0.0140（"最快的云不能比现在更快"），慢端 0.0022
+	// （拉开速度差只靠**调慢**，不调快；三档慢速 0.0085/0.0040/0.0022 见 kinetics 常量）。
+	cloudVxThin  = kinetics.VxTier0
+	cloudVxThick = kinetics.VxTier3
 )
 
 // cloudVxByThickness 按屏宽占比取速度（薄快厚慢，单调递减）。
@@ -848,6 +877,17 @@ type Field struct {
 	// entering = 本次建场是"类别切换"产生的：云从屏幕外左侧**错峰**进场，
 	// 不在屏内铺开（开局建场仍全屏铺开，见 spawn 注释）。
 	entering bool
+	// ---- B3 进场排队（R1"决不能同出同进"，evidence/p8-numbers-20261023.md:24）----
+	//
+	// 速度差只解决追赶，同出同进由进场排队解决 ⇒ 进场位发射前过 kinetics.EntryOK：
+	// 同帧已有上一条进场 ⇒ |Δx| 必须 ≥ 上一条半宽，不合格就把这朵**保持停在屏外**（parked），
+	// 下一帧再试（不发射）。entryLog 是进场流水，探针（ui/kinetics_rules_test.go）直接读它判样本数。
+	entryHas      bool            // 是否已有过进场记录
+	entryLastStep int64           // 上一条进场的固定步号（"同帧"判据 = 步号相同）
+	entryLastX    float64         // 上一条进场位中心 x（px 口径，与 kinetics.EntryOK 同单位）
+	entryLastHalf float64         // 上一条云的半宽（px）
+	entryLog      []cloudEntryRec // 进场流水（只增，量级 = 每朵云一次进场 ≈ 数十次/小时）
+	parkedCloud   map[int]bool    // 被闸门挡住、保持停在屏外的云索引（parts 下标）
 	// fps 自适应。
 	//
 	// 现状：实测进程被标
@@ -971,7 +1011,36 @@ func (f *Field) SetFade(k float64) {
 // SetEntering 结束/开启"错峰进场"模式（淡入完成后由调用方关掉）。
 func (f *Field) SetEntering(on bool) { f.entering = on }
 
-// counts 每类粒子数。S1 实测 600 粒子 58.9 fps / 34.9 MB，
+// counts 每类粒子数（B3/R4：粒子云朵数按 kinetics.BandCapacity 封顶 2 朵）。
+//
+// 封顶只作用在"粒子云所在档"（Cloudy / PartlyCloudy / Overcast / Fog 的云半档 / Clear 白天）：
+// Clear 夜间 110 是星、Rain/Thunder 的 220/300 是雨丝、Snow 的 260 是雪片 + 3 团灰幕、
+// Dust 的 320 是尘 ⇒ 那些档的粒子不是云，朵数上限对它们无意义（countsRaw 原值不动）。
+// 现口径里真正被封顶的只有 Clear 白天 4→2 与 Cloudy 3→2（PartlyCloudy/Overcast/Fog 本来就 ≤2）。
+func counts(cls effect.Class, isDay bool) int {
+	n := countsRaw(cls, isDay)
+	if !cloudTierClass(cls, isDay) {
+		return n
+	}
+	nMax, _, _ := kinetics.BandCapacity(screenfit.Baseline().W)
+	if n > nMax {
+		return nMax
+	}
+	return n
+}
+
+// cloudTierClass 该档的粒子数是否就是粒子云朵数（= 要不要按 BandCapacity 封顶）。
+func cloudTierClass(cls effect.Class, isDay bool) bool {
+	switch cls {
+	case effect.Cloudy, effect.PartlyCloudy, effect.Overcast, effect.Fog:
+		return true
+	case effect.Clear:
+		return isDay // 夜间 110 是星不是云（countsRaw 注释逐字）
+	}
+	return false
+}
+
+// countsRaw 每类粒子数。S1 实测 600 粒子 58.9 fps / 34.9 MB，
 // S4 实测 420 粒子 15 fps 时总 CPU 3.57%（≤5% 预算内）。
 //
 // **粒子云改大 → 朵数按面积反比下调（2026-10-20）**：粒子云屏宽从 256 px 提到
@@ -979,7 +1048,7 @@ func (f *Field) SetEntering(on bool) { f.entering = on }
 // 云量四档的朵数按 1/9 面积反比下调（Cloudy 8→3、PartlyCloudy 4→2、
 // Overcast 13→5、Clear 白天 16→4），覆盖总量与改大前同量级。
 // 夜间晴天的 110 是星，不是云 ⇒ 不动。Fog/Rain/Snow/Thunder/Dust 不动。
-func counts(cls effect.Class, isDay bool) int {
+func countsRaw(cls effect.Class, isDay bool) int {
 	switch cls {
 	case effect.Clear:
 		if isDay {
@@ -1808,6 +1877,8 @@ func (f *Field) advanceOneStep(step time.Duration) {
 	// 调用点跟着步数跑（与 coupleClouds 同一口径，不吃墙钟），
 	// 内部按 driftCheckEverySteps 节流 ⇒ 未命中的步只做一次取模判断。
 	f.crowdSweep()
+	// ---- B3 进场排队：parked 的云每步再试一次（闸门放行才发射进场位）----
+	f.releaseParkedClouds()
 	// 位移速度系数（实测口径）：0 / 未设置 = 不缩放
 	ss := f.speedScale
 	if ss <= 0 {
@@ -1821,6 +1892,10 @@ func (f *Field) advanceOneStep(step time.Duration) {
 	padFog := bandPadJitN(pkFog, f.sh) // 屏高 = Step 每帧刷进 f.sh 的值（口径不动）
 	for i := range f.parts {
 		p := &f.parts[i]
+		if p.kind == pkCloud && f.parkedCloud[i] {
+			// B3 parked：保持停在屏外（不位移、不回收），由 releaseParkedClouds 逐帧再试。
+			continue
+		}
 		p.x += p.vx * d * ss
 		p.y += p.vy * d * ss
 		p.rot += p.rotV * d * ss
@@ -3739,6 +3814,95 @@ func (f *Field) airHalfN(p *particle) (hw, hh float64) {
 	return
 }
 
+// ---- B3 进场排队闸门（R1"决不能同出同进"，spec/b3-kinetics.md §3 最后一条）----
+//
+// cloudEntryRec 一条进场流水：步号 + 粒子索引 + 进场那一刻的中心 x 与半宽（**px 口径**，
+// 与 kinetics.EntryOK 的入参同单位）。placeAirEntry / driftRecycleOffscreen 发射进场位时写入，
+// 探针 ui/kinetics_rules_test.go 直接读 Field.entryLog 判"同帧进场样本数"。
+type cloudEntryRec struct {
+	Step   int64   // 固定步号（f.steps 口径 = int64）
+	Idx    int     // parts 下标
+	Xpx    float64 // 进场那一刻的中心 x（px）
+	HalfPx float64 // 该朵半宽（px）
+}
+
+// cloudParkGapN 保持 parked 时**额外**退到屏外的距离（屏宽占比，@1080 = 54 px）。
+// 只决定"下一帧再试"时这朵云停在哪：进场位之外再多退 0.05 屏宽，位移/回收判据都不碰它
+// （vx≥0 的出屏判据是 x−hw>1.0、vx<0 的是 x+hw<0， parked 位恒不满足）。
+const cloudParkGapN = 0.05
+
+// cloudEntryPlace 现成进场位口径（逐字沿用 placeAirEntry / driftRecycleOffscreen 的两条）：
+// vx≥0 ⇒ 整朵贴屏幕左沿外 x = −hw；vx<0 ⇒ 贴右沿外 x = 1+hw。
+func (f *Field) cloudEntryPlace(p *particle) (x, hw float64) {
+	hw, _ = f.airHalfN(p)
+	if p.vx >= 0 {
+		x = -hw
+	} else {
+		x = 1 + hw
+	}
+	return
+}
+
+// cloudEntryGateOK 闸门判据：同帧（同一步号）已有上一条进场 ⇒ 必须过 kinetics.EntryOK。
+// 上一条不在同一帧 ⇒ 不是"同出同进"，放行（R1 允许追上）。
+func (f *Field) cloudEntryGateOK(xEntry, hw float64) bool {
+	if !f.entryHas || f.entryLastStep != f.steps {
+		return true
+	}
+	w, _ := screenfit.Fallback(f.sw, 1)
+	return kinetics.EntryOK(xEntry*float64(w), hw*float64(w), f.entryLastX, f.entryLastHalf, w)
+}
+
+// emitCloudEntry 发射进场位：摆 x + 记进场流水 + 从 parked 名单除名。
+func (f *Field) emitCloudEntry(p *particle, xEntry, hw float64) {
+	w, _ := screenfit.Fallback(f.sw, 1)
+	p.x = xEntry
+	f.entryHas = true
+	f.entryLastStep = f.steps
+	f.entryLastX = xEntry * float64(w)
+	f.entryLastHalf = hw * float64(w)
+	f.entryLog = append(f.entryLog, cloudEntryRec{Step: f.steps, Idx: p.idx, Xpx: p.x * float64(w), HalfPx: hw * float64(w)})
+	delete(f.parkedCloud, p.idx)
+}
+
+// parkCloudEntry 闸门不合格 ⇒ 保持 parked：整朵停在进场位之外，下一帧再试（本帧不发射）。
+func (f *Field) parkCloudEntry(p *particle, xEntry, hw float64) {
+	if f.parkedCloud == nil {
+		f.parkedCloud = make(map[int]bool)
+	}
+	f.parkedCloud[p.idx] = true
+	if p.vx >= 0 {
+		p.x = xEntry - cloudParkGapN
+	} else {
+		p.x = xEntry + cloudParkGapN
+	}
+	_ = hw
+}
+
+// releaseParkedClouds 每个固定步把 parked 名单里最前面那一朵再试一次：闸门放行才发射。
+// 一帧只发射一朵 ⇒ 同帧进场对恒为 0（"排队"的字面口径）。
+func (f *Field) releaseParkedClouds() {
+	if len(f.parkedCloud) == 0 {
+		return
+	}
+	for i := range f.parts {
+		if !f.parkedCloud[i] {
+			continue
+		}
+		p := &f.parts[i]
+		if p.kind != pkCloud {
+			delete(f.parkedCloud, i)
+			continue
+		}
+		x, hw := f.cloudEntryPlace(p)
+		if !f.cloudEntryGateOK(x, hw) {
+			continue
+		}
+		f.emitCloudEntry(p, x, hw)
+		return
+	}
+}
+
 // placeAirEntry 云/雾的**进场落位**（低性能 x86 小主机反馈）：
 //
 //	反馈 1"有云会突然刷新出来，应该在外面慢慢进来而不是在眼前突然出现"
@@ -3824,11 +3988,14 @@ func (f *Field) placeAirEntry(p *particle, r *rand.Rand) {
 			// 现口径：错峰由**每朵自身的 hw**（尺寸抖动 scaleMul 与 sc 导出，
 			// 逐朵差最多 0.41 屏宽 = 445 px）与 vx 分布（0.003–0.014，4.7 倍）承担：
 			// 以 vx≈0.008/s 计，hw 相差 0.41 ⇒ 进屏时刻相差约 51 s。
-			if p.vx >= 0 {
-				p.x = -hw
-			} else {
-				p.x = 1 + hw
+			// B3 进场排队闸门（R1"决不能同出同进"）：进场位发射前过 kinetics.EntryOK，
+			// 同帧不合格 ⇒ 保持 parked（整朵停在进场位之外），releaseParkedClouds 下一帧再试。
+			x, hwE := f.cloudEntryPlace(p)
+			if !f.cloudEntryGateOK(x, hwE) {
+				f.parkCloudEntry(p, x, hwE)
+				return
 			}
+			f.emitCloudEntry(p, x, hwE)
 			return
 		}
 		if 1-2*hh > 0 {
@@ -4850,7 +5017,16 @@ func (f *Field) driftRecycleOffscreen(i int) {
 	if f.moveAirToFreeBand(p) {
 		return
 	}
-	if p.vx >= 0 {
+	if p.kind == pkCloud {
+		// B3 进场排队闸门（与 placeAirEntry 同一判据、同一发射函数）：云走 EntryOK，
+		// 不合格保持 parked；雾不在 R1 的"云"口径里 ⇒ 雾支路逐字不动（下面 else）。
+		x, hwE := f.cloudEntryPlace(p)
+		if !f.cloudEntryGateOK(x, hwE) {
+			f.parkCloudEntry(p, x, hwE)
+		} else {
+			f.emitCloudEntry(p, x, hwE)
+		}
+	} else if p.vx >= 0 {
 		p.x = -hw
 	} else {
 		p.x = 1 + hw
