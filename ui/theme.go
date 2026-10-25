@@ -58,6 +58,62 @@ const (
 	panelRadioGapDp   unit.Dp = 2 // 竖排 radio 行间距
 )
 
+// 面板字号的**横屏档**（spec/b5-settings-landscape.md 点位「ui/theme.go:48-58：
+// 横屏字号档（19/21/13sp）」；判据 3 钉「横屏字号 ≥17sp」⇒ 正文取 19）。
+//
+// 竖屏档常量（上面 15/17/12）**逐字不动**：判据 4「竖屏零迁移」要求
+// ui/panel_theme_b2_test.go 三条 640 判据原样保持，那三条量的就是 15/17/12。
+//
+// 横屏为什么加大字号：横屏几何下面板是 1920×1080 的双栏矩形（每栏 ≈ 960 px 宽），
+// 观看距离与竖屏 640 px 密集表单同级 ⇒ 15sp 在 960 px 宽的栏里偏小；
+// 取 19 满足判据 3 的「≥17sp」，同时 19 派生的正文 16.6sp、标题 21sp 在
+// 960 px 栏内仍放得下最长标签（实测见 ui/panel_landscape_test.go）。
+const (
+	panelTextSpLand    unit.Sp = 19
+	panelTitleSpLand   unit.Sp = 21 // 标题比正文大一号（与竖屏同口径）
+	panelCaptionSpLand unit.Sp = 13 // 字段说明 / 坐标副行
+
+	// 横屏行距（spec 点位「+ 行距」）：判据 3 钉「行高 ≤40 px」。
+	// 竖屏的 4 dp 行内边距在 19sp 下把单行推到 40 px 以上 ⇒ 横屏收紧到 3 dp，
+	// 让 17 行的右栏在 1080 px 内整列可见（实测行高见 panel_landscape_test.go）。
+	panelRowInsetLandDp   unit.Dp = 3
+	panelTitleInsetLandDp unit.Dp = 5
+)
+
+// panelFont 是面板一档字号 + 行距。竖屏/横屏各一档（spec 判据 3「panelTextSp 横屏档 19sp」）。
+type panelFont struct {
+	text, title, caption unit.Sp
+	rowInset, titleInset unit.Dp
+}
+
+// panelFontFor 按朝向选档：横屏 = 19/21/13 + 收紧行距，竖屏 = 现档逐字不变。
+func panelFontFor(landscape bool) panelFont {
+	if landscape {
+		return panelFont{
+			text: panelTextSpLand, title: panelTitleSpLand, caption: panelCaptionSpLand,
+			rowInset: panelRowInsetLandDp, titleInset: panelTitleInsetLandDp,
+		}
+	}
+	return panelFont{
+		text: panelTextSp, title: panelTitleSp, caption: panelCaptionSp,
+		rowInset: panelRowInsetDp, titleInset: panelTitleInsetDp,
+	}
+}
+
+// panelFontForTheme 从主题取档：NewPanelTheme 把档位写进 th.TextSize
+// （竖屏 15 / 横屏 19），行构造闭包只拿得到 th，故以 th.TextSize 选档。
+// 判据 3 的「横屏字号 ≥17sp」使两档在 th.TextSize 上可判且无重叠。
+//
+// th == nil 时按竖屏档返回：ui/settings_diag.go:13 的 RowCount 走
+// p.rows(nil) 计数（那里注明"th 在闭包内部才被解引用 ⇒ th=nil 计数安全"），
+// 选档发生在行构造的函数体里 ⇒ 这里必须容忍 nil，否则计数路径 panic。
+func panelFontForTheme(th *material.Theme) panelFont {
+	if th == nil {
+		return panelFontFor(false)
+	}
+	return panelFontFor(th.TextSize >= panelTextSpLand)
+}
+
 // themeMode 是系统深浅色模式。
 type themeMode int
 
@@ -96,14 +152,20 @@ func paletteForMode(dark bool) material.Palette {
 	}
 }
 
-// NewPanelTheme 构建设置面板专用主题：配色按系统深浅色，字号按 panelTextSp。
+// NewPanelTheme 构建设置面板专用主题：配色按系统深浅色，字号按朝向选档。
 //
 // 与 ui.New()（屏保侧 Screen.Theme）是两份互不相干的 Theme：
 // 本函数不碰 WeatherFontSize，屏保画面零影响。
 // 每次构建面板时调一次（取舍见本文件顶部注释）。
-func NewPanelTheme() *material.Theme {
+//
+// 参数 = 朝向（spec/b5-settings-landscape.md 点位「NewPanelTheme 按参数选档
+// （调用方按朝向传参）」）：**不传 = 竖屏档**（15sp，逐像素零迁移），
+// 传 true = 横屏档（19sp）。做成变参是为了既有零参调用点
+// （ui/panel_theme_b2_test.go:53/86/109、ui/theme_test.go:80、
+// ui/theme_other_test.go:13 —— 全是竖屏判据，硬纪律不许改）继续编译。
+func NewPanelTheme(landscape ...bool) *material.Theme {
 	th := material.NewTheme()
 	th.Palette = paletteForMode(currentThemeMode().dark())
-	th.TextSize = panelTextSp
+	th.TextSize = panelFontFor(len(landscape) > 0 && landscape[0]).text
 	return th
 }

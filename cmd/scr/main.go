@@ -40,6 +40,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
+	"gioui.org/unit"
 
 	"github.com/DragonTTDream/WeatherScr/config"
 	"github.com/DragonTTDream/WeatherScr/effect"
@@ -482,20 +483,39 @@ func runSettings(cfg config.Config, parent uintptr) {
 		err    error
 	}
 	locResults := make(chan locResult, 1)
+	// 窗口尺寸按**朝向二值**（spec/b5-settings-landscape.md 判据 3 与点位
+	// 「cmd/scr/main.go:490/491/532 窗口尺寸按朝向二值」）：
+	//   横屏 = 请求 1920×1080、下限 900×540（长方形双栏要的几何）
+	//   竖屏 = 原值 640×1100、下限 320×480（逐字不动 ⇒ 判据 4 零迁移）
+	//
+	// 朝向来源 = 主显示器工作区（SPI_GETWORKAREA，foreground_windows.go 已有的
+	// 同款查询，导出为 workAreaIsLandscape；非 Windows 桩返回 false ⇒ 恒竖屏）。
+	// 判定本体是 ui.PanelIsLandscape(宽,高) = 宽>高 且 宽≥1200，与面板内部
+	// 双栏判定同一条 ⇒ 窗口几何与面板版式不会各说各话。
+	land := workAreaIsLandscape()
+	// app.Size / app.MinSize 收的是 dp（gioui.org/unit）；100% 缩放下 1 dp = 1 px。
+	sizeW, sizeH := unit.Dp(640), unit.Dp(1100)
+	minW, minH := unit.Dp(320), unit.Dp(480)
+	if land {
+		sizeW, sizeH = unit.Dp(1920), unit.Dp(1080)
+		minW, minH = unit.Dp(900), unit.Dp(540)
+	}
 	w := new(app.Window)
 	w.Option(
 		app.Title("WeatherScr 设置"),
 		// 竖屏 1080×1920 上完整显示：窗口按 dp 给，
 		// 内容用可滚动的 material.List，控件全部可达。
-		app.Size(640, 1100),
-		app.MinSize(320, 480),
+		// 横屏走同一套 dp 口径（开放项处置：DPI 按 100% 主机实测 ⇒ 1 dp = 1 px）。
+		app.Size(sizeW, sizeH),
+		app.MinSize(minW, minH),
 	)
 	// 面板主题（B2）：配色跟随 Windows 深浅色 + 面板局部字号 panelTextSp。
 	// 与屏保侧的 ui.New() 是两份互不相干的 Theme ⇒ 屏保画面零影响
 	// （Screen.Theme 的消费点只有这里与 cmd/setshot，spec §0）。
 	// 深浅色在构建面板时读一次注册表，面板开着期间不跟系统变
 	// （取舍见 ui/theme.go 顶部注释）。
-	th := ui.NewPanelTheme()
+	// B5：字号按朝向选档（横屏 19/21/13sp，竖屏 15/17/12sp 逐字不变）。
+	th := ui.NewPanelTheme(land)
 	var ops op.Ops
 	ownerDone := false
 	// 风格夺回的一次性守卫（与 ownerDone 同构）：只在第一帧执行一次。
@@ -529,7 +549,9 @@ func runSettings(cfg config.Config, parent uintptr) {
 				if !styleDone {
 					styleDone = true
 					w.Run(func() {
-						normalizeDialog(findOwnWindow(windowClass), 640, 1100)
+						// 目标尺寸 = 上面按朝向二值出来的请求值（判据 3：
+						// 横屏 1920×1080 / 竖屏 640×1100）；MinSize 同朝向。
+						normalizeDialog(findOwnWindow(windowClass), int(sizeW), int(sizeH), land)
 					})
 				}
 				// 父窗口挂接必须在窗口线程上做（同一条正道）。

@@ -18,7 +18,11 @@ func applyOwner(hwnd, parent uintptr)        {}
 
 // normalizeDialog 空桩：设置窗口的风格夺回是 Win32 窗口调用，
 // 非 Windows 平台无对应对象。签名与 Windows 侧一致。
-func normalizeDialog(hwnd uintptr, wpx, hpx int) {}
+func normalizeDialog(hwnd uintptr, wpx, hpx int, landscape bool) {}
+
+// workAreaIsLandscape 空桩：非 Windows 没有 SPI_GETWORKAREA 可问，
+// 恒返回 false ⇒ 设置窗口一律走竖屏原值（640×1100 / 320×480），零行为迁移。
+func workAreaIsLandscape() bool { return false }
 
 // coverLoop 空桩：run() 里 `go coverLoop()` 在双平台都要能编译。
 // 非 Windows 无 Win32 窗口可显示/铺满，常驻检查无意义，直接返回。

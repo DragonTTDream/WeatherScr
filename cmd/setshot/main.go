@@ -78,7 +78,7 @@ func panelModel() ui.PanelModel {
 }
 
 func main() {
-	sizes := [][2]int{{640, 1100}, {810, 1389}, {1080, 1920}}
+	sizes := [][2]int{{640, 1100}, {810, 1389}, {1080, 1920}, {1920, 1080}}
 	if v := os.Getenv("SET_SIZES"); v != "" {
 		var got [][2]int
 		for _, tok := range strings.Split(v, ",") {
@@ -118,6 +118,8 @@ func main() {
 
 	// 面板主题（B2）：与设置窗口同一份（配色跟随 + 面板字号），
 	// 这样量出来的行高/包围盒与 Windows 上设置窗口的观感同口径。
+	// B5：这里构建的是**竖屏档**主题，只用于 THEME 行的口径打印；
+	// 每个尺寸实际画面板用的是下面按朝向选档的 sth。
 	th := ui.NewPanelTheme()
 	fmt.Printf("THEME textsize=%.1f fg=%s bg=%s contrastbg=%s contrastfg=%s clear=%s density=%.2f\n",
 		th.TextSize, fmtColor(th.Palette.Fg), fmtColor(th.Palette.Bg),
@@ -126,6 +128,15 @@ func main() {
 
 	for _, sz := range sizes {
 		w, h := sz[0], sz[1]
+		// 朝向选档（spec/b5-settings-landscape.md 点位「NewPanelTheme 按参数选档
+		// （调用方按朝向传参）」）：横屏档 19/21/13sp，竖屏档逐字不变。
+		// 判定用与面板内部同一条 ui.PanelIsLandscape(宽,高) ⇒ 离屏量化与
+		// 真实设置窗口走同一个判据（宽>高 且 宽≥1200）。
+		land := ui.PanelIsLandscape(w, h)
+		sth := ui.NewPanelTheme(land)
+		if land {
+			fmt.Printf("THEME_LAND w=%d h=%d textsize=%.1f\n", w, h, float32(sth.TextSize))
+		}
 		win, err := headless.NewWindow(w, h)
 		if err != nil {
 			fmt.Println("HEADLESS_FAIL=" + err.Error())
@@ -143,7 +154,7 @@ func main() {
 				Now:         time.Now(),
 			}
 			paint.FillShape(gtx.Ops, windowClear, clip.Rect{Max: image.Point{X: w, Y: h}}.Op())
-			dims := panel.Layout(gtx, th)
+			dims := panel.Layout(gtx, sth)
 			if err := win.Frame(&ops); err != nil {
 				fmt.Println("FRAME_FAIL=" + err.Error())
 				win.Release()

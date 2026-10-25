@@ -9,6 +9,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/DragonTTDream/WeatherScr/ui"
 )
 
 // scrDbgFlag 由 main 设置的调试态（coverLoop 独立线程要用，不能调 scrDebug()
@@ -585,7 +587,36 @@ const (
 	// TODO(未取证)：高 DPI 缩放下 dp→px 的换算口径未取证，本函数按 px 处理。
 	dialogMinWpx = 320
 	dialogMinHpx = 480
+
+	// 横屏档下限（spec/b5-settings-landscape.md 判据 3「横屏请求 1920,1080
+	// （MinSize 900,540）」）：双栏每栏要 ≈ 900/2 = 450 px 宽才放得下右栏的
+	// 长标签行，所以横屏的下限比竖屏高一档，与 main.go 的 app.MinSize(900, 540)
+	// 同口径。normalizeDialog 的工作区夹取按朝向取这一对值。
+	dialogMinWpxLand = 900
+	dialogMinHpxLand = 540
 )
+
+// dialogMinPx 按朝向给出设置窗口的下限尺寸（判据 3 的二值口径）。
+func dialogMinPx(landscape bool) (int, int) {
+	if landscape {
+		return dialogMinWpxLand, dialogMinHpxLand
+	}
+	return dialogMinWpx, dialogMinHpx
+}
+
+// workAreaIsLandscape 主显示器工作区是否横屏（spec/b5-settings-landscape.md
+// 判据 3 点位「foreground_windows.go 已有的 SPI_GETWORKAREA 同款查询」）。
+//
+// 判定本体复用面板的 ui.PanelIsLandscape（宽>高 且 宽≥1200）⇒ 窗口朝向与
+// 面板版式同一条判据，不会窗口要 1920×1080 而面板排单列。
+// 查询失败（SPI_GETWORKAREA 返回 0）按竖屏处理：竖屏 = 现行行为，最保守。
+func workAreaIsLandscape() bool {
+	_, _, w, h, ok := workAreaRect()
+	if !ok {
+		return false
+	}
+	return ui.PanelIsLandscape(int(w), int(h))
+}
 
 // workAreaRect 主显示器工作区（SPI_GETWORKAREA，已扣掉任务栏）。
 func workAreaRect() (x, y, w, h int32, ok bool) {
@@ -608,8 +639,9 @@ func workAreaRect() (x, y, w, h int32, ok bool) {
 //     WS_MAXIMIZEBOX|WS_VISIBLE，清 WS_POPUP
 //  3. 扩展样式清 WS_EX_TOOLWINDOW、置 WS_EX_APPWINDOW（进任务栏）
 //     并置 WS_EX_TOPMOST(0x00000008)
-//  4. 尺寸 = wpx×hpx；位置 = 主显示器工作区居中；工作区小于目标尺寸时
-//     夹到不小于 MinSize 且不小于工作区可用尺寸
+//  4. 尺寸 = wpx×hpx（调用方按朝向二值传入：横屏 1920×1080 / 竖屏 640×1100）；
+//     位置 = 主显示器工作区居中；工作区小于目标尺寸时夹到不小于**该朝向的
+//     MinSize**（dialogMinPx(landscape)）且不小于工作区可用尺寸
 //  5. SetWindowPos(HWND_TOPMOST, x, y, wpx, hpx, SWP_FRAMECHANGED)
 //     —— 不带 SWP_NOZORDER：本步必须改 z 序
 //  6. ShowWindow(SW_RESTORE)
@@ -626,7 +658,7 @@ func workAreaRect() (x, y, w, h int32, ok bool) {
 // 样式位用"置位 + 清位"的写法：置上面列出的六个位、清 WS_POPUP，
 // 其余位保留（gioui 建窗时加的 WS_CLIPSIBLINGS|WS_CLIPCHILDREN，
 // app/os_windows.go:193，清掉会影响渲染裁剪）。
-func normalizeDialog(hwnd uintptr, wpx, hpx int) {
+func normalizeDialog(hwnd uintptr, wpx, hpx int, landscape bool) {
 	if hwnd == 0 {
 		logf("CFG_STYLE=skip hwnd=0")
 		return
@@ -643,14 +675,15 @@ func normalizeDialog(hwnd uintptr, wpx, hpx int) {
 	// 不小于 MinSize 且不小于工作区可用尺寸的取值。
 	w, h := wpx, hpx
 	x, y := 0, 0
+	minW, minH := dialogMinPx(landscape) // 下限按朝向取（判据 3：横屏 900×540 / 竖屏 320×480）
 	wx, wy, aw, ah, ok := workAreaRect()
 	if ok {
 		awa, ahh := int(aw), int(ah)
 		if awa > 0 && awa < w {
-			w = max(awa, dialogMinWpx)
+			w = max(awa, minW)
 		}
 		if ahh > 0 && ahh < h {
-			h = max(ahh, dialogMinHpx)
+			h = max(ahh, minH)
 		}
 		x = int(wx) + (awa-w)/2
 		y = int(wy) + (ahh-h)/2

@@ -127,6 +127,9 @@ type SettingsPanel struct {
 	btnLock   widget.Clickable
 
 	list widget.List
+	// listRight 是横屏双栏的**右栏**列表（B5，spec 判据 2）。
+	// 竖屏单栏只走 list，本字段不参与竖屏路径。
+	listRight widget.List
 
 	kt settingsKeyTag
 
@@ -155,6 +158,10 @@ func NewSettingsPanel(m PanelModel) *SettingsPanel {
 	// Position 显式置零：打开面板时列表停在内容起始处。
 	p.list.Axis = layout.Vertical
 	p.list.Position = layout.Position{}
+	// 横屏右栏列表与左栏同一口径（主轴竖排、打开时停在内容起始处）：
+	// 判据 2 要求两栏主轴都是 layout.Vertical。
+	p.listRight.Axis = layout.Vertical
+	p.listRight.Position = layout.Position{}
 	p.edLocation.SingleLine = true
 	p.edWallpaper.SingleLine = true
 	for _, ed := range []*widget.Editor{&p.edFontSize, &p.edIconSize, &p.edMargin,
@@ -345,6 +352,29 @@ func (p *SettingsPanel) HandleKeys(gtx layout.Context) string {
 	return ""
 }
 
+// panelLandMinWpx 横屏双栏的**最小宽度门槛**（px）。
+//
+// spec/b5-settings-landscape.md 判据口径：「双栏判定 = gtx 约束宽>高 且 宽≥1200」。
+// 为什么要有宽度下限：双栏要把 17 行的右栏放进半宽 ≈ 960 px 的列里，
+// 1200 px 以下（例：810×1389、1080×1920 这类竖屏比例）拆栏会把行挤成折行，
+// 正是 b2 取证要挡的"逐字竖排"症状 ⇒ 窄窗口一律走竖屏单列。
+const panelLandMinWpx = 1200
+
+// PanelIsLandscape 报告"宽 w × 高 h 的这块位置按**设置页双栏**排"= 宽>高 且 宽 ≥ 1200 px。
+//
+// 与 ui/layout.go:67 的 IsLandscape（屏保版式用，判据 = 纯 w>h）是两回事：
+// 本函数多一道宽度下限，因为双栏的每栏只有半宽。屏保侧继续用 IsLandscape，
+// 本函数只服务设置页（硬纪律「不改 ui/layout.go」⇒ 不合并两者）。
+//
+// 唯一口径（spec 判据 5「runSettings 允许引入 IsLandscape(宽,高) 判定」+
+// 判据口径「双栏判定 = gtx 约束宽>高 且 宽≥1200」）：
+//   - 面板侧在 panel.Layout 里用它判本帧 gtx 约束（不查系统旋转 API）；
+//   - 窗口侧 cmd/scr 用它判主显示器工作区宽高（foreground_windows.go 的
+//     SPI_GETWORKAREA 同款查询，导出为 workAreaIsLandscape）。
+func PanelIsLandscape(w, h int) bool {
+	return w > h && w >= panelLandMinWpx
+}
+
 // Layout 画面板并同步控件状态。返回 true 表示本帧有改动（调用方写盘）。
 func (p *SettingsPanel) Layout(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	before := p.m
@@ -356,7 +386,6 @@ func (p *SettingsPanel) Layout(gtx layout.Context, th *material.Theme) layout.Di
 		wgtx = gtx.Disabled()
 	}
 
-	rows := p.rows(th)
 	// 面板底色：gioui 的 Windows 后端每帧把窗口清成不透明白
 	// （gioui.org v0.10.3 app/window.go:216），面板自身不画底 ⇒ 深色模式下
 	// 浅字会落在白底上（等于没跟随）。这里按 palette.Bg 铺一层，
@@ -364,7 +393,38 @@ func (p *SettingsPanel) Layout(gtx layout.Context, th *material.Theme) layout.Di
 	if max := gtx.Constraints.Max; max.X > 0 && max.Y > 0 {
 		paint.FillShape(gtx.Ops, th.Palette.Bg, clip.Rect{Max: max}.Op())
 	}
-	dims := material.List(th, &p.list).LayoutWidgets(wgtx, rows...)
+	// 朝向判定 = **本帧 gtx 的约束宽高**（spec 判据 5 与开放项处置：
+	// 「横屏判定=传入 gtx 宽高（不查系统旋转）」）⇒ 面板被放进多大的框
+	// 就长成多大，cmd/setshot 的离屏量化与真实窗口走同一条判据。
+	land := PanelIsLandscape(gtx.Constraints.Max.X, gtx.Constraints.Max.Y)
+	var dims layout.Dimensions
+	if !land {
+		// 竖屏：现行单列，逐字不变（判据 4「竖屏零迁移」）。
+		dims = material.List(th, &p.list).LayoutWidgets(wgtx, p.rows(th)...)
+	} else {
+		// 横屏：长方形双栏（判据 2）——外层 Flex{Horizontal} + 两个
+		// material.List（各占一半宽度，主轴都是 layout.Vertical）。
+		// 两栏的行取自与单栏同一份 rowSpecs ⇒ 行数守恒（判据 1）。
+		//
+		// 栏宽由 Flex 分配，所以每栏的 List 必须用**子 gtx**（Flex 交给它的
+		// 960 px 约束）来排：把父 gtx 直接递进去，左栏会按 1920 px 排掉整条
+		// 主轴，右栏剩下的空间被夹成 0 ⇒ 右栏整列不落地（实测：出图右半全空、
+		// 只剩右栏滚动条）。锁定态同样在子 gtx 上取 gtx.Disabled()。
+		left, right := p.rowsSplit(th)
+		col := func(list *widget.List, rows []layout.Widget) layout.Widget {
+			return func(gtx layout.Context) layout.Dimensions {
+				cgtx := gtx
+				if p.locked {
+					cgtx = gtx.Disabled()
+				}
+				return material.List(th, list).LayoutWidgets(cgtx, rows...)
+			}
+		}
+		dims = layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+			layout.Flexed(1, col(&p.list, left)),
+			layout.Flexed(1, col(&p.listRight, right)),
+		)
+	}
 
 	// 按钮点击（点击后由调用方执行动作）
 	p.changed = false
@@ -385,8 +445,24 @@ func (p *SettingsPanel) CancelClicked(gtx layout.Context) bool { return p.btnCan
 func (p *SettingsPanel) UndoClicked(gtx layout.Context) bool   { return p.btnUndo.Clicked(gtx) }
 func (p *SettingsPanel) LockClicked(gtx layout.Context) bool   { return p.btnLock.Clicked(gtx) }
 
-// rows 面板行。竖屏 1080×1920 上全部行放进可滚动的 material.List。
-func (p *SettingsPanel) rows(th *material.Theme) []layout.Widget {
+// rowSpecs 面板行的**单一事实源**（索引 = 行号，逐行连续）。
+//
+// 竖屏单栏走 rows()（= rowSpecs + 候选插入）；横屏双栏走 rowsSplit()
+// （= rowSpecs 按切分表分栏 + 候选插左栏）。两条路取的是同一批行对象
+// ⇒ 判据 1 的「双栏总行覆盖 = 单栏全行集」由构造保证，不靠人工数。
+//
+// 索引表（B5 切分表的口径，行号 = 本切片的下标）：
+//
+//	0 标题  1 状态行  2 location 地名  3 搜索行  4 搜索状态行  5 红字行
+//	6 display_language 语言  7 wallpaper_dir  8 font_size/icon_size
+//	9 margin/refresh_minutes（更新）  10 wallpaper_interval_s（更新）
+//	11 clock_y/weather_y  12 alert_threshold/alert_y  13 alert_min_mm
+//	14 units 单位  15 bg_opacity  16 clock_bg_opacity
+//	17..25 九个 show_*/动效/interaction_mode/alert 开关  26 按钮行
+//
+// 注：注释里历史写过"26 行"（b-alert-v1b 拆掉视野小时组之前），
+// spec 判据 1 明确「行数实测钉死，注释『26/27』失真以实测为准」⇒ 实测 27。
+func (p *SettingsPanel) rowSpecs(th *material.Theme) []layout.Widget {
 	rows := []layout.Widget{
 		p.titleRow(th, "WeatherScr 设置"),
 		p.plainRow(th, p.status),
@@ -438,6 +514,61 @@ func (p *SettingsPanel) rows(th *material.Theme) []layout.Widget {
 		p.checkRow(th, "alert_pulse 提醒缓慢呼吸", &p.cbAlertPulse),
 		p.buttonRow(th),
 	}
+	return rows
+}
+
+// rowsSplit 横屏双栏的行切分（spec/b5-settings-landscape.md 判据 2）。
+//
+// 左栏 = 地区与预报组：标题/状态/地名/搜索行/搜索状态行/红字行/显示语言
+//   - 单位（units）+ 更新组（refresh_minutes、wallpaper_interval_s），
+//     地名搜索候选插在左栏的「地名组」之后（与竖屏同一插入点：
+//     搜索状态行之后、红字行之前）。
+//
+// 右栏 = 显示开关组 + 按钮行：其余全部行（壁纸目录、font/icon/margin 所在行、
+//
+//	偏移与提醒行、两条不透明度滑条、九个 checkRow、按钮行）。
+//
+// 行去向由 panelLandLeftIdx 点名，其余行**全部**落进右栏 ⇒
+// 左 + 右 = 单栏全行集（判据 1 的行数守恒）。
+func (p *SettingsPanel) rowsSplit(th *material.Theme) (left, right []layout.Widget) {
+	rows := p.rowSpecs(th)
+	taken := make([]bool, len(rows))
+	for _, i := range panelLandLeftIdx {
+		if i < 0 || i >= len(rows) {
+			continue // 行集变化时越界下标跳过（守恒判据由测试钉死，不在运行时发明行为）
+		}
+		left = append(left, rows[i])
+		taken[i] = true
+	}
+	if cands := p.locCandidateRows(th); len(cands) > 0 && len(left) >= panelLandCandAt {
+		out := make([]layout.Widget, 0, len(left)+len(cands))
+		out = append(out, left[:panelLandCandAt]...)
+		out = append(out, cands...)
+		out = append(out, left[panelLandCandAt:]...)
+		left = out
+	}
+	for i := range rows {
+		if !taken[i] {
+			right = append(right, rows[i])
+		}
+	}
+	return left, right
+}
+
+// 横屏切分表（spec 点位「rows() 切分表」）。行号见 rowSpecs 的索引表注释。
+//
+// 左栏 10 行：地区与预报组（含 units 与两条更新间隔行）；
+// 右栏 17 行：显示开关组（9 个 checkRow + 2 条滑条 + 偏移/提醒行 + 壁纸目录
+// + font/icon 行）+ 按钮行。
+var panelLandLeftIdx = []int{0, 1, 2, 3, 4, 5, 6, 9, 10, 14}
+
+// panelLandCandAt = 左栏里候选的插入位置：地名组 5 行（标题/状态/location/
+// 搜索行/搜索状态行）之后，与竖屏 rows() 的 `rows[:5]` 插入点同一口径。
+const panelLandCandAt = 5
+
+// rows 面板行（竖屏单列）。竖屏 1080×1920 上全部行放进可滚动的 material.List。
+func (p *SettingsPanel) rows(th *material.Theme) []layout.Widget {
+	rows := p.rowSpecs(th)
 	// 候选地名插在搜索行之后（Go 的 `f()...` 只能用在可变参数调用里，
 	// 不能出现在复合字面量中 ⇒ 首版写 `p.locCandidateRows(th)...` 直接编译不过。
 	if cands := p.locCandidateRows(th); len(cands) > 0 && len(rows) >= 5 {
@@ -451,39 +582,62 @@ func (p *SettingsPanel) rows(th *material.Theme) []layout.Widget {
 }
 
 func (p *SettingsPanel) titleRow(th *material.Theme, txt string) layout.Widget {
+	fs := panelFontForTheme(th) // 字号档按主题选（竖屏=现档逐字不变，横屏=19/21/13）
 	return func(gtx layout.Context) layout.Dimensions {
 		l := material.H5(th, txt)
-		l.TextSize = panelTitleSp // 标题行比正文大一号（spec §1.2）
+		l.TextSize = fs.title // 标题行比正文大一号（spec §1.2）
 		l.Color = th.Palette.Fg
-		return layout.UniformInset(panelTitleInsetDp).Layout(gtx, l.Layout)
+		return layout.UniformInset(fs.titleInset).Layout(gtx, l.Layout)
 	}
 }
 
 func (p *SettingsPanel) plainRow(th *material.Theme, txt string) layout.Widget {
+	fs := panelFontForTheme(th) // 字号档按主题选（竖屏=现档逐字不变，横屏=19/21/13）
 	return func(gtx layout.Context) layout.Dimensions {
 		l := material.Body2(th, txt)
-		l.TextSize = panelTextSp
+		l.TextSize = fs.text
 		l.Color = th.Palette.ContrastFg
-		return layout.UniformInset(panelRowInsetDp).Layout(gtx, l.Layout)
+		return layout.UniformInset(fs.rowInset).Layout(gtx, l.Layout)
 	}
 }
 
+// panelCaptionColor 标签/说明文字的取色（B5.1 返工的出字修复点）。
+//
+// 根因（本批次 headless 真渲染探针，见 out/notes-b5-labels.md）：浅色模式下
+// Palette.ContrastFg == Palette.Bg == 纯白（ui/theme.go:147-151 paletteForMode
+// 浅色支），而面板每帧用 Bg 铺底（本文件 Layout 里的 paint.FillShape）
+// ⇒ 取 ContrastFg 的文字画在白底上：排版尺寸正常（fieldRow 的标签 span 实测
+// 258x18，见探针），像素却全白 = "标签消失"。探针 BAND 行：plainRow 标签带、
+// fieldRow 标签行、row2 两格标签行的暗像素数全 = 0。
+//
+// 处置：横屏档标签取 Palette.Fg（浅色=黑、深色=近白；实拍里取 Fg 的
+// checkRow / unitsRow / sliderRow 标签本来就出字）。
+// 竖屏档逐字保持 ContrastFg —— 判据 4「竖屏零迁移」，竖屏像素一字不动。
+// 选档口径与 panelFontForTheme 同一条：正文档 ≥ panelTextSpLand(19sp) = 横屏档。
+func panelCaptionColor(th *material.Theme, fs panelFont) color.NRGBA {
+	if fs.text >= panelTextSpLand {
+		return th.Palette.Fg
+	}
+	return th.Palette.ContrastFg
+}
+
 func (p *SettingsPanel) fieldRow(th *material.Theme, label string, ed *widget.Editor) layout.Widget {
+	fs := panelFontForTheme(th) // 字号档按主题选（竖屏=现档逐字不变，横屏=19/21/13）
 	return func(gtx layout.Context) layout.Dimensions {
-		return layout.UniformInset(panelRowInsetDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.UniformInset(fs.rowInset).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					l := material.Caption(th, label)
-					l.TextSize = panelCaptionSp
-					l.Color = th.Palette.ContrastFg
+					l.TextSize = fs.caption
+					l.Color = panelCaptionColor(th, fs)
 					return l.Layout(gtx)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					e := material.Editor(th, ed, "")
 					// 面板局部字号：这里原先取主题的 th.TextSize，
 					// 而它继承自屏保的 WeatherFontSize=40（spec §0 的根因链）
-					// ⇒ 换成 panelTextSp。
-					e.TextSize = panelTextSp
+					// ⇒ 换成 fs.text。
+					e.TextSize = fs.text
 					e.Font.Weight = font.Normal
 					return e.Layout(gtx)
 				}),
@@ -499,17 +653,25 @@ type fieldSpec struct {
 
 // row2 两列并排。gioui v0.10.3 没有 layout.Row → 用 layout.Flex{Axis: Horizontal}
 // （需求 1：已实测）。
+//
+// B5.1 返工：横屏档两格走 landFieldUnit（竖排单元：标签在上、编辑器在下），
+// 竖屏档分支逐字不动（判据 4 零迁移）。选档 = 字号档 ≥ panelTextSpLand。
 func (p *SettingsPanel) row2(th *material.Theme, a, b fieldSpec) layout.Widget {
+	fs := panelFontForTheme(th) // 字号档按主题选（竖屏=现档逐字不变，横屏=19/21/13）
+	land := fs.text >= panelTextSpLand
 	return func(gtx layout.Context) layout.Dimensions {
 		cells := []layout.FlexChild{}
 		for _, sp := range []fieldSpec{a, b} {
 			sp := sp
 			cells = append(cells, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				if land {
+					return p.landFieldUnit(th, fs, sp)(gtx)
+				}
 				if sp.ed == nil {
 					l := material.Caption(th, sp.label)
-					l.TextSize = panelCaptionSp
+					l.TextSize = fs.caption
 					l.Color = th.Palette.ContrastFg
-					return layout.UniformInset(panelRowInsetDp).Layout(gtx, l.Layout)
+					return layout.UniformInset(fs.rowInset).Layout(gtx, l.Layout)
 				}
 				return p.fieldRow(th, sp.label, sp.ed)(gtx)
 			}))
@@ -524,14 +686,45 @@ func (p *SettingsPanel) row2(th *material.Theme, a, b fieldSpec) layout.Widget {
 	}
 }
 
+// landFieldUnit 横屏档 row2 的**竖排单元**：标签行在上、编辑器在下
+// （sp.ed == nil 时只有标签行，语义与竖屏 row2 的 nil 格同款）。
+//
+// 排版与竖屏 fieldRow 同构（Flex{Vertical} + 同一套字号/行距），差别两处：
+//   - 标签取色走 panelCaptionColor（横屏档 = Palette.Fg ⇒ 出字）；
+//   - 只服务横屏档：row2 的 land 分支才进这里，竖屏路径一字不经过本函数。
+func (p *SettingsPanel) landFieldUnit(th *material.Theme, fs panelFont, sp fieldSpec) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		return layout.UniformInset(fs.rowInset).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			children := []layout.FlexChild{
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					l := material.Caption(th, sp.label)
+					l.TextSize = fs.caption
+					l.Color = panelCaptionColor(th, fs)
+					return l.Layout(gtx)
+				}),
+			}
+			if sp.ed != nil {
+				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					e := material.Editor(th, sp.ed, "")
+					e.TextSize = fs.text
+					e.Font.Weight = font.Normal
+					return e.Layout(gtx)
+				}))
+			}
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+		})
+	}
+}
+
 // unitsRow 公制/英制单选（units 键）。
 func (p *SettingsPanel) unitsRow(th *material.Theme) layout.Widget {
+	fs := panelFontForTheme(th) // 字号档按主题选（竖屏=现档逐字不变，横屏=19/21/13）
 	return func(gtx layout.Context) layout.Dimensions {
-		return layout.UniformInset(panelRowInsetDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.UniformInset(fs.rowInset).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					l := material.Body2(th, "units 单位")
-					l.TextSize = panelTextSp
+					l.TextSize = fs.text
 					l.Color = th.Palette.Fg
 					return l.Layout(gtx)
 				}),
@@ -550,12 +743,13 @@ func (p *SettingsPanel) unitsRow(th *material.Theme) layout.Widget {
 // sliderRow bg_opacity 滑条。widget.Float 的 Value 在 [0;1]（v0.10.3 实测），
 // 与上游 bg_opacity 同口径，直接对接。
 func (p *SettingsPanel) sliderRow(th *material.Theme, label string, f *widget.Float) layout.Widget {
+	fs := panelFontForTheme(th) // 字号档按主题选（竖屏=现档逐字不变，横屏=19/21/13）
 	return func(gtx layout.Context) layout.Dimensions {
-		return layout.UniformInset(panelRowInsetDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.UniformInset(fs.rowInset).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					l := material.Body2(th, label)
-					l.TextSize = panelTextSp
+					l.TextSize = fs.text
 					l.Color = th.Palette.Fg
 					return l.Layout(gtx)
 				}),
@@ -565,7 +759,7 @@ func (p *SettingsPanel) sliderRow(th *material.Theme, label string, f *widget.Fl
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					l := material.Body2(th, formatNum(float64(f.Value)))
-					l.TextSize = panelTextSp
+					l.TextSize = fs.text
 					l.Color = th.Palette.Fg
 					return l.Layout(gtx)
 				}),
@@ -575,8 +769,9 @@ func (p *SettingsPanel) sliderRow(th *material.Theme, label string, f *widget.Fl
 }
 
 func (p *SettingsPanel) checkRow(th *material.Theme, label string, b *widget.Bool) layout.Widget {
+	fs := panelFontForTheme(th) // 字号档按主题选（竖屏=现档逐字不变，横屏=19/21/13）
 	return func(gtx layout.Context) layout.Dimensions {
-		return layout.UniformInset(panelRowInsetDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.UniformInset(fs.rowInset).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return material.CheckBox(th, b, label).Layout(gtx)
 		})
 	}
@@ -624,12 +819,13 @@ var locMismatchColor = color.NRGBA{R: 226, G: 61, B: 61, A: 255}
 // （widget/editor.go:695-701），面板拿不到 SubmitEvent ⇒ 回车不可用。
 // 按钮走 widget.Clickable，与面板里已验证的保存/取消按钮同一套机制。
 func (p *SettingsPanel) locSearchRow(th *material.Theme) layout.Widget {
+	fs := panelFontForTheme(th) // 字号档按主题选（竖屏=现档逐字不变，横屏=19/21/13）
 	return func(gtx layout.Context) layout.Dimensions {
-		return layout.UniformInset(panelRowInsetDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.UniformInset(fs.rowInset).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					ed := material.Editor(th, &p.edLocSearch, "地名（中文：绵阳 / 拉丁：Mianyang）")
-					ed.TextSize = panelTextSp
+					ed.TextSize = fs.text
 					return ed.Layout(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Width: unit.Dp(10)}.Layout),
@@ -648,19 +844,21 @@ func (p *SettingsPanel) locStatusRow(th *material.Theme) layout.Widget {
 
 // locMismatchRow 裁决 C 的红字行（无提示 ⇒ 零尺寸，不占行）。
 func (p *SettingsPanel) locMismatchRow(th *material.Theme) layout.Widget {
+	fs := panelFontForTheme(th) // 字号档按主题选（竖屏=现档逐字不变，横屏=19/21/13）
 	return func(gtx layout.Context) layout.Dimensions {
 		if p.locMismatch == "" {
 			return layout.Dimensions{}
 		}
 		l := material.Body2(th, p.locMismatch)
-		l.TextSize = panelCaptionSp
+		l.TextSize = fs.caption
 		l.Color = locMismatchColor
-		return layout.UniformInset(panelRowInsetDp).Layout(gtx, l.Layout)
+		return layout.UniformInset(fs.rowInset).Layout(gtx, l.Layout)
 	}
 }
 
 // locCandidateRows 候选地名行（可点）。
 func (p *SettingsPanel) locCandidateRows(th *material.Theme) []layout.Widget {
+	fs := panelFontForTheme(th) // 字号档按主题选（竖屏=现档逐字不变，横屏=19/21/13）
 	for len(p.locClicks) < len(p.locPlaces) {
 		p.locClicks = append(p.locClicks, widget.Clickable{})
 	}
@@ -672,7 +870,7 @@ func (p *SettingsPanel) locCandidateRows(th *material.Theme) []layout.Widget {
 			// 下一行的 p.locPlaces 就变成 widget.Clickable 的字段了（实测编译错）。
 			ck := &p.locClicks[i]
 			place := p.locPlaces[i]
-			return layout.UniformInset(panelRowInsetDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.UniformInset(fs.rowInset).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -680,7 +878,7 @@ func (p *SettingsPanel) locCandidateRows(th *material.Theme) []layout.Widget {
 								// 裁决 A（§13.4）：完整路径**允许换行** = gioui Label 在宽度
 								// 受限时自己折行 ⇒ 不截断、不加省略号，控件数不变。
 								l := material.Body2(th, place.PathOrLabel())
-								l.TextSize = panelTextSp
+								l.TextSize = fs.text
 								l.Color = th.Palette.Fg
 								return l.Layout(gtx)
 							}),
@@ -691,7 +889,7 @@ func (p *SettingsPanel) locCandidateRows(th *material.Theme) []layout.Widget {
 									return layout.Dimensions{}
 								}
 								l := material.Body2(th, locMismatchText)
-								l.TextSize = panelCaptionSp
+								l.TextSize = fs.caption
 								l.Color = locMismatchColor
 								return l.Layout(gtx)
 							}),
@@ -699,7 +897,7 @@ func (p *SettingsPanel) locCandidateRows(th *material.Theme) []layout.Widget {
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						l := material.Caption(th, fmt.Sprintf("%.3f,%.3f", place.Lat, place.Lon))
-						l.TextSize = panelCaptionSp
+						l.TextSize = fs.caption
 						l.Color = th.Palette.ContrastFg
 						return l.Layout(gtx)
 					}),
@@ -727,11 +925,12 @@ type radioOpt struct {
 // （"英/文/(/e/n/)"），行高炸开（spec §0 的取证）。竖排后每个 radio 拿到
 // 整行宽度；640 px 下不截断由 ui/panel_radio_b2_test.go 量化断言。
 func (p *SettingsPanel) radioGroupRow(th *material.Theme, label string, group *widget.Enum, opts []radioOpt) layout.Widget {
+	fs := panelFontForTheme(th) // 字号档按主题选（竖屏=现档逐字不变，横屏=19/21/13）
 	return func(gtx layout.Context) layout.Dimensions {
 		children := []layout.FlexChild{
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				l := material.Body2(th, label)
-				l.TextSize = panelTextSp
+				l.TextSize = fs.text
 				l.Color = th.Palette.Fg
 				return l.Layout(gtx)
 			}),
@@ -745,7 +944,7 @@ func (p *SettingsPanel) radioGroupRow(th *material.Theme, label string, group *w
 					})
 			}))
 		}
-		return layout.UniformInset(panelRowInsetDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.UniformInset(fs.rowInset).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 		})
 	}
