@@ -80,7 +80,7 @@ func setStatus(s string) {
 }
 
 func logf(format string, a ...any) {
-	appendLog(time.Now().Format("15:04:05") + "  " + fmt.Sprintf(format, a...))
+	appendLog(time.Now().Format("01-02 15:04:05") + "  " + fmt.Sprintf(format, a...))
 }
 
 func main() {

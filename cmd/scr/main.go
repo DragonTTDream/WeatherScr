@@ -97,7 +97,7 @@ func first(a []string) string {
 // 逐行直写：fmt.Printf 每次调用是一个 write(2)，行内原子，天然逐行 flush
 // （stdout 无缓冲场景逐行立即可见）。
 func logf(format string, args ...any) {
-	fmt.Printf("%s ", time.Now().Format("15:04:05.000"))
+	fmt.Printf("%s ", time.Now().Format("01-02 15:04:05.000"))
 	fmt.Printf(format, args...)
 	fmt.Printf("\n")
 	// 真实屏保路径下 stdout 无处可去：屏保由 Winlogon/Explorer 在屏保
@@ -107,7 +107,7 @@ func logf(format string, args ...any) {
 	// 或环境变量 SCR_DEBUG=1 时，逐行追加写 `scr_run.log`。
 	// 标记文件这条路是必需的：屏保进程的环境变量继承自登录时的
 	// Explorer 环境块，`setx` 之后不重启 Explorer 不生效，不可靠。
-	dbgLogLine(fmt.Sprintf("%s %s", time.Now().Format("15:04:05.000"),
+	dbgLogLine(fmt.Sprintf("%s %s", time.Now().Format("01-02 15:04:05.000"),
 		fmt.Sprintf(format, args...)))
 }
 
