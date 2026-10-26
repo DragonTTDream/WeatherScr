@@ -65,8 +65,10 @@ func dllBase(name string) string {
 }
 
 func TestProcDLLPairing(t *testing.T) {
+	// R5 拆分卡 10（plans/active.md:217）：cmd/setup 的 DLL 句柄与 NewProc 声明表原在 main.go，
+	// 随「页面机/共享变量」逐字搬移到 pageflow.go —— 本判据的解析入口跟着改指，判据逻辑一字未动。
 	files := []string{
-		"../../cmd/setup/main.go",
+		"../../cmd/setup/pageflow.go",
 		"../../cmd/scr/foreground_windows.go",
 		"../../cmd/scr/preview_windows.go",
 	}
