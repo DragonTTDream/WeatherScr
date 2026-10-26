@@ -21,6 +21,7 @@ import (
 )
 
 import (
+	"github.com/DragonTTDream/WeatherScr/ui/assets"
 	"github.com/DragonTTDream/WeatherScr/ui/geometry"
 	"github.com/DragonTTDream/WeatherScr/ui/kinetics"
 	"github.com/DragonTTDream/WeatherScr/ui/metrics"
@@ -566,74 +567,13 @@ const (
 	cloudScSpan = 0.8 // 粒子云改大：0.25 → 0.8（sc 上限 2.3 ⇒ 屏宽 512×2.3 = 1178 px = 云带最宽一档）
 )
 
-// ---- 逐类云形态口径（2026-10-20 云规则改动，规格 2 的表逐字落地）----
+// ---- 逐类云形态口径 / R3 贴图白名单：R5 卡 6 已逐字迁入 ui/assets ----
 //
-// 屏宽 = 屏上像素宽（1080 px 屏口径，与云带同一 px 口径）。粒子云屏宽 =
-// 源图 512 px × p.sc × scaleMul ÷ bandNetDiv ⇒ p.sc 由**目标屏宽反解**
-// （sc 是纯倍率，屏宽是口径本身，抖动 scaleMul 只改形状不改屏宽）。
-//
-//	类                屏宽 px     体色（运行时着色）       alpha        纵向位置
-//	晴 clear          300–600     白（提亮 +140）         0.85–0.95    视差：小=远=靠上
-//	多云见日 partly   300–700     白偏亮（+115）          0.80–0.92    视差
-//	多云 cloudy      500–900     中灰（+45）             0.75–0.90    视差：大=近=靠下
-//	阴 overcast      768–1178    中暗灰（+10）           0.85–0.95    压顶
-//	雨/雷 rain/thunder 768–1178  暗灰（−32 ⇒ 降 25–40）  0.88–0.96    压顶
-//	雪 snow          均匀灰幕（雾精灵 1024 px 源，lift −70） 现 fogAlphaMul  满屏均匀不堆团
-//	尘 dust          现口径                             现口径        现口径
-//
-// 检索依据（出处逐条，规格 0 要求写进注释）：
-//
-//	雨/雷 = 又厚又黑的云："大雨来临前，天空通常会变得阴沉沉，云也越来越黑"
-//	"造成降水的云最主要有两种，一种叫积雨云，一种叫雨层云"
-//	  https://www.weather.com.cn/hainan/zyqxxx/05/2869945.shtml
-//	晴天云 = 白棉团、边缘清楚："积云…通常具有如同棉花的形状…颜色为白色到浅灰色，
-//	常见于大晴天"
-//	  https://xinwen.bjd.com.cn/content/s64a8e0f1e4b03d11a64d1566.html
-//	视差口径（远=上=小=慢、近=下=大=快）："background images move past the camera
-//	more slowly than foreground"
-//	  https://wikiwand.com/en/Parallax_scrolling
-//	云速随高度（薄高云快、厚低云慢）："higher clouds typically moving much faster
-//	than those near the surface"/"high thin cirrus streaks fly fast while low
-//	stratus creeps along"
-//	  https://popsci.blog/fast-moving-clouds-meaning
-//	  https://calendar-holidays.com/how-fast-do-clouds-travel
-//
-// 体色 = **运行时着色**（在贴图 RGB 上加一个常量，ui/embed/*.png 逐字节不动）：
-// 实测 9 张云精灵实心像素（alpha>200）反预乘均色 = (92,93,95)…(114,115,119)，
-// 现档云体就是这层深灰 ⇒ 晴/多云见日的云读成"与雾天没区别"的淡灰大幕。
-// lift 逐档：晴 +140（→ 232…255 白）、多云见日 +115（→ 207…234 白偏亮）、
-// 多云 +45（→ 137…164 中灰）、阴 +10（→ 102…129 中暗灰）、
-// 雨/雷 −32（→ 60…87，比现档降 32 级，落在规格要求的 25–40 区间内）。
-type cloudForm struct {
-	wLo, wHi float64 // 屏宽区间（px，1080 屏口径）
-	lift     float64 // 体色提亮/压暗量（加到贴图 RGB，运行时着色）
-	aLo, aHi float64 // alpha 区间
-	pressTop bool    // true = 压顶（云中心 y 落在画面上缘带）
-	idx      []int   // 按类挑选的云精灵下标（0 基）
-}
-
-// 云精灵按类挑选（按 9 张贴图的**实测内容**分配，不是按文件名顺序）：
-//
-//	实测口径 = alpha>40 的实心占比 fill、实心区平均列高 meanColH、bbox、最大 alpha
-//	cloud1 378×255 fill .639 meanColH 242 maxA  95  → 紧凑厚团（边缘软）
-//	cloud2 259×214 fill .461 meanColH 120 maxA  61  → 最小的小棉团
-//	cloud3 459×321 fill .655 meanColH 301 maxA 252  → 最厚最实（积云）
-//	cloud4 356×245 fill .669 meanColH 238 maxA  81  → 紧凑厚团
-//	cloud5 468×468 fill .286 meanColH 134 maxA 229  → 大块散点积云
-//	cloud6 498×420 fill .403 meanColH 201 maxA 255  → 顶厚（上/下质量比 2.18）
-//	cloud7 425×288 fill .075 meanColH  32 maxA  77  → 细条薄卷云（上/下比 5.11）
-//	cloud8 466×449 fill .193 meanColH  90 maxA 137  → 散点薄云
-//	cloud9 507×499 fill .320 meanColH 162 maxA 244  → 大朵散积云
-//
-// ⇒ 薄小那几张 = cloud7/2/8（fill ≤ .193、meanColH ≤ 120）；
-//
-//	中档 = cloud1/4/9；厚大那几张（积云系）= cloud3/6/5（fill ≥ .286 且 maxA ≥ 229）。
-//
-// cloudIdxAllowed = **R3 贴图白名单**（B3，evidence/p8-numbers-20261023.md:26-33）：
-// 可用 = cloud1 / cloud2 / cloud4 ⇒ 0 基索引 **{0,1,3}**；
-// 需求逐字"cloud3-5-6-7-8-9不使用" ⇒ 原三档表 cloudIdxThin{6,1,7} / cloudIdxMid{0,3,8} /
-// cloudIdxThick{2,5,4} 合并为单一表，三处 cloudForm.idx 全部指它（上面那段 9 张实测内容表保留做停用依据）。
-var cloudIdxAllowed = []int{0, 1, 3}
+// 档表（逐类 lift/alpha/压顶/白名单条目）、cloudForm 类型、9 张实测内容表与
+// 检索依据 = ui/assets/cloudtier.go（CloudForm / CloudTier / CloudIdxAllowed，
+// 数字与注释逐字迁入，无第二实现）。
+// 本文件只留宽度口径：宽度 lo/hi 是 kinetics.WidthFor 的运动规则输出
+// （"只装配不做规则" ⇒ 规则调用留 kinetics/原处，装配包不吃 kinetics）。
 
 // kineticsClassOf 把 effect.Class 映射到运动侧档名（kinetics 不吃 effect 包 ⇒ 映射写在消费点）。
 // Snow/Dust 无粒子云 ⇒ 走 RainThunder 占位口径（现口径的占位值就是 768–1178，见 cloudFormOf 头注）。
@@ -664,24 +604,10 @@ func cloudFormOf(cls effect.Class) cloudForm {
 	// 口径宽取 B2 的 screenfit 基准（竖屏目标 1080）；Rain/Thunder 档 768–1178 逐字不动（kinetics 内豁免）。
 	loPx, hiPx := kinetics.WidthFor(kineticsClassOf(cls), geometry.PortraitW)
 	lo, hi := float64(loPx), float64(hiPx)
-	switch cls {
-	case effect.Clear:
-		// B3：原 300–420（"薄快厚慢"排序用的薄档）整档低于 R4 下限 ⇒ 抬到 480–529。
-		// 速度排序不再由档间宽度差承担（各档同带），由 kinetics 的档内速度式 + 进场排队承担。
-		return cloudForm{wLo: lo, wHi: hi, lift: 140, aLo: 0.85, aHi: 0.95, pressTop: false, idx: cloudIdxAllowed}
-	case effect.PartlyCloudy:
-		return cloudForm{wLo: lo, wHi: hi, lift: 115, aLo: 0.80, aHi: 0.92, pressTop: false, idx: cloudIdxAllowed}
-	case effect.Cloudy:
-		return cloudForm{wLo: lo, wHi: hi, lift: 45, aLo: 0.75, aHi: 0.90, pressTop: false, idx: cloudIdxAllowed}
-	case effect.Overcast:
-		return cloudForm{wLo: lo, wHi: hi, lift: 10, aLo: 0.85, aHi: 0.95, pressTop: true, idx: cloudIdxAllowed}
-	case effect.Rain, effect.Thunder:
-		return cloudForm{wLo: lo, wHi: hi, lift: -32, aLo: 0.88, aHi: 0.96, pressTop: true, idx: cloudIdxAllowed}
-	case effect.Fog:
-		// B3：云档 480–529；雾团封顶 clampFogWidthPx 不动（不动清单）。
-		return cloudForm{wLo: lo, wHi: hi, lift: 0, aLo: 0.92, aHi: 1.0, pressTop: false, idx: cloudIdxAllowed}
-	}
-	return cloudForm{wLo: lo, wHi: hi, lift: 0, aLo: 0.92, aHi: 1.0, pressTop: false, idx: cloudIdxAllowed}
+	// R5 卡 6：逐档表体（lift/aLo/aHi/pressTop/idx）逐字迁至 ui/assets/cloudtier.go
+	// 的 CloudTier；本函数只留宽度规则口径（kinetics 调用）与拼装。
+	t := assets.CloudTier(cls)
+	return cloudForm{WLo: lo, WHi: hi, Lift: t.Lift, ALo: t.ALo, AHi: t.AHi, PressTop: t.PressTop, Idx: t.Idx}
 }
 
 // ---- C1 云速按薄厚（规格 1 第 1 条，公式逐字）----
@@ -1080,7 +1006,7 @@ func (f *Field) spawnCloudTier(p *particle) {
 	// 遮挡强度仍由 α 承担（贴图核心 α 实测 255），逐档区间见 cloudFormOf。
 	// sc 与 vx 在 switch 之后按**目标屏宽**统一反解（见 sizeCloudByClass）。
 	cf := cloudFormOf(f.cls)
-	p.alpha = cf.aLo + (cf.aHi-cf.aLo)*r.Float64()
+	p.alpha = cf.ALo + (cf.AHi-cf.ALo)*r.Float64()
 	// 云速按薄厚分层（C1 第 1 条）：旧口径 0.003+0.011·U 是**随机抽速度**，
 	// 与云的尺寸无关 ⇒ 大云可以跑得比小云快 ⇒ "后出现的云追上先出现的云"
 	// 与"厚云跑在白云下面"两条现象的机制。现按屏宽定速度（薄快厚慢）：
@@ -1265,7 +1191,7 @@ func (f *Field) spawn(fresh bool, idx int) particle {
 		// 厚大那几张"）：下标表 cloudIdxThin/cloudIdxMid/cloudIdxThick 按 9 张
 		// 贴图的实测内容分配（fill/meanColH/maxA 实测值写在 cloudIdxThin 注释）。
 		// 旧口径 idx % 9 让晴天云和雨云抽到同一批形状（厚积云抽给晴天 = 淡灰大幕）。
-		cfi := cloudFormOf(f.cls).idx
+		cfi := cloudFormOf(f.cls).Idx
 		if n := len(cfi); n > 0 {
 			p.spr = cfi[idx%n]
 		} else {
@@ -2323,7 +2249,7 @@ func (f *Field) bandPlace(i int, t float64, w, h int) (bandPlace, bool) {
 	// 带中心 y 实测 0.020 / 0.075 / 0.127 / 0.131 屏高（Rain，4 条），中位 0.101 ⇒ 落在晴天之下。
 	// 带左上角为负 = 带上半截在屏幕外 ⇒ 画出来贴住上缘，读成"压顶"而不是"整条挂在天上"。
 	top, spread := CloudBandYTop, CloudBandYSpread
-	if cloudFormOf(f.cls).pressTop {
+	if cloudFormOf(f.cls).PressTop {
 		top, spread = cloudBandPressTop, cloudBandPressSpread
 	}
 	return bandPlace{
@@ -2408,8 +2334,8 @@ func (f *Field) cloudAlphaOf(p *particle) float64 {
 	alpha *= p.brightnessMul
 	alpha *= p.alphaMul
 	alpha *= f.fade
-	if f.cls != effect.Clear && alpha < cloudFormOf(f.cls).aLo {
-		alpha = cloudFormOf(f.cls).aLo
+	if f.cls != effect.Clear && alpha < cloudFormOf(f.cls).ALo {
+		alpha = cloudFormOf(f.cls).ALo
 	}
 	if f.flash > 0.01 {
 		if m := f.flashMaskAt(p.x, p.y); m > 0 {
@@ -2679,12 +2605,12 @@ func (f *Field) Draw(gtx layout.Context, w, h int) {
 		// 云自身在暗天空上是 205 ⇒ 覆盖处形成清晰台阶， silhouette 读得出。
 		// 尺寸口径不受影响：云实际只有 95×63 px（spriteScale 常量 0.25），
 		// 不会再回到"整块巨团"那个问题。
-		if p.kind == pkCloud && f.cls != effect.Clear && alpha < cloudFormOf(f.cls).aLo {
+		if p.kind == pkCloud && f.cls != effect.Clear && alpha < cloudFormOf(f.cls).ALo {
 			// 下限 = **该类的 alpha 区间下界**（规格 2 表：多云见日 0.80 / 多云 0.75 /
 			// 阴 0.85 / 雨·雷 0.88）。旧口径是写死的 0.92：三档共用一个下限 ⇒
 			// 表里的逐档 alpha 被兜底抹平（多云 0.75–0.90 整档被抬成 ≥0.92）。
 			// 下限限定在非 Clear：这些类别的云要盖住日/月（图层律不动）。
-			alpha = cloudFormOf(f.cls).aLo
+			alpha = cloudFormOf(f.cls).ALo
 		}
 		// **云遮月要遮得住**
 		// "两次跳变并没有改变月亮在云层上面的事实"。
@@ -3036,7 +2962,7 @@ func (f *Field) pick(p *particle) (image.Point, paint.ImageOp, bool) {
 		// **体色运行时着色**（规格 2：晴档提白、雨/雷档压暗，不改贴图文件）：
 		// gioui v0.10.3 的 ImageOp 没有颜色乘子 ⇒ 取按 lift 生成的贴图副本
 		// （见 sprites.tintedSprite；lift=0 时回落原贴图，零副本）。
-		if op, sz, ok := f.sp.tintedSprite(cloudFormOf(f.cls).lift, i, false); ok {
+		if op, sz, ok := f.sp.tintedSprite(cloudFormOf(f.cls).Lift, i, false); ok {
 			return sz, op, true
 		}
 		return f.sp.cloudSz[i], f.sp.cloud[i], true
@@ -3775,7 +3701,7 @@ func (f *Field) enforceLandscapeCloudWidth() {
 
 func (f *Field) sizeCloudByClass(p *particle) {
 	cf := cloudFormOf(f.cls)
-	lo, hi := cf.wLo, cf.wHi
+	lo, hi := cf.WLo, cf.WHi
 	if IsLandscape(f.sw, f.sh) {
 		// 缺陷 L1/L4（spec/b4-landscape.md:18-19）：横屏逐朵**最终显示宽度**走
 		// kinetics 的屏宽分制（下限 0.444W=853 px @1920，上限留边距 ⇒ 904 px @1920）。
