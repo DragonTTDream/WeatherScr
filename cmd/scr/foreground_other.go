@@ -21,8 +21,12 @@ func applyOwner(hwnd, parent uintptr)        {}
 func normalizeDialog(hwnd uintptr, wpx, hpx int, landscape bool) {}
 
 // workAreaIsLandscape 空桩：非 Windows 没有 SPI_GETWORKAREA 可问，
-// 恒返回 false ⇒ 设置窗口一律走竖屏原值（640×1100 / 320×480），零行为迁移。
+// 恒返回 false ⇒ 设置窗口一律走竖屏钳制档（settingsSizeFor(false, …) ⇒ 1100×640 口径）。
 func workAreaIsLandscape() bool { return false }
+
+// workAreaSizePx 桩（b11-setrect brief §1）：返回竖屏样例 1080×1920（ok=true），
+// 与 workAreaIsLandscape=false 同口径 ⇒ linux 侧构建/单测走竖屏钳制档。
+func workAreaSizePx() (int, int, bool) { return 1080, 1920, true }
 
 // coverLoop 空桩：run() 里 `go coverLoop()` 在双平台都要能编译。
 // 非 Windows 无 Win32 窗口可显示/铺满，常驻检查无意义，直接返回。

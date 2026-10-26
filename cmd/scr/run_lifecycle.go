@@ -100,23 +100,28 @@ func runSettings(cfg config.Config, parent uintptr) {
 		err    error
 	}
 	locResults := make(chan locResult, 1)
-	// 窗口尺寸按**朝向二值**（spec/b5-settings-landscape.md 判据 3 与点位
-	// 「cmd/scr/main.go:490/491/532 窗口尺寸按朝向二值」）：
-	//   横屏 = 请求 1920×1080、下限 900×540（长方形双栏要的几何）
-	//   竖屏 = 原值 640×1100、下限 320×480（逐字不动 ⇒ 判据 4 零迁移）
+	// 窗口尺寸（b11-setrect §1.1「设置窗强制横向矩形，与显示器朝向无关」）：
+	//   横屏主机 = 请求 1920×1080、下限 900×540（现有行为零回归）
+	//   竖屏主机 = 请求 1100×640、下限 720×420，按工作区钳制保宽>高
+	//            （sizeH=min(sizeH,sizeW-60) ⇒ 竖长条形态被需求消灭）
+	// 尺寸来源 = 纯函数 settingsSizeFor（cmd/scr/setsize.go；钉死表 setsize_test.go）。
 	//
 	// 朝向来源 = 主显示器工作区（SPI_GETWORKAREA，foreground_windows.go 已有的
 	// 同款查询，导出为 workAreaIsLandscape；非 Windows 桩返回 false ⇒ 恒竖屏）。
-	// 判定本体是 ui.PanelIsLandscape(宽,高) = 宽>高 且 宽≥1200，与面板内部
-	// 双栏判定同一条 ⇒ 窗口几何与面板版式不会各说各话。
+	// 判定本体是 ui.PanelIsLandscape(宽,高) = 宽>高 且 宽≥900（b11 阈值），与面板
+	// 内部双栏判定同一条 ⇒ 窗口几何与面板版式不会各说各话。
 	land := workAreaIsLandscape()
-	// app.Size / app.MinSize 收的是 dp（gioui.org/unit）；100% 缩放下 1 dp = 1 px。
-	sizeW, sizeH := unit.Dp(640), unit.Dp(1100)
-	minW, minH := unit.Dp(320), unit.Dp(480)
-	if land {
-		sizeW, sizeH = unit.Dp(1920), unit.Dp(1080)
-		minW, minH = unit.Dp(900), unit.Dp(540)
+	// 工作区尺寸 = workAreaIsLandscape 的同源查询（workAreaSizePx，同源 SPI_GETWORKAREA；
+	// 非 Windows 桩给 1080×1920 竖屏样例）。查询失败 ⇒ 不钳制（按 1100×640 请求值
+	// 出，窗口侧 normalizeDialog 的工作区夹取自会兜底）。
+	workW, workH := 1100, 640
+	if ww, wh, ok := workAreaSizePx(); ok {
+		workW, workH = ww, wh
 	}
+	// app.Size / app.MinSize 收的是 dp（gioui.org/unit）；100% 缩放下 1 dp = 1 px。
+	szW, szH, szMinW, szMinH := settingsSizeFor(land, workW, workH)
+	sizeW, sizeH := unit.Dp(szW), unit.Dp(szH)
+	minW, minH := unit.Dp(szMinW), unit.Dp(szMinH)
 	w := new(app.Window)
 	w.Option(
 		app.Title("WeatherScr 设置"),
@@ -166,8 +171,8 @@ func runSettings(cfg config.Config, parent uintptr) {
 				if !styleDone {
 					styleDone = true
 					w.Run(func() {
-						// 目标尺寸 = 上面按朝向二值出来的请求值（判据 3：
-						// 横屏 1920×1080 / 竖屏 640×1100）；MinSize 同朝向。
+						// 目标尺寸 = settingsSizeFor 按朝向 + 工作区钳制出来的请求值（b11-setrect：
+						// 横屏 1920×1080 / 竖屏 1100×640 钳制口径，宽>高恒成立）。
 						normalizeDialog(findOwnWindow(windowClass), int(sizeW), int(sizeH), land)
 					})
 				}

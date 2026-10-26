@@ -148,19 +148,21 @@ func TestSettingsParity(t *testing.T) {
 		t.Errorf("候选插入位 panelLandCandAt = %d，要求 5", panelLandCandAt)
 	}
 
-	// ⑥ 横屏判定（宽>高 且 宽≥panelLandMinWpx=1200）
+	// ⑥ 横屏判定（宽>高 且 宽≥panelLandMinWpx=900；b11-setrect §1.2 阈值 1200⇒900，
+	// 旧行 {1199,1080,false} 在新阈值下 ⇒ true；补横矩形档 899/900/1080×640）
 	for _, tc := range []struct {
 		w, h int
 		want bool
 	}{
 		{640, 1100, false}, {1080, 1920, false}, {900, 1600, false},
-		{1199, 1080, false}, {1200, 800, true}, {1920, 1080, true},
+		{1199, 1080, true}, {1200, 800, true}, {1920, 1080, true},
+		{899, 640, false}, {900, 640, true}, {1080, 640, true},
 	} {
 		if got := IsLandscape(tc.w, tc.h); got != tc.want {
 			t.Errorf("IsLandscape(%d,%d) = %v，要求 %v", tc.w, tc.h, got, tc.want)
 		}
 	}
-	if panelLandMinWpx != 1200 {
-		t.Errorf("panelLandMinWpx = %d，要求 1200", panelLandMinWpx)
+	if panelLandMinWpx != 900 {
+		t.Errorf("panelLandMinWpx = %d，要求 900", panelLandMinWpx)
 	}
 }

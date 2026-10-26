@@ -131,7 +131,7 @@ func main() {
 		// 朝向选档（spec/b5-settings-landscape.md 点位「NewPanelTheme 按参数选档
 		// （调用方按朝向传参）」）：横屏档 19/21/13sp，竖屏档逐字不变。
 		// 判定用与面板内部同一条 ui.PanelIsLandscape(宽,高) ⇒ 离屏量化与
-		// 真实设置窗口走同一个判据（宽>高 且 宽≥1200）。
+		// 真实设置窗口走同一个判据（宽>高 且 宽≥900，b11 阈值）。
 		land := ui.PanelIsLandscape(w, h)
 		sth := ui.NewPanelTheme(land)
 		if land {

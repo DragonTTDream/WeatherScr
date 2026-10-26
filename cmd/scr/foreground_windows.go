@@ -582,11 +582,14 @@ const (
 	// 屏保路径沿用不改，设置窗口用本值。
 	swpNoZorderReal = 0x0004
 
-	// 设置窗口的下限尺寸，与 app.MinSize(320, 480) 同口径（main.go runSettings）。
+	// 设置窗口竖屏档的下限尺寸，与 app.MinSize(720, 420) 同口径（b11-setrect §1.1
+	// 竖屏钳制口径：minW=min(720,sizeW)、minH=min(420,sizeH) 的基准下限；工作区
+	// 更窄/更矮时 settingsSizeFor 再按工作区收紧，normalizeDialog 的工作区夹取兜底）。
+	// 旧竖档 320×480 随竖长条形态一起退役（用户 2026-10-27「设置页改横向矩形」）。
 	// 96 DPI（缩放 100%）下 gioui 的 dp 与物理像素 1:1。
 	// TODO(未取证)：高 DPI 缩放下 dp→px 的换算口径未取证，本函数按 px 处理。
-	dialogMinWpx = 320
-	dialogMinHpx = 480
+	dialogMinWpx = 720
+	dialogMinHpx = 420
 
 	// 横屏档下限（spec/b5-settings-landscape.md 判据 3「横屏请求 1920,1080
 	// （MinSize 900,540）」）：双栏每栏要 ≈ 900/2 = 450 px 宽才放得下右栏的
@@ -596,7 +599,7 @@ const (
 	dialogMinHpxLand = 540
 )
 
-// dialogMinPx 按朝向给出设置窗口的下限尺寸（判据 3 的二值口径）。
+// dialogMinPx 按朝向给出设置窗口的下限尺寸（b11-setrect 二值口径：横屏 900×540 / 竖屏 720×420）。
 func dialogMinPx(landscape bool) (int, int) {
 	if landscape {
 		return dialogMinWpxLand, dialogMinHpxLand
@@ -607,7 +610,7 @@ func dialogMinPx(landscape bool) (int, int) {
 // workAreaIsLandscape 主显示器工作区是否横屏（spec/b5-settings-landscape.md
 // 判据 3 点位「foreground_windows.go 已有的 SPI_GETWORKAREA 同款查询」）。
 //
-// 判定本体复用面板的 ui.PanelIsLandscape（宽>高 且 宽≥1200）⇒ 窗口朝向与
+// 判定本体复用面板的 ui.PanelIsLandscape（宽>高 且 宽≥900，b11 阈值）⇒ 窗口朝向与
 // 面板版式同一条判据，不会窗口要 1920×1080 而面板排单列。
 // 查询失败（SPI_GETWORKAREA 返回 0）按竖屏处理：竖屏 = 现行行为，最保守。
 func workAreaIsLandscape() bool {
@@ -629,6 +632,17 @@ func workAreaRect() (x, y, w, h int32, ok bool) {
 	return rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, true
 }
 
+// workAreaSizePx 主显示器工作区尺寸（px），与 workAreaIsLandscape 同源（同一条
+// SPI_GETWORKAREA 查询）：b11-setrect §1.1 设置窗尺寸的工作区钳制入参。
+// 查询失败返回 ok=false ⇒ 调用方按不钳制口径处理（请求值直出）。
+func workAreaSizePx() (int, int, bool) {
+	_, _, w, h, ok := workAreaRect()
+	if !ok {
+		return 0, 0, false
+	}
+	return int(w), int(h), true
+}
+
 // normalizeDialog 把设置窗口恢复成带标题栏的普通对话框，并按主显示器
 // 工作区居中定位。**只允许在 `w.Run` 回调里调用**（见上方线程规则）。
 //
@@ -639,7 +653,7 @@ func workAreaRect() (x, y, w, h int32, ok bool) {
 //     WS_MAXIMIZEBOX|WS_VISIBLE，清 WS_POPUP
 //  3. 扩展样式清 WS_EX_TOOLWINDOW、置 WS_EX_APPWINDOW（进任务栏）
 //     并置 WS_EX_TOPMOST(0x00000008)
-//  4. 尺寸 = wpx×hpx（调用方按朝向二值传入：横屏 1920×1080 / 竖屏 640×1100）；
+//  4. 尺寸 = wpx×hpx（调用方按 settingsSizeFor 钳制值传入：横屏 1920×1080 / 竖屏 1100×640 钳制）；
 //     位置 = 主显示器工作区居中；工作区小于目标尺寸时夹到不小于**该朝向的
 //     MinSize**（dialogMinPx(landscape)）且不小于工作区可用尺寸
 //  5. SetWindowPos(HWND_TOPMOST, x, y, wpx, hpx, SWP_FRAMECHANGED)
@@ -675,7 +689,7 @@ func normalizeDialog(hwnd uintptr, wpx, hpx int, landscape bool) {
 	// 不小于 MinSize 且不小于工作区可用尺寸的取值。
 	w, h := wpx, hpx
 	x, y := 0, 0
-	minW, minH := dialogMinPx(landscape) // 下限按朝向取（判据 3：横屏 900×540 / 竖屏 320×480）
+	minW, minH := dialogMinPx(landscape) // 下限按朝向取（b11-setrect：横屏 900×540 / 竖屏 720×420）
 	wx, wy, aw, ah, ok := workAreaRect()
 	if ok {
 		awa, ahh := int(aw), int(ah)

@@ -29,7 +29,7 @@ type SettingsPanel = settings.Panel
 // NewSettingsPanel 构建设置面板（一行转发到 settings.NewPanel）。
 func NewSettingsPanel(m PanelModel) *SettingsPanel { return settings.NewPanel(m) }
 
-// PanelIsLandscape 是横屏判定（一行转发到 settings.IsLandscape：宽>高 且 宽≥1200）。
+// PanelIsLandscape 是横屏判定（一行转发到 settings.IsLandscape：宽>高 且 宽≥900，b11 阈值）。
 func PanelIsLandscape(w, h int) bool { return settings.IsLandscape(w, h) }
 
 // withCountry 把国家名并进显示地名（一行转发到 settings.WithCountry，
