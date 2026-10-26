@@ -23,6 +23,7 @@ import (
 import (
 	"github.com/DragonTTDream/WeatherScr/ui/kinetics"
 	"github.com/DragonTTDream/WeatherScr/ui/metrics"
+	"github.com/DragonTTDream/WeatherScr/ui/particles"
 	"github.com/DragonTTDream/WeatherScr/ui/screenfit"
 )
 
@@ -388,84 +389,20 @@ func genFlake(sz image.Point) *image.NRGBA {
 // 缺透明度"。雨线也已在规格 1.3 里从描边路径换成贴图路径（rain1..7），
 // 描边画法与它的三档长度、线宽函数一并删除（长度口径见 rainStreakCapPx）。
 
-// rainStreakCapPx 每张雨丝贴图**短轴（屏上宽）**的上限（px，1080 屏口径）。
-//
-// 长轴 = 运动模糊长度 L = vy × 快门时间（既有口径，近处长、远处短），
-// 短轴按贴图宽高比等比放大 ⇒ 短轴 = L × 48 / 贴图高。
-// 实测七张贴图在包围盒中线上 alpha≥64 的列数占包围盒宽的比例（软带占比，
-// 与 bin/prepare_particles.py 同一份源图、同一裁包围盒口径）：
-//
-//	rain1 0.081  rain2 0.075  rain3 0.086  rain4 0.213
-//	rain5 0.140  rain6 0.366  rain7 0.443
-//
-// 同一套等比放大下，rain7 在近档（L=160 px）的短轴 44 px、软带 19 px，
-// 读成一条糊带而不是雨丝（离屏判据 TestRainBottomEdgeNoSplash 的口径：
-// 单行实心段 ≥6 px 判为带）。软带占比相差 5.9 倍 ⇒ 上限必须逐张给。
-// 取值 = 软带目标宽 2.5 px ÷ 占比，收进 [6, 40]（下限保可见、上限防糊带）：
-//
-//	rain1 31  rain2 33  rain3 29  rain4 12  rain5 18  rain6 7  rain7 6
-//
-// 实测（同一判据、同一固定种子）：短轴上限 40/40/40/23/36/14/11 时最长实心段 9 px，
-// 换成上表后 5 px（判据 <6），带内粒子层变化像素 95 px（雨丝仍画到下边缘）。
-var rainStreakCapPx = []float32{31, 33, 29, 12, 18, 7, 6}
-
-// rainStreakCapFor 第 spr 张雨丝贴图的短轴上限（贴图组缺失时退到最宽一档）。
-func rainStreakCapFor(spr int) float32 {
-	if spr < 0 {
-		spr = 0
-	}
-	if spr >= len(rainStreakCapPx) {
-		spr = len(rainStreakCapPx) - 1
-	}
-	return rainStreakCapPx[spr]
-}
-
-// rainBaseAlpha 基础 alpha 随景深 0.35 → 0.70
-// 远淡近浓。
-func rainBaseAlpha(depth float64) float64 {
-	return 0.35 + 0.35*depth
-}
-
-// rainDepthFactor 显式景深因子：
-// 返回 (alpha 因子, 长度因子)。远景 alpha×0.35 且长度×0.4，
-// 近景全额 ⇒ "近实远虚"达到肉眼可分的量级。
-func rainDepthFactor(depth float64) (float64, float64) {
-	switch {
-	case depth < 0.4:
-		return 0.35, 0.40
-	case depth <= 0.7:
-		return 0.70, 0.75
-	default:
-		return 1.00, 1.00
-	}
-}
-
-// 雨丝的快门时间与风（参照 github.com/0magnet/termanim/rain）。
-// 尾/头 alpha 比例与线色常量随描边画法一起删除（贴图路径由贴图自身的 alpha 形状给）。
+// 以下符号 = ui/particles 的**兼容别名**（R5 卡 3 纯迁移：定义本体逐字迁出到
+// ui/particles/particles.go，ui 侧调用点与既有测试口径逐字不变；别名与定义同值 ⇒ 没有第二份真值）。
 const (
-	// rainExposure 快门时间（秒）。线长 = 速度 × 快门时间 = 运动模糊。
-	// 参照取 1/20 秒：足够让相邻帧的雨线重叠，下落看起来连续而非频闪。
-	// 它是**时间**不是帧数 —— 绑帧率会在掉帧时把每条线拉长，
-	// 而那正是雨最不该 visibly 变化的时刻。
-	//
-	// 现值由规格 1.3 的长度口径反解（1080x1920 屏）：
-	//
-	//	L = vy × 屏高 × 快门，vy = 0.6 + 1.35·depth ∈ [0.6, 1.95] 屏高/秒
-	//	长档上限 160 px ⇒ 快门 = 160 ÷ (1.95 × 1920) = 0.04273
-	//	短档下限随之 = 0.6 × 1920 × 0.04273 = 49.2 px ≥ 40 px
-	//
-	// 旧值 0.05 的同一式给出 L ∈ [57.6, 187.2] px ⇒ 长档越出 160 px 上限。
-	// 取"改快门"而不是"把 L 钳到 160"：钳位会让 depth>0.79 的那 21% 雨滴
-	// 全挤在 160 px 一个点上，长度分布出现尖峰；改快门保持逐 depth 单调。
-	rainExposure = 0.04273
-	// rainSlantBase 风：水平像素 / 垂直像素。参照取 0.28。
-	// 垂直的雨像测试卡；一点倾斜才像天气。
-	rainSlantBase = 0.28
+	rainExposure  = particles.RainExposure
+	rainSlantBase = particles.RainSlantBase
+	windJitterAmp = particles.WindJitterAmp
+	flakePxLo     = particles.FlakePxLo
+	flakePxHi     = particles.FlakePxHi
+	flakeAlphaMin = particles.FlakeAlphaMin
+	recycleYHi    = particles.RecycleYHi
+	recycleYLo    = particles.RecycleYLo
 )
 
-// windJitterAmp 每粒子倾角抖动幅度（rad），由粒子索引生成 ⇒ 跨帧稳定。
-// 雨丝的倾角主体来自粒子自己的速度（atan2(vx, vy)），这里只加逐粒子的固定抖动。
-const windJitterAmp = 0.03
+var rainStreakCapPx = particles.RainStreakCapPx
 
 // genMote：不规则软尘团。
 func genMote(sz image.Point, rng *rand.Rand) *image.NRGBA {
@@ -773,30 +710,9 @@ func cloudVxByThickness(dw float64) float64 {
 	return cloudVxThin - (cloudVxThin-cloudVxThick)*k
 }
 
-// ---- C3 雪花屏上尺寸（规格 3）----
-//
-// 实测（取证 35.1，/tmp/fxdiag-095505 FX_DEBUG 粒子清单）：pkFlake 源 18/26/36 px，
-// 屏上 dw = 2.3–12.8 px、alpha 0.42–0.93 ⇒ 在 1080×1920 上就是 2–13 px 的白点，
-// 压在亮雾底上 ⇒ "雪天没有飘雪"成立，根因 = 屏上尺寸太小。
-//
-// 改法：生成时**按目标屏宽反解 sc**（屏上 dw 逐朵 = 目标 px，逐字落在 12–26）：
-//
-//	dw = 源图宽 × sc × (0.55+0.45·depth) × scaleMul ÷ spriteNetDiv
-//	⇒ sc = 目标px × spriteNetDiv ÷ (源图宽 × (0.55+0.45·depth) × scaleMul)
-//
-// 数量与下落速度口径不动（规格 3 逐字）。
+// 云初始 x 的铺放区间 = 回收区（与 y 同一口径；y 向的回收窗常量已逐字迁到
+// ui/particles（寿命窗口），ui 侧走别名 recycleYHi / recycleYLo）。
 const (
-	flakePxLo     = 12.0
-	flakePxHi     = 26.0
-	flakeAlphaMin = 0.60 // 亮雾底上可见的 alpha 下限（Draw 里逐帧兜底）
-)
-
-// 越界回收的 y 窗口（effects.go 原 Step 的字面量 1.15 / -0.35，提成常量：
-// 带外可用区与回收窗口必须同口径，否则放出去在窗口外的粒子会被立刻回收。
-const (
-	recycleYHi = 1.15
-	recycleYLo = -0.35
-	// 云初始 x 的铺放区间 = 回收区（与 y 同一口径）。
 	// 原先初始 x 是 0..1 ⇒ 开局全在屏内、速度又接近 ⇒ 同进同出，
 	// 一段时间整片天空没有云。
 	recycleXHi = 1.15
@@ -1258,27 +1174,12 @@ func (f *Field) spawn(fresh bool, idx int) particle {
 		p.depth = 0.2 + 0.8*r.Float64()
 	case effect.Rain, effect.Thunder:
 		p.kind = pkDrop
-		p.x = r.Float64()
-		p.y = r.Float64()
-		if !fresh {
-			p.y = -0.05 - 0.15*r.Float64()
-		}
-		p.sc = 0.55 + 0.85*r.Float64()
-		p.alpha = 0.30 + 0.45*r.Float64()
-		// 参照实现：github.com/0magnet/termanim/rain（rain.go:176-200）。
-		// 它的反馈："depth drives everything … **Drops all moving at one
-		// speed read as falling dashes**; spread the speeds and brightnesses
-		// over a range and the eye separates them into layers and calls it rain."
-		//
-		// 参照的三条量**全部零随机**：
-		// vy     = h·(0.6 + 1.35·depth)   近处 0.51 s 穿屏、远处 1.67 s（3.25 倍）
-		// length = vy · exposure(0.05 s)  线长由**速度导出**（运动模糊）
-		// bright = 0.12 + depth²·0.88     平方压向亮端（8 倍）
-		// 此前的失误模式：把这些量再乘一个大随机项（p.sc / brightnessMul /
-		// alphaMul / scaleMul，单调序当场被打乱 ⇒ 肉眼只剩均匀感。
-		// ⇒ 这里**不乘任何随机项**。
-		p.vy = 0.6 + 1.35*p.depth
-		p.vx = -(rainSlantBase * (0.7 + 0.6*p.depth)) * p.vy
+		// R5 卡 3：雨滴生成口径逐字迁到 ui/particles.SpawnDrop（旧 ui/effects.go:1259-1281，
+		// 含 termanim/rain 参照注释）。depth 是分支之前抽好的 p.depth（口径不动）。
+		q := particles.SpawnDrop(r, fresh, p.depth)
+		p.x, p.y = q.X, q.Y
+		p.sc, p.alpha = q.Sc, q.Alpha
+		p.vy, p.vx = q.Vy, q.Vx
 	case effect.Snow:
 		// 雪天 = **均匀灰幕（雾精灵）+ 可见雪花**（规格 2 表 + 规格 3）。
 		// 依据："上天同云，雨雪雰雰"＝下雪的云在天空中是均匀一色的
@@ -1315,42 +1216,23 @@ func (f *Field) spawn(fresh bool, idx int) particle {
 			break
 		}
 		p.kind = pkFlake
-		p.x = r.Float64()
-		p.y = r.Float64()
-		if !fresh {
-			p.y = -0.05 - 0.15*r.Float64()
-		}
-		p.sc = 0.30 + 0.70*r.Float64()
-		p.alpha = 0.40 + 0.55*r.Float64()
-		// 视差速度：景深单调主导 + 小抖动。
-		// 旧写法随机项跨度 3.2 倍、景深项 2.6 倍，同量级 ⇒ 排序被打乱。
-		// 雪是近处飘得快、远处慢（与雨同向：近快远慢）。
-		sdv := 0.30 + 0.70*p.depth
-		sjit := 0.92 + 0.16*p.scaleMul/1.25
-		p.vy = 0.13 * sdv * sjit
-		// 横向飘移（规格 1.2：慢落带飘移，|vx| 必须明显小于 vy）。
-		// 旧口径 vx 恒 0（雪直上直下），"雪是飘不是落"只写在注释里、没有速度分量。
-		// 取值口径：vy 的最小值 0.0398 屏高/秒（depth=0、scaleMul 下档），
-		// |vx| 上限 0.008 屏宽/秒 ⇒ 逐粒子 |vx|/vy ≤ 0.20 < 1/3（自检 TestSnowDrift 的判据）。
-		p.vx = -(0.002 + 0.006*p.depth)
-		p.omega = 0.8 + 2.2*r.Float64()
-		p.amp = 0.10 + 0.2*r.Float64()
-		p.rotV = (r.Float64() - 0.5) * 2.6
-		// 横向摆动：雪是飘不是落
-		p.phase = r.Float64() * math.Pi * 2
-		p.amp += 0.0
+		// R5 卡 3：雪花生成口径逐字迁到 ui/particles.SpawnFlake（旧 ui/effects.go:1317-1341，
+		// 含视差速度/横向飘移/摆动的全部口径）。
+		// scaleMul 按"此刻的值"传入 = 迁移前的事实：p.scaleMul 要到 spawn 尾段才赋值
+		// ⇒ 走到这里恒为 0（sjit 当场 0.92），口径一行没动。
+		q := particles.SpawnFlake(r, fresh, p.depth, p.scaleMul)
+		p.x, p.y = q.X, q.Y
+		p.sc, p.alpha = q.Sc, q.Alpha
+		p.vy, p.vx = q.Vy, q.Vx
+		p.omega, p.amp, p.rotV = q.Omega, q.Amp, q.RotV
+		p.phase = q.Phase
 	case effect.Dust:
 		p.kind = pkMote
-		p.x = r.Float64()
-		p.y = 0.08 + r.Float64()*0.88
-		if !fresh {
-			p.x = -0.1 - 0.2*r.Float64()
-		}
-		p.sc = 0.35 + 1.15*r.Float64()
-		p.alpha = 0.10 + 0.26*r.Float64()
-		p.vx = 0.16 + 0.50*r.Float64()
-		p.vy = (r.Float64() - 0.5) * 0.05
-		p.rotV = (r.Float64() - 0.5) * 0.5
+		// R5 卡 3：尘团生成口径逐字迁到 ui/particles.SpawnMote（旧 ui/effects.go:1343-1352）。
+		q := particles.SpawnMote(r, fresh)
+		p.x, p.y = q.X, q.Y
+		p.sc, p.alpha = q.Sc, q.Alpha
+		p.vx, p.vy, p.rotV = q.Vx, q.Vy, q.RotV
 	}
 	p.phase = r.Float64() * math.Pi * 2
 	p.rot = r.Float64() * math.Pi * 2
@@ -1367,17 +1249,10 @@ func (f *Field) spawn(fresh bool, idx int) particle {
 	case pkStar:
 		p.spr = idx % len(sp.star)
 	case pkFlake:
-		p.spr = idx % len(sp.flake)
+		p.spr = particles.FlakeSpriteIndex(idx, len(sp.flake))
 	case pkDrop:
-		// 按景深挑档（规格 1.3：近处长条）。实测七张贴图裁包围盒后的长宽比
-		// 2.29–3.66（rain7 = trace_07 最长），近层取到最长的那一档。
-		p.spr = int(p.depth * 6.999)
-		if p.spr < 0 {
-			p.spr = 0
-		}
-		if n := len(sp.rain); n > 0 && p.spr >= n {
-			p.spr = n - 1
-		}
+		// 按景深挑档（规格 1.3：近处长条）：口径逐字迁到 ui/particles.DropSpriteTier。
+		p.spr = particles.DropSpriteTier(p.depth, len(sp.rain))
 	case pkCloud:
 		// **云精灵按类挑选**（规格 2"晴/多云见日优先用薄小那几张，雨/雷优先用
 		// 厚大那几张"）：下标表 cloudIdxThin/cloudIdxMid/cloudIdxThick 按 9 张
@@ -1396,7 +1271,7 @@ func (f *Field) spawn(fresh bool, idx int) particle {
 		}
 		p.spr = idx % n
 	case pkMote:
-		p.spr = r.Intn(len(sp.mote))
+		p.spr = particles.MoteSpriteIndex(r, len(sp.mote))
 	}
 
 	// 持久实例抖动：索引作种子，
@@ -1919,7 +1794,7 @@ func (f *Field) advanceOneStep(step time.Duration) {
 		// 云是整朵挂在屏幕外的（看不见），回收那一刻读成"没出屏就突然消失"。
 		// 其余类（雨/雪/尘/星/雾/光晕）沿用既有中心口径，
 		// 雾的落位与带避让另有口径（placeAirEntry / bandPadJitN），一行没动。
-		offscreen := p.y > recycleYHi || p.y < recycleYLo || p.x > 1.25 || p.x < -0.35
+		offscreen := particles.OffscreenCenter(p.x, p.y) // R5 卡 3：中心口径逐字迁到 ui/particles
 		if p.kind == pkCloud {
 			hw, hh := f.airHalfN(p)
 			// **按运动方向判"出屏"**（2026-10-20 粒子云改大）：
@@ -3011,7 +2886,7 @@ func (f *Field) drawPrecipSprite(gtx layout.Context, w, h int, p *particle, img 
 		dw = float32(float64(dh) * float64(sz.X) / float64(sz.Y))
 		// 短轴按贴图逐张封顶（见 rainStreakCapPx 的实测占比表）：
 		// 等比放大时软带占比 0.44 的那张贴图在近档会画成 15 px 宽的糊带。
-		if cap := rainStreakCapFor(p.spr); dw > cap {
+		if cap := particles.RainStreakCapFor(p.spr); dw > cap {
 			dw = cap
 		}
 	} else {
@@ -3074,7 +2949,7 @@ func (f *Field) DebugStats(n int) string {
 				L = 3
 			}
 			dw := float64(L) * float64(sz.X) / float64(sz.Y)
-			if cap := rainStreakCapFor(p.spr); dw > float64(cap) {
+			if cap := particles.RainStreakCapFor(p.spr); dw > float64(cap) {
 				dw = float64(cap)
 			}
 			out += fmt.Sprintf("    rain: depth=%.2f len=%.1f width=%.1f headA=%.3f vy=%.3f ang=%.4f\n",
@@ -4234,12 +4109,12 @@ func (f *Field) sizeFlakeByTarget(p *particle) {
 	if p.spr >= 0 && p.spr < len(sp.flakeSz) {
 		szX = float64(sp.flakeSz[p.spr].X)
 	}
-	den := szX * (0.55 + 0.45*p.depth) * p.scaleMul
-	if szX <= 0 || den <= 0 {
-		return
+	// R5 卡 3：反解式与随机数取用逐字迁到 ui/particles.SizeFlakeByTarget（旧 ui/effects.go:4231-4242）。
+	// 净倍率分母 spriteNetDiv 归 ui 的贴图口径（ui/assets.go:375）⇒ 以参数注入，本包不复制常量。
+	// ok=false = 旧实现 `szX <= 0 || den <= 0` 的那次 return ⇒ p.sc 保持原值（逐字）。
+	if sc, ok := particles.SizeFlakeByTarget(f.rng, spriteNetDiv, szX, p.depth, p.scaleMul); ok {
+		p.sc = sc
 	}
-	target := flakePxLo + (flakePxHi-flakePxLo)*f.rng.Float64()
-	p.sc = target * spriteNetDiv / den
 }
 
 // spriteScale 精灵绘制尺度。
