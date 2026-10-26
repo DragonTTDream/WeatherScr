@@ -5,8 +5,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 )
 
 // TestMoonNewInterval 月相 8 等分的 new 区间判据。

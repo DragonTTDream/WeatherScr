@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 )
 
 // TestSunProfile 量烘焙太阳的径向亮度剖面（低性能 x86 小主机反馈"像个圆盘"）。

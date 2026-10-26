@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 )
 
 // TestFixedStepDisplacement 钉死 C1 第 2/3 条：每步位移只由 fixedStep 导出，

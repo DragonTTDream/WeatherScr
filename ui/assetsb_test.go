@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 )
 
 // sunProbeSize 探针用的烘焙尺寸（与 skybake 探针同一口径：1080×1920 的半分辨率烘焙）。

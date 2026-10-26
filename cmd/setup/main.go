@@ -31,7 +31,6 @@ import (
 	"unsafe"
 )
 
-
 //go:embed payload/WeatherScr.scr
 var payload embed.FS
 
@@ -44,7 +43,6 @@ const (
 	desktopKey   = `Control Panel\Desktop`
 	warmupExe    = `C:\Windows\System32\WeatherScr.scr`
 )
-
 
 // setupLogPath 安装器日志的**落盘副本**（%TEMP%\WeatherScr_setup.log，追加写）。
 //

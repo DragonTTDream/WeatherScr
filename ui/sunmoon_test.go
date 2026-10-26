@@ -29,8 +29,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 )
 
 // sunProfileRay 一条射线的取样口径：起点、终点（对盘心的像素半径）、落点函数。

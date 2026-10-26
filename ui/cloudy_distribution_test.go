@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 )
 
 // TestCloudYDistribution 打印云的真实落位与"云盘真正压到月盘"时长占比。

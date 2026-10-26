@@ -3,8 +3,8 @@ package ui
 import (
 	"testing"
 
-	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 )
 
 func TestSkyBakeProbe(t *testing.T) {

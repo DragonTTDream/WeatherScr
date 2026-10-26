@@ -21,8 +21,8 @@ import (
 
 	"gioui.org/gpu/headless"
 
-	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 )
 
 // sunEdgeRimFrac 旧宽光罩贴图的 rim 半径（倍烘焙宽）：旧绘制宽 0.93 倍烘焙宽 ⇒

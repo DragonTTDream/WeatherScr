@@ -17,8 +17,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 )
 
 // writeTestPNG 往 dir 里写一张 PNG（Pix 原样写 = 可按预乘编码喂，用来验反预乘）。

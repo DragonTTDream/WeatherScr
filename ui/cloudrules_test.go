@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
 	"github.com/DragonTTDream/WeatherScr/ui/kinetics"
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 )
 
 // cloudRuleSeeds 五条判据共用的固定种子（固定 = 判据可复现）。

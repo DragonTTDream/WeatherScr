@@ -67,9 +67,9 @@ exact scope of the reference and the upstream copyright line.
 
 ## Install
 
-### From a release
+### From the delivered installer
 
-1. Download `WeatherScr_setup.exe` from the [latest release](../../releases/latest).
+1. Get `WeatherScr_setup.exe` from the delivered package. This project does not publish GitHub releases; each build wave delivers its own installer file.
 2. Run it. The window offers three actions:
    - **Install screensaver** — copies `WeatherScr.scr` to `C:\Windows\System32`,
      points `HKCU\Control Panel\Desktop\SCRNSAVE.EXE` at it, records the previous

@@ -492,16 +492,17 @@ func DrawAlertPanelRow(gtx layout.Context, size image.Point, a *Alert, s *Screen
 //
 // 版式语言取自游戏里的网络异常/ping 高指示：三段递高信号条 + 极短文字 + 极小圆角暗底。
 // 与胶囊行的差别（逐条对应用户要求"简易的标识"）：
-//   无细下划线、无光晕、不呼吸（恒定）、不居中、不随 YOff 动、字号降到 Sp(18)。
+//
+//	无细下划线、无光晕、不呼吸（恒定）、不居中、不随 YOff 动、字号降到 Sp(18)。
 const (
-	badgeMarginX = 28  // 左边距（px）
-	badgeMarginY = 28  // 底边距（px）
-	badgeBarW    = 7   // 信号条宽
-	badgeBarGap  = 3   // 信号条间距
-	badgeBarH3   = 14  // 最高一格的高（三格 = 6/10/14，底对齐）
-	badgePadX    = 10  // 盒内左右留白
-	badgePadY    = 7   // 盒内上下留白
-	badgeSp      = 18  // 文字字号
+	badgeMarginX = 28 // 左边距（px）
+	badgeMarginY = 28 // 底边距（px）
+	badgeBarW    = 7  // 信号条宽
+	badgeBarGap  = 3  // 信号条间距
+	badgeBarH3   = 14 // 最高一格的高（三格 = 6/10/14，底对齐）
+	badgePadX    = 10 // 盒内左右留白
+	badgePadY    = 7  // 盒内上下留白
+	badgeSp      = 18 // 文字字号
 )
 
 // usesPanelRow = 这个态走不走出厂胶囊行。态④ = false（走左下角小信号）。

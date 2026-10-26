@@ -1,4 +1,4 @@
-//go:build !vulkan
+//go:build !vulkan && linux
 
 // P7 效果图出件（交付物 1/3 的原料）：满密度态（800 步）逐类固定帧出图。
 // 复用 pixeldump_test.go 里现成的 dumpScenario / dumpSample / 出图链，

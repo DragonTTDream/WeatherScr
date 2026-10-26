@@ -1,4 +1,4 @@
-//go:build !vulkan
+//go:build !vulkan && linux
 
 // 基线快照（R5 拆分前的零行为基线 / R8 效果图交付固定口径 / R10 横屏口径）：
 // 11 个天气场景 × 两态（铺放态 steps=0、满密度 steps=800）× 两制（竖 1080×1920、横 1920×1080）
@@ -212,28 +212,5 @@ func joinRows(rows []string) string {
 	return out
 }
 
-// airWidthProbe 逐云量最终屏宽（px）与云贴图下标清单（R4 小云 / R3 白名单 的取证口径）。
-func airWidthProbe(f *Field) (float64, string) {
-	minW := -1.0
-	seen := ""
-	for i := range f.parts {
-		p := &f.parts[i]
-		if p.kind != pkCloud && p.kind != pkFog {
-			continue
-		}
-		w := cloudDrawWidthPx(p)
-		if w <= 0 {
-			continue
-		}
-		if minW < 0 || w < minW {
-			minW = w
-		}
-		if p.kind == pkCloud {
-			seen += fmt.Sprintf("%d,", p.spr)
-		}
-	}
-	if minW < 0 {
-		minW = 0
-	}
-	return minW, seen
-}
+// airWidthProbe 已迁至跨平台文件 airwidth_probe.go（!vulkan），
+// 本文件 linux-only，迁移原因见 airwidth_probe.go 头注。

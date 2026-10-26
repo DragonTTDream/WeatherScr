@@ -14,8 +14,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"

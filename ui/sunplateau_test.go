@@ -35,8 +35,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 )
 
 // sunPlateauLum 亮度 = (R+G+B)/3（与 sunLum 同一定义，这里直接复用 sunLum）。

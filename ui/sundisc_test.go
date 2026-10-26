@@ -24,8 +24,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 )
 
 // sunDiscProbe 盘判据的固定取样口径：盘心、盘半径、0.45w 半径（全部只由幅面决定）。
