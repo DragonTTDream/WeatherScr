@@ -1,4 +1,4 @@
-package ui
+package settings
 
 import (
 	"image"
@@ -49,9 +49,9 @@ const (
 //     被挤成逐字换行时自然宽会掉到几十字符宽、行高翻几倍）；
 //   - 行高 ≥ 3 个标签行：证明"标签 + 2 个 radio"是 3 行竖排；
 //   - 行高 ≤ 4 个 radio 行：证明没有任何一行被折成多行。
-func TestPanelRadioRowsVerticalAt640(t *testing.T) {
+func CheckPanelRadioRowsVerticalAt640(t *testing.T) {
 	th := NewPanelTheme()
-	p := NewSettingsPanel(sampleModel())
+	p := NewPanel(sampleModel())
 	rows := []struct {
 		name string
 		w    layout.Widget
@@ -82,7 +82,7 @@ func TestPanelRadioRowsVerticalAt640(t *testing.T) {
 
 // TestPanelLabelSingleLineAt640 面板正文标签在 640 px 下逐行不折行
 // （行距判据的基准行高）。
-func TestPanelLabelSingleLineAt640(t *testing.T) {
+func CheckPanelLabelSingleLineAt640(t *testing.T) {
 	th := NewPanelTheme()
 	for _, s := range []string{
 		"英文 (en)",
@@ -105,9 +105,9 @@ func TestPanelLabelSingleLineAt640(t *testing.T) {
 }
 
 // TestPanelLayoutAt640NoOverflow 整面板在设置窗口宽度（640）下不横向溢出。
-func TestPanelLayoutAt640NoOverflow(t *testing.T) {
+func CheckPanelLayoutAt640NoOverflow(t *testing.T) {
 	th := NewPanelTheme()
-	p := NewSettingsPanel(sampleModel())
+	p := NewPanel(sampleModel())
 	d := layoutAt(t, func(gtx layout.Context) layout.Dimensions {
 		return p.Layout(gtx, th)
 	}, 640, 1100)

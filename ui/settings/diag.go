@@ -1,4 +1,4 @@
-package ui
+package settings
 
 // 面板自检导出面：只读计数，供离屏量化工具（cmd/setshot）打印。
 //
@@ -10,7 +10,7 @@ package ui
 //
 // rows() 里每个行构造函数只返回闭包，th 在闭包内部才被解引用，
 // 因此 th = nil 时计数安全。
-func (p *SettingsPanel) RowCount() int {
+func (p *Panel) RowCount() int {
 	return len(p.rows(nil))
 }
 
@@ -18,13 +18,13 @@ func (p *SettingsPanel) RowCount() int {
 //
 // 面板打开时该值应为 0（列表停在内容起始处）；非 0 表示一打开
 // 就停在内容中段或末尾，首屏看不到行。
-func (p *SettingsPanel) ListOffset() int {
+func (p *Panel) ListOffset() int {
 	return p.list.Position.Offset
 }
 
 // ListVisibleCount 返回上一帧落在视口内的行数（layout.Position.Count）。
 //
 // 只读上一帧 Layout 记下的可见行数，供离屏量化打印"首屏可见 N/26 行"。
-func (p *SettingsPanel) ListVisibleCount() int {
+func (p *Panel) ListVisibleCount() int {
 	return p.list.Position.Count
 }

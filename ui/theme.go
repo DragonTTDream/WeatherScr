@@ -5,6 +5,7 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/DragonTTDream/WeatherScr/ui/panel"
+	"github.com/DragonTTDream/WeatherScr/ui/settings"
 )
 
 // R5 卡 7（ui/panel 拆包）：面板主题的**本体**整体迁到 ui/panel/theme.go
@@ -80,3 +81,10 @@ func paletteForMode(dark bool) material.Palette { return panel.PaletteForMode(da
 func NewPanelTheme(landscape ...bool) *material.Theme {
 	return panel.NewTheme(currentThemeMode().dark(), landscape...)
 }
+
+// R5 卡 8（ui/settings 拆包）：深浅色读取的**注入点**。
+//
+// 本体 currentThemeMode 按 //go:build 分档住在 ui/theme_windows.go / ui/theme_other.go，
+// 而 ui/settings 不得 import ui（ui 已 import ui/settings ⇒ 成环）⇒ 把读取以函数指针
+// 注入过去：公式与取值仍是单一真相源（上面 NewPanelTheme 与本注入走同一条 currentThemeMode）。
+func init() { settings.SystemDark = func() bool { return currentThemeMode().dark() } }

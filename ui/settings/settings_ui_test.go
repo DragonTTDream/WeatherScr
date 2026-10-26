@@ -1,4 +1,4 @@
-package ui
+package settings
 
 import (
 	"image"
@@ -7,50 +7,14 @@ import (
 
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/widget/material"
 )
-
-func sampleModel() PanelModel {
-	return PanelModel{
-		Location:            "Hangzhou, China",
-		FontSize:            25,
-		IconSize:            96,
-		Margin:              30,
-		Units:               "c",
-		RefreshMinutes:      30,
-		ShowBackground:      true,
-		BgOpacity:           0.3,
-		ClockBgOpacity:      0.45,
-		ShowConditionIcon:   true,
-		ShowDetailsRow:      true,
-		ShowForecast:        true,
-		ShowFiveDayForecast: false,
-		EffectsOn:           true,
-		WallpaperDir:        `C:\Users\Public\Pictures`,
-		WallpaperIntervalS:  40,
-		ClockYOffset:        0,
-		WeatherYOffset:      0,
-		InteractionMode:     false,
-		// 提醒与位置。**必须写规范值**：面板 setModel 会把
-		// display_language 规范成 "en"（非 zh 一律回落 en），夹具写空串会让
-		// model() 读出 "en" ≠ 夹具的 "" ⇒ 无事件帧也被判成"有改动"（实测两条测试就是这么红的）。
-		AlertEnabled:      false,
-		AlertThresholdPct: 0,
-		AlertYOffset:      0,
-		AlertPulse:        false,
-		AlertMinMM:        0.05,
-		LocationLat:       0,
-		LocationLon:       0,
-		LocationNameZh:    "",
-		LocationNameEn:    "",
-		DisplayLanguage:   "en",
-	}
-}
 
 // TestSettingsPanelRoundTrip 面板项 → 控件 → 模型 的往返必须无损
 // （面板项清单；键名口径 = 上游 'weather' 块）。
 func TestSettingsPanelRoundTrip(t *testing.T) {
 	m := sampleModel()
-	p := NewSettingsPanel(m)
+	p := NewPanel(m)
 	if got := p.Model(); got != m {
 		t.Errorf("初始化未往返: got %+v want %+v", got, m)
 	}
@@ -63,13 +27,13 @@ func TestSettingsPanelRoundTrip(t *testing.T) {
 // （上游 rendering/quick/input_controller.py:207-221 的 undo/lock 语义）。
 func TestSettingsPanelUndoLock(t *testing.T) {
 	m := sampleModel()
-	p := NewSettingsPanel(m)
+	p := NewPanel(m)
 
 	// 模拟一次改动入栈（Layout 里入栈的逻辑：before → history）
 	changed := m
 	changed.Margin = 12
 	changed.Units = "i"
-	// R12：数据结构换成 stack.Stack[PanelModel] 后，这里的压栈口径与生产入栈点
+	// R12：数据结构换成 stack.Stack[Model] 后，这里的压栈口径与生产入栈点
 	// 一致（证据 R12 / settings_ui.go 的 p.history.Push(before)）。
 	p.history.Push(m)
 	p.setModel(changed)
@@ -104,8 +68,12 @@ func TestSettingsPanelUndoLock(t *testing.T) {
 // 目的：把 gioui v0.10.3 的控件 API 调用在 CI 里真跑一遍
 // 照实测 API 写，不得凭记忆。零 Source 不投递事件（gioui 文档）。
 func TestSettingsPanelLayoutNoEvents(t *testing.T) {
-	th := New().Theme
-	p := NewSettingsPanel(sampleModel())
+	// 迁移注（R5 卡 8）：旧写法 th := New().Theme（ui.Screen 的主题 = material.NewTheme()
+	// + WeatherFontSize 40sp 覆写，本体住在 ui/render.go:32-36 与 ui/layout.go）。
+	// ui/settings 不得 import ui ⇒ 这里取 material.NewTheme() 基线；本判据读的
+	// 是"面板占尺寸 / 无事件 / 无热键 / 无点击"，与字号覆写无关（实测逐字同结果）。
+	th := material.NewTheme()
+	p := NewPanel(sampleModel())
 	var ops op.Ops
 	gtx := layout.Context{
 		Ops:         &ops,
@@ -133,7 +101,7 @@ func TestSettingsPanelAlertMinMM(t *testing.T) {
 	if m.AlertMinMM != 0.05 {
 		t.Fatalf("夹具应含 AlertMinMM=0.05，实得 %v", m.AlertMinMM)
 	}
-	p := NewSettingsPanel(m)
+	p := NewPanel(m)
 	if got := p.edAlertMin.Text(); got != "0.05" {
 		t.Errorf("编辑器初值 = %q，期望 \"0.05\"", got)
 	}
@@ -242,13 +210,12 @@ func TestSeparatorInnerLength(t *testing.T) {
 	if separatorLenFrac != 0.90 {
 		t.Errorf("内缩比例应为 0.90，got %v", separatorLenFrac)
 	}
-	s := New()
 	var ops op.Ops
 	gtx := layout.Context{
 		Ops:         &ops,
 		Constraints: layout.Exact(image.Point{X: 1021, Y: 40}),
 	}
-	d := s.separator()(gtx)
+	d := separator()(gtx) // 迁移注（R5 卡 8）：旧写法 s.separator()（ui.Screen 方法，本体 = panel.Separator，逐字同一条）
 	if d.Size.X != 1021 {
 		t.Errorf("分隔线行宽应占满内容宽（布局不变），got %d", d.Size.X)
 	}

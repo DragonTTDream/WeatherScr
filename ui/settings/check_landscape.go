@@ -1,4 +1,4 @@
-package ui
+package settings
 
 // B5/R11 设置页横屏矩形单测（spec/b5-settings-landscape.md 判据 1/2/3）。
 //
@@ -80,7 +80,7 @@ const b5ProbeText = "012345678901234567890123456789"
 
 // b5RowRefs 判据 2 点名的行 → 同款参考行（同一面板控件 + 同一横屏主题 ⇒ 同指纹）。
 // 标签逐字取自 rowSpecs 的行字面量（ui/settings_ui.go）；标签改了这里就红。
-func b5RowRefs(p *SettingsPanel, th *material.Theme) map[string]layout.Widget {
+func b5RowRefs(p *Panel, th *material.Theme) map[string]layout.Widget {
 	return map[string]layout.Widget{
 		"locSearch": p.locSearchRow(th),
 		"refresh": p.row2(th,
@@ -159,9 +159,9 @@ func b5LandPlaces() []geo.Place {
 }
 
 // TestPanelLandscapeRect 判据 1：1920×1080 gtx 下面板不溢出，双栏总行 = 单栏全行集。
-func TestPanelLandscapeRect(t *testing.T) {
+func CheckPanelLandscapeRect(t *testing.T) {
 	th := NewPanelTheme(true)
-	p := NewSettingsPanel(sampleModel())
+	p := NewPanel(sampleModel())
 
 	d := layoutAt(t, func(gtx layout.Context) layout.Dimensions {
 		return p.Layout(gtx, th)
@@ -212,9 +212,9 @@ func TestPanelLandscapeRect(t *testing.T) {
 // 点名口径 = 自然宽高指纹 + 一条输入框探针（见 b5ProbeText 注释）：
 // 测试用同款构造函数复现参考行，指纹相同即同一行；每个点名行必须**恰好出现
 // 一次** ⇒ 参考行与面板行撞车会立刻暴露，不会静默认错。
-func TestPanelLandscapeDualColumn(t *testing.T) {
+func CheckPanelLandscapeDualColumn(t *testing.T) {
 	th := NewPanelTheme(true)
-	p := NewSettingsPanel(sampleModel())
+	p := NewPanel(sampleModel())
 
 	// 探针：灌文本 → 量指纹 → 还原（只借指纹，不改配置语义）。
 	orig := p.edRefresh.Text()
@@ -311,7 +311,7 @@ func TestPanelLandscapeDualColumn(t *testing.T) {
 // TODO(未取证)：spec 只写"行高 ≤40 px"一句，未取证是否要求"说明行 + 输入行"
 // 两行的 fieldRow（横屏实测 51 px）也算一行；本判据按单行控件口径钉，
 // 并对整行的开关行（radio 图标行 + 行距 = 40 px）逐行覆盖。
-func TestPanelLandscapeFontReadable(t *testing.T) {
+func CheckPanelLandscapeFontReadable(t *testing.T) {
 	// ① 字号档位：横屏正文 ≥17sp（spec 判据 3），标题/说明同档递增。
 	if float32(panelTextSpLand) < 17 {
 		t.Errorf("横屏正文 %v sp < 17 ⇒ 判据 3", float32(panelTextSpLand))
@@ -338,7 +338,7 @@ func TestPanelLandscapeFontReadable(t *testing.T) {
 	}
 
 	th := NewPanelTheme(true)
-	p := NewSettingsPanel(sampleModel())
+	p := NewPanel(sampleModel())
 
 	// ② 单行控件在 960 px 栏宽下逐行 ≤40 px。
 	lines := []struct {
@@ -447,7 +447,7 @@ type b5LandRow struct {
 
 // b5LandInventory 横屏档下行名与标签的逐行清单（顺序 = rowSpecs 的下标顺序）。
 // 行由**与 rowSpecs 同款的构造函数**复现，标签逐字照抄行字面量 ⇒ 行字改了这里就红。
-func b5LandInventory(p *SettingsPanel, th *material.Theme) []b5LandRow {
+func b5LandInventory(p *Panel, th *material.Theme) []b5LandRow {
 	return []b5LandRow{
 		{name: "标题行", row: p.titleRow(th, "WeatherScr 设置"), labels: []string{"WeatherScr 设置"}},
 		{name: "状态行", row: p.plainRow(th, p.status), labels: nil},
@@ -547,10 +547,10 @@ func b5ColorVisible(bg, fg color.NRGBA) bool {
 	return m >= 96
 }
 
-func TestPanelLandscapeLabels(t *testing.T) {
+func CheckPanelLandscapeLabels(t *testing.T) {
 	th := NewPanelTheme(true)
 	fs := panelFontForTheme(th)
-	p := NewSettingsPanel(sampleModel())
+	p := NewPanel(sampleModel())
 	inv := b5LandInventory(p, th)
 
 	// ① 点名对位：清单与 rowSpecs 逐位同指纹（行集/行序/行字三样都对上）。
@@ -671,9 +671,9 @@ func TestPanelLandscapeLabels(t *testing.T) {
 
 	// ③b 竖屏现档钉值（判据 4）：本批次只动横屏分支，竖屏行高一像素不变。
 	vchecks := []struct {
-		name  string
-		w     layout.Widget
-		x, y  int
+		name string
+		w    layout.Widget
+		x, y int
 	}{
 		{"row2@640", p.row2(vth,
 			fieldSpec{label: "font_size", ed: &p.edFontSize},

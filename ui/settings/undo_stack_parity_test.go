@@ -1,4 +1,4 @@
-package ui
+package settings
 
 import (
 	"fmt"
@@ -8,16 +8,17 @@ import (
 
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/widget/material"
 )
 
 // TestUndoStackParity 钉死 Ctrl+Z 撤销栈在 64 上限处的溢出行为（R12 判据 3）。
 //
-// 压栈走**生产入栈点** SettingsPanel.Layout（ui/settings_ui.go:429-437：
+// 压栈走**生产入栈点** Panel.Layout（ui/settings_ui.go:429-437：
 // 本帧 model 与上一帧不同 ⇒ 压入 before，容量 64，溢出丢最旧）；
-// 弹栈走生产 SettingsPanel.Undo（ui/settings_ui.go:295-306）；
+// 弹栈走生产 Panel.Undo（ui/settings_ui.go:295-306）；
 // 状态文案直接读 p.status。
 //
-// 基准：迁移前旧实现（history []PanelModel + append + 「len>64 ⇒ history = history[1:]」）
+// 基准：迁移前旧实现（history []Model + append + 「len>64 ⇒ history = history[1:]」）
 // 于 2026-10-26 实测打印的 82 项序列（80 次压栈越 64 上限，随后 82 次 Undo），
 // 逐字写死在下面；换成 github.com/zyedidia/generic/stack 之后复跑必须逐字一致。
 //
@@ -31,8 +32,11 @@ func TestUndoStackParity(t *testing.T) {
 		pops  = 82 // 64 次命中 + 18 次空栈
 	)
 
-	th := New().Theme
-	p := NewSettingsPanel(sampleModel())
+	// 迁移注（R5 卡 8）：旧写法 th := New().Theme（ui.Screen 的主题 = material.NewTheme()
+	// + WeatherFontSize 40sp 覆写）⇒ ui/settings 不 import ui，取 material.NewTheme() 基线；
+	// 本判据的三项字段（Margin / 状态文案 / Undo 返回值）与字号无关（82 项逐字对拍照绿）。
+	th := material.NewTheme()
+	p := NewPanel(sampleModel())
 	var ops op.Ops
 	for i := 1; i <= steps; i++ {
 		ops.Reset() // gioui 复用 op.Ops 前必须 Reset

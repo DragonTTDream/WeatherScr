@@ -1,21 +1,15 @@
 package ui
 
-import "testing"
+// R5 卡 8（ui/settings 拆包）·闸门薄壳（out/gate-b2.sh:79 的源码锚点 =
+// `grep -q "TestWithCountry" ui/settings_location_test.go` + 闸门链里的同名 -run）。
+//
+// 判据本体随 withCountry 迁进 ui/settings（check_location.go:22 的 CheckWithCountry，
+// 六条口径逐字未动），这里留一行薄壳 ⇒ 闸门文件零改动。
 
-// TestWithCountry 钉死"国籍并入显示地名"的口径（实机反馈 2026-10-22：地名的国籍没了）。
-// 判据逐字对应 withCountry 的四条口径（ui/settings_ui.go）。
-func TestWithCountry(t *testing.T) {
-	cases := []struct{ name, country, want string }{
-		{"Ziliujing", "China", "Ziliujing, China"},   // 拉丁名用「, 」
-		{"自流井区", "中国", "自流井区·中国"},            // 中文名用「·」
-		{"杭州", "中国", "杭州·中国"},
-		{"Hangzhou, China", "China", "Hangzhou, China"}, // 已含 ⇒ 不重复
-		{"Ziliujing", "", "Ziliujing"},                 // 缺国家 ⇒ 不凭空造
-		{"", "China", ""},
-	}
-	for _, c := range cases {
-		if got := withCountry(c.name, c.country); got != c.want {
-			t.Fatalf("withCountry(%q,%q) = %q，期望 %q", c.name, c.country, got, c.want)
-		}
-	}
-}
+import (
+	"testing"
+
+	"github.com/DragonTTDream/WeatherScr/ui/settings"
+)
+
+func TestWithCountry(t *testing.T) { settings.CheckWithCountry(t) }
