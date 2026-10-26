@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/metrics"
 )
 
 const (
@@ -315,7 +316,7 @@ func TestBudgetCrowdSweepFiresWhenOverBudget(t *testing.T) {
 		t.Fatalf("雾团不足 2 团（%d）⇒ 本判据无同带对可造", n)
 	}
 	ls, span := f.driftLayers(PortraitW, PortraitH)
-	dual := driftDualParticlePairs(ls, span)
+	dual := metrics.DriftDualParticlePairs(ls, span, airBandN)
 	t.Logf("造场后 dualIncl(同带粒子对)=%.2f%%（预算 %.0f%%）", dual, driftDualBudgetPct)
 	if dual <= driftDualBudgetPct {
 		t.Fatalf("造场未把 dualPct 顶过预算（%.2f%%）⇒ 本判据无意义", dual)
@@ -362,7 +363,7 @@ func TestBudgetCrowdSweepFiresWhenOverBudget(t *testing.T) {
 	n2, dualAfter := 0.0, 0.0
 	ls2, span2 := f.driftLayers(PortraitW, PortraitH)
 	_ = n2
-	dualAfter = driftDualParticlePairs(ls2, span2)
+	dualAfter = metrics.DriftDualParticlePairs(ls2, span2, airBandN)
 	t.Logf("处置后 dualIncl=%.2f%%，被挪到屏外的雾团 %d 团，雾团 vx 合计 %.4f", dualAfter, moved, vx0)
 	if moved == 0 {
 		t.Errorf("dual=%.2f%% 已超预算，跑完一个节流点后无一团被挪到屏外 ⇒ crowdSweep 的回收处置没落地", dual)

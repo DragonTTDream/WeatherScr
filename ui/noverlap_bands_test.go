@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/metrics"
 )
 
 // bandCenterWrapped 第 i 条带在 t 时刻的中心 x，并给出 ±span 镜像的三次取值
@@ -110,11 +111,11 @@ func TestNoverlapBandsGeometry(t *testing.T) {
 			t.Errorf("%s 带宽均值 %.2f px > 1000", c.cls, mean)
 		}
 		// 覆盖率线（P6 设计第 5 条，AvgLayersOf 现成口径）：N=3 档 N·T/span ≥ 0.90
-		span := SpanOf(widths, w)
-		if got := AvgLayersOf(widths, span); got < 0.90 && n3Class(c.cls) {
+		span := metrics.SpanOf(widths, w)
+		if got := metrics.AvgLayersOf(widths, span); got < 0.90 && n3Class(c.cls) {
 			t.Errorf("%s 带-only 覆盖率 layers=%.4f < 0.90（P6 设计第 5 条：3×1000/3080 = 97.4%%）", c.cls, got)
 		} else {
-			t.Logf("%s 带-only 覆盖率 layers=%.4f span=%.1f", c.cls, AvgLayersOf(widths, span), span)
+			t.Logf("%s 带-only 覆盖率 layers=%.4f span=%.1f", c.cls, metrics.AvgLayersOf(widths, span), span)
 		}
 	}
 }

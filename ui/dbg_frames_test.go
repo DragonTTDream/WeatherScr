@@ -18,6 +18,7 @@ import (
 	"gioui.org/op"
 
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/metrics"
 )
 
 // dbgSeed 与 P1/P3 探针表同一个固定种子（cmd/overlapprobe/main.go:17 probeSeed），
@@ -74,13 +75,13 @@ func TestDbgFramesOffByDefault(t *testing.T) {
 			for _, cls := range []effect.Class{effect.Clear, effect.Cloudy, effect.Overcast, effect.Fog, effect.Rain, effect.Thunder, effect.Snow, effect.Dust} {
 				f := NewField(cls, isDay, dbgSeed)
 				var o op.Ops
-				f.Draw(probeGTX(&o, PortraitW, PortraitH), PortraitW, PortraitH)
+				f.Draw(metrics.ProbeGTX(&o, PortraitW, PortraitH), PortraitW, PortraitH)
 				if got := f.DrawCount(); got != 0 {
 					t.Errorf("env=%q %s/isDay=%v 默认路径 DrawCount()=%d，期望恒 0", env, cls, isDay, got)
 				}
 				g := NewFieldEntering(cls, isDay, dbgSeed)
 				var og op.Ops
-				g.Draw(probeGTX(&og, PortraitW, PortraitH), PortraitW, PortraitH)
+				g.Draw(metrics.ProbeGTX(&og, PortraitW, PortraitH), PortraitW, PortraitH)
 				if got := g.DrawCount(); got != 0 {
 					t.Errorf("env=%q NewFieldEntering %s/isDay=%v DrawCount()=%d，期望恒 0", env, cls, isDay, got)
 				}
@@ -101,7 +102,7 @@ func TestDbgFramesOnCountsAndReset(t *testing.T) {
 	for _, cls := range []effect.Class{effect.Clear, effect.Cloudy, effect.Overcast, effect.Fog, effect.Rain, effect.Snow} {
 		f := NewField(cls, true, dbgSeed) // 生产构造路径：开关在 newField 里接线
 		var o op.Ops
-		f.Draw(probeGTX(&o, PortraitW, PortraitH), PortraitW, PortraitH)
+		f.Draw(metrics.ProbeGTX(&o, PortraitW, PortraitH), PortraitW, PortraitH)
 		n := f.DrawCount()
 		if n <= 0 {
 			t.Fatalf("%s 开启开关后一帧 DrawCount()=%d，期望 >0", cls, n)
@@ -111,7 +112,7 @@ func TestDbgFramesOnCountsAndReset(t *testing.T) {
 			t.Errorf("%s ResetDrawCount() 后 DrawCount()=%d，期望 0", cls, got)
 		}
 		// 计数器开着 ⇒ 第二帧继续计数（主循环靠"打印后清零"得到每帧值）。
-		f.Draw(probeGTX(new(op.Ops), PortraitW, PortraitH), PortraitW, PortraitH)
+		f.Draw(metrics.ProbeGTX(new(op.Ops), PortraitW, PortraitH), PortraitW, PortraitH)
 		if got := f.DrawCount(); got <= 0 {
 			t.Errorf("%s 第二帧 DrawCount()=%d，期望 >0（计数器未被永久关掉）", cls, got)
 		}
@@ -119,7 +120,7 @@ func TestDbgFramesOnCountsAndReset(t *testing.T) {
 	// NewFieldEntering（类别切换建场）走同一个 newField ⇒ 同样受开关控制。
 	g := NewFieldEntering(effect.Rain, true, dbgSeed)
 	var og op.Ops
-	g.Draw(probeGTX(&og, PortraitW, PortraitH), PortraitW, PortraitH)
+	g.Draw(metrics.ProbeGTX(&og, PortraitW, PortraitH), PortraitW, PortraitH)
 	if g.DrawCount() <= 0 {
 		t.Errorf("NewFieldEntering 开启开关后 DrawCount()=%d，期望 >0", g.DrawCount())
 	}
@@ -153,8 +154,8 @@ func TestDbgFramesToggleKeepsOpsIdentical(t *testing.T) {
 		for i := 0; i < 3; i++ {
 			var o op.Ops
 			on.Step(dbgStep, PortraitW, PortraitH)
-			on.Draw(probeGTX(&o, PortraitW, PortraitH), PortraitW, PortraitH)
-			d, r := OpsLen(&o)
+			on.Draw(metrics.ProbeGTX(&o, PortraitW, PortraitH), PortraitW, PortraitH)
+			d, r := metrics.OpsLen(&o)
 			if d < 0 || r < 0 {
 				t.Fatalf("OpsLen 没取到内部切片（探针失效）")
 			}
@@ -170,8 +171,8 @@ func TestDbgFramesToggleKeepsOpsIdentical(t *testing.T) {
 		for i := 0; i < 3; i++ {
 			var o op.Ops
 			off.Step(dbgStep, PortraitW, PortraitH)
-			off.Draw(probeGTX(&o, PortraitW, PortraitH), PortraitW, PortraitH)
-			d, r := OpsLen(&o)
+			off.Draw(metrics.ProbeGTX(&o, PortraitW, PortraitH), PortraitW, PortraitH)
+			d, r := metrics.OpsLen(&o)
 			lensOff = append(lensOff, [2]int{d, r})
 		}
 		for i := range lensOn {
@@ -195,7 +196,7 @@ func TestDbgFramesRainMatchesProbeTable(t *testing.T) {
 	enableDbgFrames(t)
 	f := NewField(effect.Rain, true, dbgSeed)
 	var o op.Ops
-	f.Draw(probeGTX(&o, PortraitW, PortraitH), PortraitW, PortraitH)
+	f.Draw(metrics.ProbeGTX(&o, PortraitW, PortraitH), PortraitW, PortraitH)
 	got := f.DrawCount()
 	lo := float64(dbgRainDrawsPerFrame) * 0.85
 	hi := float64(dbgRainDrawsPerFrame) * 1.15
@@ -205,7 +206,7 @@ func TestDbgFramesRainMatchesProbeTable(t *testing.T) {
 	}
 	// 与探针构造路径同一通路 ⇒ 同一场同帧必须同数（没有第二条计数通路）。
 	p := NewFieldProbeCounted(effect.Rain, true, dbgSeed)
-	p.Draw(probeGTX(new(op.Ops), PortraitW, PortraitH), PortraitW, PortraitH)
+	p.Draw(metrics.ProbeGTX(new(op.Ops), PortraitW, PortraitH), PortraitW, PortraitH)
 	if p.Draws() != got {
 		t.Errorf("生产路径 %d 与探针路径 %d 计数不一致（存在第二条通路？）", got, p.Draws())
 	}
@@ -218,7 +219,7 @@ func TestDbgFramesPerFrameResetSemantics(t *testing.T) {
 	f := NewField(effect.Rain, true, dbgSeed)
 	var single int
 	for i := 0; i < 3; i++ {
-		f.Draw(probeGTX(new(op.Ops), PortraitW, PortraitH), PortraitW, PortraitH)
+		f.Draw(metrics.ProbeGTX(new(op.Ops), PortraitW, PortraitH), PortraitW, PortraitH)
 		n := f.DrawCount()
 		f.ResetDrawCount()
 		if n <= 0 {

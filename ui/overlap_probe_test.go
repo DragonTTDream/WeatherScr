@@ -7,6 +7,7 @@ import (
 	"gioui.org/op"
 
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/metrics"
 )
 
 // P1 探针自检（spec/p1-probe.md 判据 3/4/5）。
@@ -50,10 +51,10 @@ func TestProbeBandFormulaMatchesBrief(t *testing.T) {
 		{2, 0.64, 0, 1},
 	}
 	for _, c := range cases {
-		ws := BandWidthsNominal(512, c.n)
-		span := SpanOf(ws, PortraitW)
-		gotL := AvgLayersOf(ws, span)
-		gotD := DualPctOf(ws, span)
+		ws := metrics.BandWidthsNominal(512, c.n, bandNetDiv)
+		span := metrics.SpanOf(ws, PortraitW)
+		gotL := metrics.AvgLayersOf(ws, span)
+		gotD := metrics.DualPctOf(ws, span)
 		if !near(gotL, c.wantLayers, 0.02) {
 			t.Errorf("n=%d avgLayers=%.4f 期望 %.2f（±0.02）", c.n, gotL, c.wantLayers)
 		}
@@ -78,9 +79,9 @@ func TestProbeBandFormulaMatchesBrief(t *testing.T) {
 		if len(ws) != c.n {
 			t.Fatalf("%s 云带条数=%d 期望 %d", c.cls, len(ws), c.n)
 		}
-		nom := BandWidthsNominal(512, c.n)
-		gotL := AvgLayersOf(ws, f.bandSpan(PortraitW))
-		wantL := AvgLayersOf(nom, SpanOf(nom, PortraitW))
+		nom := metrics.BandWidthsNominal(512, c.n, bandNetDiv)
+		gotL := metrics.AvgLayersOf(ws, f.bandSpan(PortraitW))
+		wantL := metrics.AvgLayersOf(nom, metrics.SpanOf(nom, PortraitW))
 		if math.Abs(gotL-wantL)/wantL > 0.02 {
 			t.Errorf("%s 真实带几何 avgLayers=%.4f 与名义口径 %.4f 偏差 >2%%", c.cls, gotL, wantL)
 		}
@@ -215,10 +216,10 @@ func TestProbeCounterDoesNotChangeOps(t *testing.T) {
 		on := NewFieldProbeCounted(c.cls, c.isDay, probeTestSeed)
 		off := NewField(c.cls, c.isDay, probeTestSeed) // 生产路径：probeCount 恒 false
 		var oOn, oOff op.Ops
-		on.Draw(probeGTX(&oOn, PortraitW, PortraitH), PortraitW, PortraitH)
-		off.Draw(probeGTX(&oOff, PortraitW, PortraitH), PortraitW, PortraitH)
-		dOn, rOn := OpsLen(&oOn)
-		dOff, rOff := OpsLen(&oOff)
+		on.Draw(metrics.ProbeGTX(&oOn, PortraitW, PortraitH), PortraitW, PortraitH)
+		off.Draw(metrics.ProbeGTX(&oOff, PortraitW, PortraitH), PortraitW, PortraitH)
+		dOn, rOn := metrics.OpsLen(&oOn)
+		dOff, rOff := metrics.OpsLen(&oOff)
 		if dOn < 0 || dOff < 0 {
 			t.Fatalf("%s/isDay=%v OpsLen 没取到内部切片（探针失效）", c.cls, c.isDay)
 		}
@@ -243,8 +244,8 @@ func TestProbeToggleKeepsOpsStable(t *testing.T) {
 	for _, on := range []bool{true, false, true, false} {
 		f.SetProbeCounting(on)
 		var o op.Ops
-		f.Draw(probeGTX(&o, PortraitW, PortraitH), PortraitW, PortraitH)
-		d, r := OpsLen(&o)
+		f.Draw(metrics.ProbeGTX(&o, PortraitW, PortraitH), PortraitW, PortraitH)
+		d, r := metrics.OpsLen(&o)
 		lens = append(lens, [2]int{d, r})
 	}
 	for i := 1; i < len(lens); i++ {
@@ -254,13 +255,13 @@ func TestProbeToggleKeepsOpsStable(t *testing.T) {
 	}
 	f.SetProbeCounting(true)
 	f.ResetDraws()
-	f.Draw(probeGTX(new(op.Ops), PortraitW, PortraitH), PortraitW, PortraitH)
+	f.Draw(metrics.ProbeGTX(new(op.Ops), PortraitW, PortraitH), PortraitW, PortraitH)
 	if f.Draws() != 10 {
 		t.Errorf("Cloudy 白天 draws=%d 期望 10（B3/R4 云档 3→2：3 带本体 + 3 带影 + 2 云影 + 2 云本体）", f.Draws())
 	}
 	f.SetProbeCounting(false)
 	f.ResetDraws()
-	f.Draw(probeGTX(new(op.Ops), PortraitW, PortraitH), PortraitW, PortraitH)
+	f.Draw(metrics.ProbeGTX(new(op.Ops), PortraitW, PortraitH), PortraitW, PortraitH)
 	if f.Draws() != 0 {
 		t.Errorf("关计数器后 draws=%d 期望 0", f.Draws())
 	}
