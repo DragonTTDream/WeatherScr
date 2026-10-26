@@ -242,9 +242,17 @@ It prints, per frame, how many clouds sit on the sun/moon disc and what percenta
 the disc they cover, so a frame is only judged when the measurement proves the event is
 in it.
 
-Layout and geometry live in `ui/layout.go`; the particle and cloud-band simulation in
-`ui/effects.go`; the sky bake and layer order in `ui/render.go`. Design notes:
-[docs/DESIGN.md](docs/DESIGN.md).
+Single-responsibility modules (post-refactor, one package per job, each pinned by a
+parity test and pixel-identical baseline renders): orientation/geometry → `ui/geometry`,
+screen-fit panel avoidance → `ui/screenfit`, cloud kinetics and band widths →
+`ui/kinetics`, frame metrics and drift sampling → `ui/metrics`, sky bake and layer
+order → `ui/sky`, particles → `ui/particles`, fog/flash overlays → `ui/overlay`,
+cloud asset whitelist → `ui/assets`, panel/text/clock/theme → `ui/panel`, settings page
+→ `ui/settings`; the screensaver lifecycle split into `cmd/scr/run_*.go`, the wizard
+into `cmd/setup/{pageflow,installops,registryops,selfexit}.go`; weather fetch stays in
+`geo/`, persisted config in `config/`. Remaining shared code: `ui/layout.go`
+(canvas basis), `ui/effects.go` (data-driven draw glue), `ui/render.go` (op assembly).
+Design notes: [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Maintainers
 
