@@ -21,6 +21,7 @@ import (
 )
 
 import (
+	"github.com/DragonTTDream/WeatherScr/ui/geometry"
 	"github.com/DragonTTDream/WeatherScr/ui/kinetics"
 	"github.com/DragonTTDream/WeatherScr/ui/metrics"
 	"github.com/DragonTTDream/WeatherScr/ui/overlay"
@@ -661,7 +662,7 @@ func cloudFormOf(cls effect.Class) cloudForm {
 	// lo = ceil(0.444·W) ⇒ @1080 = 480 px（小于下限的云在生成侧直接不出）；
 	// hi = (W − gap)/2   ⇒ @1080 = 529 px（同带 2 朵 + 21 px 间隙恰好铺满 1080）。
 	// 口径宽取 B2 的 screenfit 基准（竖屏目标 1080）；Rain/Thunder 档 768–1178 逐字不动（kinetics 内豁免）。
-	loPx, hiPx := kinetics.WidthFor(kineticsClassOf(cls), screenfit.Baseline().W)
+	loPx, hiPx := kinetics.WidthFor(kineticsClassOf(cls), geometry.PortraitW)
 	lo, hi := float64(loPx), float64(hiPx)
 	switch cls {
 	case effect.Clear:
@@ -893,8 +894,8 @@ func newField(cls effect.Class, isDay bool, seed int64, entering bool) *Field {
 		// 错峰进场的分支就看这个标志。上一版是 NewField 返回后才置位
 		// ⇒ 生成时标志还是 false ⇒ 云照旧全屏铺开（TestEnteringCloudsOffscreen 抓到 8 朵全在屏内）。
 		entering: entering,
-		sh:       PortraitH, // 建场时未知屏高 → 竖屏目标口径，Step 每帧按实际 h 刷新
-		sw:       PortraitW, // 同上（云/雾进场落位的半宽分母）。
+		sh:       geometry.PortraitH, // 建场时未知屏高 → 竖屏目标口径，Step 每帧按实际 h 刷新
+		sw:       geometry.PortraitW, // 同上（云/雾进场落位的半宽分母）。
 		// 建场时 sw=0 会让 airHalfN 走兜底值 ⇒ 带外可用段算不出来 ⇒ 云落进信息带
 		// （实测 effects_band_test.go:74 抓到 y=0.3794 压带）。
 	}
@@ -952,7 +953,7 @@ func counts(cls effect.Class, isDay bool) int {
 	if !cloudTierClass(cls, isDay) {
 		return n
 	}
-	nMax, _, _ := kinetics.BandCapacity(screenfit.Baseline().W)
+	nMax, _, _ := kinetics.BandCapacity(geometry.PortraitW)
 	if n > nMax {
 		return nMax
 	}
@@ -1405,7 +1406,7 @@ func (f *Field) placeAirInGap(p *particle, visibleOnly bool) {
 	hwP, _ := f.airHalfN(p)
 	spanN := 1.0
 	if f.sw > 0 {
-		spanN = f.bandSpan(f.sw) / float64(f.sw)
+		spanN = geometry.PxToNorm(f.bandSpan(f.sw), f.sw)
 	}
 	type seg struct{ c, w float64 }
 	segs := make([]seg, 0, 12)
@@ -2218,13 +2219,9 @@ type bandPlace struct {
 //
 // 带宽不再随 frac 变化（旧 sc = (1.5+0.8·frac)/bandNetDiv ⇒ 逐带 768…1178 px =
 // 重叠根因，见 bandPlace 注释）。粒子云 p.sc 口径**不动**（P6"不做什么"，只收云带）。
-func bandWidthPx(w int) float64 {
-	t := math.Round(float64(w) * 1000.0 / 1080.0)
-	if cap := 0.95 * float64(w); t > cap {
-		t = cap
-	}
-	return t
-}
+// bandWidthPx 云带宽度 T（px）—— R5 卡 5：本体逐字迁到 ui/geometry.BandWidthPx
+// （T = round(w×1000/1080)、硬上限 0.95·w，公式与常量一字未改），ui 侧只留私有出口薄壳。
+func bandWidthPx(w int) float64 { return geometry.BandWidthPx(w) }
 
 // landscapeCloudWidthRangePx 横屏云宽区间（缺陷 L1/L4，spec/b4-landscape.md:18-19）：
 // 云宽走 kinetics 的屏宽分制口径（下限 0.444W、间隙 0.0194W、同带 ≤2 朵，
@@ -2330,7 +2327,7 @@ func (f *Field) bandPlace(i int, t float64, w, h int) (bandPlace, bool) {
 		top, spread = cloudBandPressTop, cloudBandPressSpread
 	}
 	return bandPlace{
-		x: x, y: float64(h) * (top + spread*frac),
+		x: x, y: geometry.NormPx(top+spread*frac, h),
 		dw: dw, dh: float64(sz.Y) * sc, mirror: i%2 == 1,
 	}, true
 }
@@ -3377,8 +3374,8 @@ func (f *Field) airHalfN(p *particle) (hw, hh float64) {
 	if f.sw <= 0 || f.sh <= 0 {
 		return 0.2, 0.1
 	}
-	hw = (float64(sz.X) * scale / 2) / float64(f.sw)
-	hh = (float64(sz.Y) * scale / 2) / float64(f.sh)
+	hw = geometry.PxToNorm(float64(sz.X)*scale/2, f.sw)
+	hh = geometry.PxToNorm(float64(sz.Y)*scale/2, f.sh)
 	return
 }
 
@@ -3771,7 +3768,7 @@ func (f *Field) enforceLandscapeCloudWidth() {
 		}
 		dwPx := float64(lo) + (float64(hi)-float64(lo))*f.rng.Float64()
 		p.sc = dwPx * bandNetDiv / (szX * p.scaleMul)
-		p.vx = cloudVxByThickness(dwPx / float64(f.sw))
+		p.vx = cloudVxByThickness(geometry.PxToNorm(dwPx, f.sw))
 		p.vxBase = p.vx
 	}
 }
@@ -3881,7 +3878,7 @@ func (f *Field) spreadAir(p *particle, r *rand.Rand, allowX bool) {
 	if 1-2*hh <= 0 {
 		return
 	}
-	minGap := 0.10 * float64(w) // 108 px @1080 宽
+	minGap := geometry.NormPx(0.10, w) // 108 px @1080 宽
 	// **云的 y 采样区间 = 月亮行**（需求：云要在月亮上面，不是部分；
 	// 云不得从月亮下面过去）。
 	// spreadAir 是云落位的**真正决定者**：它按整屏 [hh, 1−hh] 采样 64 次挑间距最优者，
@@ -3979,8 +3976,8 @@ func (f *Field) CelestialCover(w, h int) (clouds int, coverPct float64) {
 		if p.spr >= 0 && p.spr < len(sp.cloudSz) {
 			sz = sp.cloudSz[p.spr]
 		}
-		hw := float64(sz.X) * sc / 2 / float64(w)
-		hh := float64(sz.Y) * sc / 2 / float64(h)
+		hw := geometry.PxToNorm(float64(sz.X)*sc/2, w)
+		hh := geometry.PxToNorm(float64(sz.Y)*sc/2, h)
 		if p.x+hw < cx-rcx || p.x-hw > cx+rcx || p.y+hh < cy-rcy || p.y-hh > cy+rcy {
 			continue
 		}
@@ -4232,7 +4229,7 @@ func (f *Field) driftLayers(w, h int) ([]driftLayer, float64) {
 				Start: metrics.WrapPeriod(bp.x, span),
 				Width: bp.dw,
 				Pi:    -1,
-				Cy:    (bp.y + bp.dh/2) / float64(h),
+				Cy:    geometry.PxToNorm(bp.y+bp.dh/2, h),
 			})
 		}
 	}

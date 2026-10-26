@@ -4,8 +4,8 @@
 package ui
 
 import (
+	"github.com/DragonTTDream/WeatherScr/ui/geometry"
 	"github.com/DragonTTDream/WeatherScr/ui/kinetics"
-	"github.com/DragonTTDream/WeatherScr/ui/screenfit"
 )
 
 // Rect 是归一化矩形（0–1），与上游 custom_layout 同口径。
@@ -20,14 +20,16 @@ var (
 )
 
 // Px 把归一化 rect 换算成像素矩形。
+//
+// 换算本体 R5 卡 5 起在 ui/geometry.NormToPx（逐字迁出，ui 侧调用点行为零变化）。
 type PxRect struct{ X, Y, W, H int }
 
 func (r Rect) Px(screenW, screenH int) PxRect {
 	return PxRect{
-		X: int(r.X * float64(screenW)),
-		Y: int(r.Y * float64(screenH)),
-		W: int(r.W * float64(screenW)),
-		H: int(r.H * float64(screenH)),
+		X: geometry.NormToPx(r.X, screenW),
+		Y: geometry.NormToPx(r.Y, screenH),
+		W: geometry.NormToPx(r.W, screenW),
+		H: geometry.NormToPx(r.H, screenH),
 	}
 }
 
@@ -48,10 +50,10 @@ const (
 )
 
 // 竖屏目标分辨率（低性能 x86 小主机实测 DISPLAY1 Bounds Width=1080 Height=1920）。
-// B2 spec §3 薄壳：语义源在 ui/screenfit 的 Baseline 口径（float64 变量的 int 视图，逐字 1080/1920）。
+// R5 卡 5 薄壳：语义源在 ui/geometry 的屏向常量对（其语义源 = ui/screenfit 的 Baseline 口径，逐字 1080/1920）。
 var (
-	PortraitW = int(screenfit.PortraitW) // 1080
-	PortraitH = int(screenfit.PortraitH) // 1920
+	PortraitW = geometry.PortraitW // 1080
+	PortraitH = geometry.PortraitH // 1920
 )
 
 // FontFamily 上游实况字体。gioui 走系统字体匹配，字体名仅作请求与记录用。
@@ -64,7 +66,8 @@ const FontFamily = "Inter"
 // （spec/b4-landscape-brief.md:38 钉死，ui/layout_test.go / ui/cloudscale_test.go 现有判据不动）。
 
 // IsLandscape 横屏判定（证据 spec/b4-landscape.md:34）。
-func IsLandscape(w, h int) bool { return w > h }
+// R5 卡 5：判定本体迁到 ui/geometry.IsLandscape（逐字同式 w > h），ui 侧只留出口薄壳。
+func IsLandscape(w, h int) bool { return geometry.IsLandscape(w, h) }
 
 // landscapeEdgeMarginPx 横屏左右边距（缺陷 L3）：与云首尾相连的最小间隙同口径
 // 0.0194W（evidence/p8-numbers-20261023.md:14，kinetics.GapRatio 逐字）
