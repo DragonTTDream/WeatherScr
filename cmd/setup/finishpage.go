@@ -73,10 +73,14 @@ func finishTitleFor(op finishOp, ok bool) string {
 }
 
 // finishBodyFor 完成页正文：按操作态 + 成功/失败两态取文案，why 空 ⇒ 回落「未记录」（spec §1）。
+// R16-C（spec r16-wizard §1C）：安装成功态正文末尾追加自验行 lastVerify（空则不追加，正文逐字不变）。
 func finishBodyFor(op finishOp, ok bool, why string) string {
 	if ok {
 		if op == opUninstall {
 			return finishBodyUninstallOK
+		}
+		if lastVerify != "" {
+			return finishBodyOK + "\r\n\r\n" + lastVerify
 		}
 		return finishBodyOK
 	}

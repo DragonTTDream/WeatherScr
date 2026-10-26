@@ -65,6 +65,13 @@ func relaunchElevated(args string) error {
 // ───────────────────────── 安装 ─────────────────────────
 
 func runInstall() {
+	// R16-A（spec r16-wizard §1A）：重入锁置于函数最前——取不到锁直接 return，
+	// 此时 defer wmAppDone 尚未挂上，重复触发不会把第一轮的完成页/状态机打乱。
+	if !acquireInstall() {
+		logf("安装已在进行，忽略重复触发")
+		return
+	}
+	defer releaseInstall()
 	installOK = false // D5（spec §1.1）：入口复位结果状态，失败分支保持 false
 	defer procPostMessageW.Call(uintptr(hMain), wmAppDone, 0, 0)
 	defer func() {
@@ -217,11 +224,19 @@ func runInstall() {
 		}
 	} else if !shaMatches(markerSHA, wantSHA) || !shaMatches(gotSHA, wantSHA) {
 		logf("校验失败：目标 SHA256 %s，期望 %s", gotSHA, wantSHA)
+		lastVerify = "警告：已装件 SHA256 与构建件不一致（已回滚）" // R16-C：失败态也留自验记录
 		rollback("System32 落盘校验失败")
 		setStatus("安装失败（已回滚）")
 		return
 	}
 	logf("已校验 %s SHA256 与解包一致", warmupExe)
+
+	// R16-C（spec r16-wizard §1C）：完成页自验行——校验通过的 SHA 现场写进 lastVerify，
+	// 完成页正文追加（finishpage.go finishVerifyLine）。用户可见判据 = 「SHA256 与构建件一致」逐字。
+	lastVerify = fmt.Sprintf("已装件 SHA256 与构建件一致（%.16s…）", wantSHA)
+	if !gotOK {
+		lastVerify = "已装件 SHA256 现场读取失败，按 marker 与大小核验放行（无逐字比对）"
+	}
 
 	// 4 账户级：写 HKCU + Add/Remove Programs
 	// A3（spec §1 A3）：整块从「提权复制之前」挪到「落盘校验通过之后」——
@@ -316,6 +331,13 @@ func rollback(why string) {
 }
 
 func runUninstall() {
+	// R16-A（spec r16-wizard §1A）：卸载与安装共用同一把锁，只许一轮在跑；
+	// 同 runInstall 的形状，锁在 defer wmAppDone 之前。
+	if !acquireInstall() {
+		logf("安装/卸载已在进行，忽略重复触发")
+		return
+	}
+	defer releaseInstall()
 	defer procPostMessageW.Call(uintptr(hMain), wmAppDone, 0, 0)
 	defer func() {
 		if r := recover(); r != nil {

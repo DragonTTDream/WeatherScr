@@ -140,3 +140,27 @@ func TestFinishUninstallTexts(t *testing.T) {
 		t.Errorf("finishBodyFor(opInstall,false,\"占用\") = %q，期望含「占用」与「已回滚」", got)
 	}
 }
+
+// R16-C 判据（spec r16-wizard §2.2）：安装成功正文含自验行「SHA256 与构建件一致」子串；
+// lastVerify 为空 ⇒ 正文与 finishBodyOK 逐字相等（旧断言不破）；卸载成功正文不含自验行。
+func TestFinishBodyHashLine(t *testing.T) {
+	old := lastVerify
+	defer func() { lastVerify = old }()
+
+	lastVerify = "已装件 SHA256 与构建件一致（0123456789abcdef…）"
+	got := finishBodyFor(opInstall, true, "")
+	if !strings.Contains(got, "SHA256 与构建件一致") {
+		t.Fatalf("安装成功正文缺自验行：%q", got)
+	}
+	if !strings.Contains(got, finishBodyOK) {
+		t.Fatalf("自验行必须追加在原正文之后而不是替换：%q", got)
+	}
+	if strings.Contains(finishBodyFor(opUninstall, true, ""), "SHA256 与构建件一致") {
+		t.Fatal("卸载成功正文不应拼接安装自验行")
+	}
+
+	lastVerify = ""
+	if got := finishBodyFor(opInstall, true, ""); got != finishBodyOK {
+		t.Fatalf("lastVerify 为空时正文必须逐字等于 finishBodyOK：%q", got)
+	}
+}
