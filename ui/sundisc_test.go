@@ -24,6 +24,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
 )
 
@@ -40,7 +41,7 @@ func newSunDiscProbe(w, h int) sunDiscProbe {
 		w: w, h: h,
 		cx:  int(math.Round(0.72 * float64(w))),
 		cy:  int(math.Round(0.095 * float64(h))),
-		rc:  sunDiscRcFrac * float64(w),
+		rc:  sky.SunDiscRcFrac * float64(w),
 		r45: int(math.Round(0.45 * float64(w))),
 	}
 }
@@ -107,7 +108,7 @@ func (p sunDiscProbe) discBright(baked, base *image.NRGBA) (bright, total int, c
 //	1 中间亮核的半高宽 ≤ 0.22 倍烘焙宽。
 //	  半高宽 = 过盘心的剖面上"净抬升降到峰值一半"的半径。
 //	  中间亮核 = 小亮核那一组（Acore=120·dim·vis、Lc=0.06w + 盘体 + 泛光）；
-//	  量它时把全天空常数整项关掉（预览工装 sunSkyScale，出厂 1.0 不动画面），
+//	  量它时把全天空常数整项关掉（预览工装 sky.SunSkyScale，出厂 1.0 不动画面），
 //	  否则量到的是"小亮核 + 0.9w 主圈"的复合宽，不是中间亮核的宽。
 //	2 0.45w 处净抬升 ≥ 峰值 25%（出厂口径，主圈与全天空常数都在场）⇒ 整体范围不缩。
 //
@@ -122,13 +123,13 @@ func TestSunCoreSizeRestored(t *testing.T) {
 	p := newSunDiscProbe(w, h)
 	cls, pct := effect.Clear, 15
 	t.Logf("常量：主圈 L=%.2fw A=%.0f·dim | 小亮核 L=%.2fw A=%.0f·dim·vis | 全天空常数 U=%.0f·dim | 泛光半径 %.1frc | 宽光贴图宽 %.2fw(屏内已停用)",
-		sunMainLFrac, sunMainAmp, sunCoreExpLFrac, sunCoreExpAmp, sunSkyUniform, sunBloomRcFrac, sunGlowWidthFrac)
-	if sunMainLFrac != 0.90 || sunMainAmp != 150.0 {
-		t.Errorf("主圈口径 = L %.2f / A %.0f，应为 0.90 / 150 ⇒ 最大圈没有放大到 0.9 倍屏宽", sunMainLFrac, sunMainAmp)
+		sky.SunMainLFrac, sky.SunMainAmp, sky.SunCoreExpLFrac, sky.SunCoreExpAmp, sky.SunSkyUniform, sky.SunBloomRcFrac, sky.SunGlowWidthFrac)
+	if sky.SunMainLFrac != 0.90 || sky.SunMainAmp != 150.0 {
+		t.Errorf("主圈口径 = L %.2f / A %.0f，应为 0.90 / 150 ⇒ 最大圈没有放大到 0.9 倍屏宽", sky.SunMainLFrac, sky.SunMainAmp)
 	}
-	if sunCoreExpLFrac != 0.06 || sunCoreExpAmp != 70.0 || sunSkyUniform != 12.0 {
+	if sky.SunCoreExpLFrac != 0.06 || sky.SunCoreExpAmp != 70.0 || sky.SunSkyUniform != 12.0 {
 		t.Errorf("剖面口径被改动：小亮核 L=%.2f A=%.0f、全天空常数 U=%.0f ⇒ 应为 0.06 / 70 / 12",
-			sunCoreExpLFrac, sunCoreExpAmp, sunSkyUniform)
+			sky.SunCoreExpLFrac, sky.SunCoreExpAmp, sky.SunSkyUniform)
 	}
 	rays := []struct {
 		name string
@@ -139,8 +140,8 @@ func TestSunCoreSizeRestored(t *testing.T) {
 		{"垂直下", func(k int) (int, int) { return p.cx, p.cy + k }, h - 1 - p.cy},
 	}
 	// ---- 出厂帧：0.45w 处净抬升 ≥ 峰值 25% ----
-	baked := renderSkyCPU(w, h, cls, true, nil, pct)
-	base := skyBaseCPU(w, h, cls, true)
+	baked := sky.RenderSkyCPU(w, h, cls, true, nil, pct)
+	base := sky.SkyBaseCPU(w, h, cls, true)
 	peak := p.lift(baked, base, p.cx, p.cy)
 	if peak <= 1 {
 		t.Fatalf("盘心净抬升 %.1f ≤ 1 ⇒ 太阳没画进烘焙，剖面测不到东西", peak)
@@ -159,10 +160,10 @@ func TestSunCoreSizeRestored(t *testing.T) {
 		}
 	}
 	// ---- 中间亮核的半高宽：把全天空抬升项关掉，量近场那一组 ----
-	saved := sunSkyScale
-	defer func() { sunSkyScale = saved }()
-	sunSkyScale = 0
-	near := renderSkyCPU(w, h, cls, true, nil, pct)
+	saved := sky.SunSkyScale
+	defer func() { sky.SunSkyScale = saved }()
+	sky.SunSkyScale = 0
+	near := sky.RenderSkyCPU(w, h, cls, true, nil, pct)
 	nearPeak := p.lift(near, base, p.cx, p.cy)
 	if nearPeak <= 1 {
 		t.Fatalf("关掉全天空抬升后盘心净抬升 %.1f ≤ 1 ⇒ 中间亮核没画出来", nearPeak)
@@ -227,12 +228,12 @@ func TestSunDiscVisibilityTable(t *testing.T) {
 		{effect.Dust, 100, 0.0},
 	}
 	for _, c := range cells {
-		got := sunDiscVisibility(c.cls, c.pct)
-		baked := renderSkyCPU(w, h, c.cls, true, nil, c.pct)
-		base := skyBaseCPU(w, h, c.cls, true)
+		got := sky.SunDiscVisibility(c.cls, c.pct)
+		baked := sky.RenderSkyCPU(w, h, c.cls, true, nil, c.pct)
+		base := sky.SkyBaseCPU(w, h, c.cls, true)
 		bright, total, center, ring := p.discBright(baked, base)
 		t.Logf("%-13s 云量=%3d 可见度=%.2f(表 %.2f) dim=%.3f 盘区=%d px 盘内亮像素=%d 盘心净抬升=%.1f 3rc环峰=%.1f",
-			c.cls, c.pct, got, c.want, sunDimOf(c.pct), total, bright, center, ring)
+			c.cls, c.pct, got, c.want, sky.SunDimOf(c.pct), total, bright, center, ring)
 		if got != c.want {
 			t.Errorf("%s 云量 %d 的盘可见度 = %.3f，表里是 %.3f", c.cls, c.pct, got, c.want)
 		}
@@ -296,8 +297,8 @@ func TestSunShowerShowsDisc(t *testing.T) {
 	}
 	var rows []meas
 	for _, pct := range []int{40, 90} {
-		baked := renderSkyCPU(w, h, effect.Rain, true, nil, pct)
-		base := skyBaseCPU(w, h, effect.Rain, true)
+		baked := sky.RenderSkyCPU(w, h, effect.Rain, true, nil, pct)
+		base := sky.SkyBaseCPU(w, h, effect.Rain, true)
 		bright, total, center, ring := p.discBright(baked, base)
 		var sum float64
 		n := 0
@@ -310,7 +311,7 @@ func TestSunShowerShowsDisc(t *testing.T) {
 		}
 		rows = append(rows, meas{pct: pct, bright: bright, total: total, mean: sum / float64(n)})
 		t.Logf("rain 云量=%d 可见度=%.2f dim=%.3f 盘区=%d px 盘内亮像素=%d 盘心净抬升=%.1f 3rc环峰=%.1f 屏底横带均亮=%.2f（%d px）",
-			pct, sunDiscVisibility(effect.Rain, pct), sunDimOf(pct), total, bright, center, ring, sum/float64(n), n)
+			pct, sky.SunDiscVisibility(effect.Rain, pct), sky.SunDimOf(pct), total, bright, center, ring, sum/float64(n), n)
 	}
 	if rows[0].bright <= 0 {
 		t.Errorf("rain 云量 40（太阳雨）盘内亮像素 = %d ⇒ 太阳雨该出盘却没出", rows[0].bright)
@@ -325,7 +326,7 @@ func TestSunShowerShowsDisc(t *testing.T) {
 	// 在单一连续剖面（150·exp(−r/0.9w) + 12 都乘 dim）下实测差 8.3 级 ⇒ 阈值跟着走。
 	// "盘可见度门不吃漫射光"这条判据本体在 TestDiffuseLightUnchanged（同云量、门开/关）里逐字守住。
 	t.Logf("两帧天空底色（屏底横带均亮）%.2f vs %.2f 差 %.2f 级（判据 ≤10，dim %.3f→%.3f）",
-		rows[0].mean, rows[1].mean, d, sunDimOf(40), sunDimOf(90))
+		rows[0].mean, rows[1].mean, d, sky.SunDimOf(40), sky.SunDimOf(90))
 	if d > 10 {
 		t.Errorf("两帧天空底色差 %.2f 级 > 10 级 ⇒ 盘没了天空也跟着变（漫射光口径被盘可见度带跑）", d)
 	}
@@ -336,8 +337,8 @@ func TestOvercastNoDisc(t *testing.T) {
 	w, h := sunProbeW, sunProbeH
 	p := newSunDiscProbe(w, h)
 	cls, pct := effect.Overcast, 95
-	baked := renderSkyCPU(w, h, cls, true, nil, pct)
-	base := skyBaseCPU(w, h, cls, true)
+	baked := sky.RenderSkyCPU(w, h, cls, true, nil, pct)
+	base := sky.SkyBaseCPU(w, h, cls, true)
 	bright, total, center, ring := p.discBright(baked, base)
 	rays := []struct {
 		name string
@@ -348,7 +349,7 @@ func TestOvercastNoDisc(t *testing.T) {
 		{"垂直下", func(k int) (int, int) { return p.cx, p.cy + k }, h - 1 - p.cy},
 	}
 	t.Logf("%-13s 云量=%d 可见度=%.2f dim=%.3f 盘区=%d px 盘内亮像素=%d 盘心净抬升=%.1f 3rc环峰=%.1f",
-		cls, pct, sunDiscVisibility(cls, pct), sunDimOf(pct), total, bright, center, ring)
+		cls, pct, sky.SunDiscVisibility(cls, pct), sky.SunDimOf(pct), total, bright, center, ring)
 	if total < 500 {
 		t.Fatalf("盘区只有 %d px ⇒ 盒子缩成 0 量级，测试无意义", total)
 	}
@@ -382,17 +383,17 @@ func TestDiffuseLightUnchanged(t *testing.T) {
 	w, h := sunProbeW, sunProbeH
 	p := newSunDiscProbe(w, h)
 	cls, pct := effect.Rain, 90
-	dim := sunDimOf(pct)
-	vis := sunDiscVisibility(cls, pct)
+	dim := sky.SunDimOf(pct)
+	vis := sky.SunDiscVisibility(cls, pct)
 	if vis > 0 {
 		t.Fatalf("rain 云量 %d 的盘可见度 = %.2f > 0 ⇒ 测试取的格不该门开", pct, vis)
 	}
-	base := skyBaseCPU(w, h, cls, true)
-	closed := skyBaseCPU(w, h, cls, true)
-	bakeSunAnalytic(closed, w, h, false, dim, vis)
-	open := skyBaseCPU(w, h, cls, true)
-	bakeSunAnalytic(open, w, h, true, dim, 1.0)
-	factory := renderSkyCPU(w, h, cls, true, nil, pct)
+	base := sky.SkyBaseCPU(w, h, cls, true)
+	closed := sky.SkyBaseCPU(w, h, cls, true)
+	sky.BakeSunAnalytic(closed, w, h, false, dim, vis)
+	open := sky.SkyBaseCPU(w, h, cls, true)
+	sky.BakeSunAnalytic(open, w, h, true, dim, 1.0)
+	factory := sky.RenderSkyCPU(w, h, cls, true, nil, pct)
 	if !samePix(factory, closed) {
 		t.Errorf("门关帧与出厂帧逐像素不同 ⇒ 判据量的不是出厂画面")
 	}
@@ -437,8 +438,8 @@ func samePix(a, b *image.NRGBA) bool {
 // 供 assetsb_test.go 的逐档判据复用同一把尺子（不在别处再抄一份口径）。
 func sunDiscSignature(cls effect.Class, pct int) int {
 	p := newSunDiscProbe(sunProbeW, sunProbeH)
-	baked := renderSkyCPU(sunProbeW, sunProbeH, cls, true, nil, pct)
-	base := skyBaseCPU(sunProbeW, sunProbeH, cls, true)
+	baked := sky.RenderSkyCPU(sunProbeW, sunProbeH, cls, true, nil, pct)
+	base := sky.SkyBaseCPU(sunProbeW, sunProbeH, cls, true)
 	bright, _, _, _ := p.discBright(baked, base)
 	return bright
 }

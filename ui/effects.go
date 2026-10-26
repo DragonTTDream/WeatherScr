@@ -15,9 +15,9 @@ import (
 	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
-	"gioui.org/unit"
 
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 )
 
 import (
@@ -2939,90 +2939,6 @@ func (f *Field) Draw(gtx layout.Context, w, h int) {
 	// 保留 drawMoon 函数本体供离线路径与回退使用，生产路径不再逐帧调用。
 }
 
-// 月白：三层**同色，只变 alpha**。
-var moonColor = color.NRGBA{R: 245, G: 242, B: 230, A: 0xff}
-
-// 月亮径向渐变参数。
-//
-// 2026-10-16 两轮视觉核对的实测教训：
-// - 旧版三层实心盘 ⇒ "三个硬边同心圆，像灰色的靶子"；
-// - 旧版第一版 26 环、每环画**绝对 alpha** ⇒ 读图仍是"一圈一圈的
-// 硬边同心环"。根因：叠加后相邻环之间的 alpha 落差 = 该环自身 alpha，
-// 近核处约 15/255 ≈ 6% 一跳 ⇒ 台阶肉眼可见。
-//
-// 正确做法：把目标**累积**曲线 A(r) = A0·exp(-decay·(r/rc−1)) 离散化，
-// 每环只画**增量** `a_i = A(r_i) − A(r_{i+1})`，由外到内叠加。
-// 叠加后中心累积 = A(rc) = A0、向外单调降到 A(外)，且相邻落差被压到
-// 环数 N 的粒度上：N=64 时最大落差 ≈ 120×(1−e^(−3/63)) ≈ 6/255 ≈ 2.4%，
-// 环间距 3.4/63 ≈ 0.054 rc ≈ 2.6 px ⇒ 台阶不可见。
-const (
-	moonRingN      = 64    // 环数（越大台阶越细）
-	moonRingSpread = 3.4   // 最外环半径 = r_core × (1 + 3.4)
-	moonRingA0     = 120.0 // 核心处累积 alpha
-	moonRingDecay  = 3.0   // 累积曲线衰减率
-	moonDiscAlpha  = 235   // 核心圆盘 alpha
-)
-
-// drawMoon 月亮：核心圆盘 + 64 环增量叠加的径向衰减光晕 + 3 个淡坑纹理。
-// 夜间才画（Draw 里的判据不变）；pkGlow 类保留给地平线光。
-func (f *Field) drawMoon(gtx layout.Context, w, h int, t float64) {
-	cx := float32(w) * 0.72
-	cy := float32(h) * 0.13
-	// 半径口径沿用原 moonSz 96 px 贴图（1080 屏上半径 48 px），随屏宽走。
-	r := float32(w) * 0.045
-	pulse := float32(1.0 + 0.04*math.Sin(0.35*t)) // 原有的轻微呼吸，保留
-	rc := r * pulse
-
-	// 由外到内（i 从 N-1 递减到 0），每环画增量 alpha。
-	for i := moonRingN - 1; i >= 0; i-- {
-		frac := float64(i) / float64(moonRingN-1)
-		next := float64(i+1) / float64(moonRingN-1)
-		ri := rc * (1 + moonRingSpread*float32(frac))
-		// 增量 = A(r_i) − A(r_{i+1})；最外环之外视为 0。
-		aCur := moonRingA0 * float32(math.Exp(-moonRingDecay*frac))
-		aNext := moonRingA0 * float32(math.Exp(-moonRingDecay*next))
-		ai := aCur - aNext
-		if ai < 1 {
-			continue
-		}
-		disc(gtx, cx, cy, ri, uint8(ai))
-	}
-	disc(gtx, cx, cy, rc, moonDiscAlpha)
-
-	// 表面纹理：固定系数 ⇒ 跨帧稳定不闪。
-	// 2026-10-16 视觉核对：alpha 26 的三坑"几乎没有"，提到 46 并补到 5 处，
-	// 其中两处是月海（大片暗区），比小坑更容易被肉眼读到。
-	craters := []struct{ dx, dy, rr float32 }{
-		{-0.34, -0.21, 0.18},
-		{0.26, 0.30, 0.26},
-		{0.10, -0.40, 0.13},
-		{-0.12, 0.22, 0.34}, // 月海
-		{0.34, -0.14, 0.22}, // 月海
-	}
-	for _, c := range craters {
-		discColor(gtx, cx+c.dx*rc, cy+c.dy*rc, c.rr*rc,
-			color.NRGBA{R: 210, G: 208, B: 196, A: 46})
-	}
-}
-
-// disc 铺一个半径 rad 的纯色圆盘：正方形 clip.RRect，四角半径 = rad ⇒ 正圆，
-// 只填一种颜色（无变换、无渐变）。
-func disc(gtx layout.Context, cx, cy, rad float32, a uint8) {
-	discColor(gtx, cx, cy, rad, color.NRGBA{moonColor.R, moonColor.G, moonColor.B, a})
-}
-
-// discColor 是 disc 的通用版：任意颜色。
-func discColor(gtx layout.Context, cx, cy, rad float32, c color.NRGBA) {
-	if rad <= 0 {
-		return
-	}
-	rr := gtx.Dp(unit.Dp(rad))
-	rect := image.Rect(int(cx-rad), int(cy-rad), int(cx+rad), int(cy+rad))
-	cl := clip.RRect{Rect: rect, SE: rr, SW: rr, NW: rr, NE: rr}.Push(gtx.Ops)
-	paint.Fill(gtx.Ops, c)
-	cl.Pop()
-}
-
 // ── 降水粒子贴图覆盖（预览工装）──────────────────────────
 //
 // 依据：素材预览工装规格 1.5。覆盖目录里有 rain.png ⇒ 工装把这张贴图喂给
@@ -4037,7 +3953,7 @@ func (f *Field) placeAirEntry(p *particle, r *rand.Rand) {
 			// 月盘半径 moonRcFrac 是**屏宽**单位 ⇒ y 轴口径要乘 W/H：0.060×1080/1920 = 0.0338。
 			// 直接拿 0.060 当 y 偏移会把范围放大约 2 倍（实测云落在 0.019/0.020/0.021，
 			// 而月盘 y 范围只有 0.061–0.129 ⇒ 这些云这辈子碰不到月亮。
-			rcY := moonRcFrac * float64(f.sw) / float64(f.sh)
+			rcY := sky.MoonRcFrac * float64(f.sw) / float64(f.sh)
 			loY := 0.095 - rcY - hh
 			hiY := 0.095 + rcY + hh
 			if loY < hh {
@@ -4166,7 +4082,7 @@ func (f *Field) clampAirY(p *particle, r *rand.Rand, allowX bool) {
 		// 需求：云要在月亮上面，不是部分。
 		// 原实现 y 铺满整屏 [hh, 1−hh] ⇒ 实测 0.269/0.328/0.441/0.634/0.736/0.865/0.904，
 		// 月亮在 0.095 ⇒ 开局就没有云在月亮行。
-		rcY := moonRcFrac * float64(f.sw) / float64(f.sh) // 月盘半径的 **y 轴**口径
+		rcY := sky.MoonRcFrac * float64(f.sw) / float64(f.sh) // 月盘半径的 **y 轴**口径
 		loY := 0.095 - rcY - hh
 		hiY := 0.095 + rcY + hh
 		if loY < hh {
@@ -4399,7 +4315,7 @@ func (f *Field) spreadAir(p *particle, r *rand.Rand, allowX bool) {
 	yLo, yHi := hh, 1-2*hh
 	if p.kind == pkCloud {
 		// 月盘半径 moonRcFrac 是**屏宽**单位 ⇒ y 轴口径 = ×W/H = 0.060×1080/1920 = 0.0338。
-		rcY := moonRcFrac * float64(w) / float64(h)
+		rcY := sky.MoonRcFrac * float64(w) / float64(h)
 		loY := 0.095 - rcY - hh
 		hiY := 0.095 + rcY + hh
 		if loY < hh {
@@ -4468,8 +4384,8 @@ func (f *Field) CelestialCover(w, h int) (clouds int, coverPct float64) {
 		return 0, 0
 	}
 	sp := spritesOnce()
-	rcx := moonRcFrac
-	rcy := moonRcFrac * float64(w) / float64(h)
+	rcx := sky.MoonRcFrac
+	rcy := sky.MoonRcFrac * float64(w) / float64(h)
 	cx, cy := 0.72, 0.095
 
 	type rect struct{ x0, y0, x1, y1 float64 }
@@ -5042,8 +4958,8 @@ func (f *Field) CelestialCoverAll(w, h int) (bands int, coverPct float64) {
 		return 0, 0
 	}
 	cx, cy := 0.72*float64(w), 0.095*float64(h)
-	rcx := moonRcFrac * float64(w)
-	rcy := moonRcFrac * float64(w) / float64(h)
+	rcx := sky.MoonRcFrac * float64(w)
+	rcy := sky.MoonRcFrac * float64(w) / float64(h)
 	// 数组上限 = 云带片数的上限（bandCount 最大 6 = Overcast）+ 粒子上限 64
 	var rects [10 + 64][4]float64
 	n := 0

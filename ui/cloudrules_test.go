@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
 	"github.com/DragonTTDream/WeatherScr/ui/kinetics"
 )
@@ -314,7 +315,7 @@ type sunBox struct {
 }
 
 func newSunBox(w, h int) sunBox {
-	rc := sunDiscRcFrac * float64(w)
+	rc := sky.SunDiscRcFrac * float64(w)
 	cx, cy := int(math.Round(0.72*float64(w))), int(math.Round(0.095*float64(h)))
 	half := int(math.Ceil(3 * rc))
 	return sunBox{
@@ -390,9 +391,9 @@ func TestSunDiscEdge(t *testing.T) {
 	var rows []meas
 	for _, cs := range cases {
 		cls, pct := cs.cls, cs.pct
-		baked := renderSkyCPU(w, h, cls, true, nil, pct)
-		base := skyBaseCPU(w, h, cls, true)
-		m := meas{cls: cls, pct: pct, dim: sunDimOf(pct), intMin: 1e9, intMax: -1e9, ringMax: -1e9}
+		baked := sky.RenderSkyCPU(w, h, cls, true, nil, pct)
+		base := sky.SkyBaseCPU(w, h, cls, true)
+		m := meas{cls: cls, pct: pct, dim: sky.SunDimOf(pct), intMin: 1e9, intMax: -1e9, ringMax: -1e9}
 		for y := box.y0; y < box.y1; y++ {
 			for x := box.x0; x < box.x1; x++ {
 				m.boxPx++
@@ -535,8 +536,8 @@ func TestSunDiscEdge(t *testing.T) {
 			}
 		default:
 			// 灰蒙档（云量 ≥85）：不画硬圆盘，只画宽光
-			if !sunNoDisc(m.pct) {
-				t.Errorf("%s：云量 %d 应落在灰蒙档（≥%d）⇒ 测试输入给错了档", m.cls, m.pct, sunNoDiscPct)
+			if !sky.SunNoDisc(m.pct) {
+				t.Errorf("%s：云量 %d 应落在灰蒙档（≥%d）⇒ 测试输入给错了档", m.cls, m.pct, sky.SunNoDiscPct)
 			}
 			// 硬圆盘的签名 = 盘缘处一次 >30 级的跌落（满亮盘实测在 r≈rc 处）。
 			// 灰蒙档不许有这个跌落：跌落点必须落在 1.5×rc 之外（找不到 = +Inf，也算过）。
@@ -554,12 +555,12 @@ func TestSunDiscEdge(t *testing.T) {
 	// 且无辐条"）：r=2rc 圆周上 360 个采样点的净抬升，峰谷差与比值都要打印，
 	// 比值口径与 TestNoSunRays 一致（≤1.25）。
 	rc := box.rc
-	baked := renderSkyCPU(w, h, effect.Clear, true, nil, 0)
-	base := skyBaseCPU(w, h, effect.Clear, true)
+	baked := sky.RenderSkyCPU(w, h, effect.Clear, true, nil, 0)
+	base := sky.SkyBaseCPU(w, h, effect.Clear, true)
 	lifts := []float64{
-		sunSkyLift(1.0*rc, rc), sunSkyLift(1.5*rc, rc), sunSkyLift(2.0*rc, rc),
-		sunSkyLift(2.5*rc, rc), sunSkyLift(3.0*rc, rc), sunSkyLift(3.4*rc, rc),
-		sunSkyLift(3.8*rc, rc),
+		sky.SunSkyLift(1.0*rc, rc), sky.SunSkyLift(1.5*rc, rc), sky.SunSkyLift(2.0*rc, rc),
+		sky.SunSkyLift(2.5*rc, rc), sky.SunSkyLift(3.0*rc, rc), sky.SunSkyLift(3.4*rc, rc),
+		sky.SunSkyLift(3.8*rc, rc),
 	}
 	t.Logf("盘周提亮曲线 r/rc=1,1.5,2,2.5,3,3.4,3.8 = %.2f %.2f %.2f %.2f %.2f %.2f %.2f（出厂归零 ⇒ 应全 0）",
 		lifts[0], lifts[1], lifts[2], lifts[3], lifts[4], lifts[5], lifts[6])
@@ -613,8 +614,8 @@ func TestNoSunRays(t *testing.T) {
 	for _, cls := range []effect.Class{effect.Clear, effect.PartlyCloudy} {
 		w, h := sunProbeW, sunProbeH
 		box := newSunBox(w, h)
-		baked := renderSkyCPU(w, h, cls, true, nil, 0)
-		base := skyBaseCPU(w, h, cls, true)
+		baked := sky.RenderSkyCPU(w, h, cls, true, nil, 0)
+		base := sky.SkyBaseCPU(w, h, cls, true)
 		var vals []float64
 		for k := 0; k < 16; k++ {
 			th := float64(k) * math.Pi / 8.0

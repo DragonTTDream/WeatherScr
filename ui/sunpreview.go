@@ -1,11 +1,15 @@
 package ui
 
 import (
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"os"
 	"strconv"
 )
 
 // 预览工装（dev-only，出厂二进制不读这些变量；闸门逐字证明）。
+//
+// R5 卡 2：日照渐变那一组工装系数（WS_SUN_LIFT_R / WS_SUN_LIFT_LV / WS_SUN_LIFT_FADE /
+// WS_SUN_SKY）随烘焙层一起迁进 ui/sky（只有天空烘焙读它们）；这里只留特效侧的 WS_GLOWP 与 WS_SUN_L。
 // 用途：出太阳铺光候选效果图的对比图交肉眼定夺，不改出厂口径。
 //
 //	WS_GLOWP=0      关掉 pkGlow 光斑粒子（Kenney light_01 的小圆圈）
@@ -16,11 +20,7 @@ import (
 //	WS_SUN_LIFT_FADE 提亮平台到归零的半径倍数（越大越没有圈边），出厂 1.2667
 var (
 	glowParticlesOn = envBool("WS_GLOWP", true)
-	sunNearL        = envFloat("WS_SUN_L", sunNearLFrac)
-	sunLiftRFrac    = envFloat("WS_SUN_LIFT_R", 3.0)
-	sunLiftLv       = envFloat("WS_SUN_LIFT_LV", 0.0)
-	sunLiftFadeFrac = envFloat("WS_SUN_LIFT_FADE", 1.2667)
-	sunSkyScale     = envFloat("WS_SUN_SKY", 1.0)
+	sunNearL        = envFloat("WS_SUN_L", sky.SunNearLFrac)
 )
 
 func envBool(name string, def bool) bool {

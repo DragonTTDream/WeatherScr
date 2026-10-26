@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
 )
 
@@ -56,46 +57,46 @@ func TestSkyCacheKeyMoon(t *testing.T) {
 	// 键随相位变化：nil / 0.174 / 0.5 / 0.9375 的量化键互不相同
 	keys := map[int]bool{}
 	for _, p := range []*float64{nil, f64p(0.174), f64p(0.5), f64p(0.9375)} {
-		k := moonPhaseKey(p)
+		k := sky.MoonPhaseKey(p)
 		if keys[k] {
-			t.Fatalf("相位键重复：moonPhaseKey(%v) = %d 与前面相同", p, k)
+			t.Fatalf("相位键重复：sky.MoonPhaseKey(%v) = %d 与前面相同", p, k)
 		}
 		keys[k] = true
 	}
 	// nil 与"相位 0"必须区分（nil 画硬边圆盘，0 落 new 不画月亮）
-	if moonPhaseKey(nil) == moonPhaseKey(f64p(0.0)) {
+	if sky.MoonPhaseKey(nil) == sky.MoonPhaseKey(f64p(0.0)) {
 		t.Errorf("nil 与 phase=0 的键相同，无法区分回落画法与新月不画")
 	}
 	// 量化精度：1/800 内的抖动不改变键（避免每帧重烘）
-	if moonPhaseKey(f64p(0.3000)) != moonPhaseKey(f64p(0.3001)) {
+	if sky.MoonPhaseKey(f64p(0.3000)) != sky.MoonPhaseKey(f64p(0.3001)) {
 		t.Errorf("1/800 内的浮点抖动改变了键 ⇒ 会每帧重烘")
 	}
 
 	// 同一相位多次调用不重烘：skyCached 的 Builds 只 +1、Hits 增长
-	skyCache = skyCacheType{}
-	skyStats = SkyCacheStats{}
+	sky.SkyCache = sky.SkyCacheType{}
+	sky.SkyStats = sky.SkyCacheStats{}
 	size := image.Pt(540, 960)
-	e1 := skyCached(size, effect.Clear, false, f64p(0.174), 0)
-	e2 := skyCached(size, effect.Clear, false, f64p(0.174), 0)
+	e1 := sky.SkyCached(size, effect.Clear, false, f64p(0.174), 0)
+	e2 := sky.SkyCached(size, effect.Clear, false, f64p(0.174), 0)
 	if e1 == nil || e2 == nil {
-		t.Fatal("skyCached 返回 nil")
+		t.Fatal("sky.SkyCached 返回 nil")
 	}
 	if e1 != e2 {
 		t.Errorf("同一相位两次调用返回不同条目 ⇒ 重烘了")
 	}
-	if skyStats.Builds != 1 {
-		t.Errorf("同一相位两次调用 Builds = %d，期望 1（不重烘）", skyStats.Builds)
+	if sky.SkyStats.Builds != 1 {
+		t.Errorf("同一相位两次调用 Builds = %d，期望 1（不重烘）", sky.SkyStats.Builds)
 	}
-	if skyStats.Hits < 1 {
-		t.Errorf("同一相位第二次调用 Hits = %d，期望 ≥1", skyStats.Hits)
+	if sky.SkyStats.Hits < 1 {
+		t.Errorf("同一相位第二次调用 Hits = %d，期望 ≥1", sky.SkyStats.Hits)
 	}
 	// 相位变了 → 键变 → 重烘（Builds +1）
-	e3 := skyCached(size, effect.Clear, false, f64p(0.5), 0)
+	e3 := sky.SkyCached(size, effect.Clear, false, f64p(0.5), 0)
 	if e3 == e1 {
 		t.Errorf("相位变化后返回同一条目 ⇒ 没重烘")
 	}
-	if skyStats.Builds != 2 {
-		t.Errorf("相位变化后 Builds = %d，期望 2", skyStats.Builds)
+	if sky.SkyStats.Builds != 2 {
+		t.Errorf("相位变化后 Builds = %d，期望 2", sky.SkyStats.Builds)
 	}
 }
 
@@ -119,26 +120,26 @@ func f64p(v float64) *float64 { return &v }
 func TestBakeMoonPhases(t *testing.T) {
 	w, h := 1080, 1920
 	cx, cy := int(0.72*float64(w)), int(0.095*float64(h))
-	rc := moonRcFrac * float64(w)
+	rc := sky.MoonRcFrac * float64(w)
 
 	// 月核区（月心附近 rc 半径内）明显亮于天空基色的像素计数。
 	// 月亮层是子矩形，左上角 = 层原点 ⇒ 屏幕坐标减原点即层内坐标。
-	bright := func(e *moonLayerEntry) int {
+	bright := func(e *sky.MoonLayerEntry) int {
 		if e == nil {
 			return 0
 		}
 		n := 0
 		for y := cy - int(rc); y <= cy+int(rc); y++ {
 			for x := cx - int(rc); x <= cx+int(rc); x++ {
-				lx, ly := x-e.off.X, y-e.off.Y
-				if lx < 0 || ly < 0 || lx >= e.size.X || ly >= e.size.Y {
+				lx, ly := x-e.Off.X, y-e.Off.Y
+				if lx < 0 || ly < 0 || lx >= e.Size.X || ly >= e.Size.Y {
 					continue
 				}
-				i := e.img.PixOffset(lx, ly)
-				if e.img.Pix[i+3] == 0 {
+				i := e.Img.PixOffset(lx, ly)
+				if e.Img.Pix[i+3] == 0 {
 					continue // 层是透明底，只看画出来的像素
 				}
-				lum := (float64(e.img.Pix[i]) + float64(e.img.Pix[i+1]) + float64(e.img.Pix[i+2])) / 3
+				lum := (float64(e.Img.Pix[i]) + float64(e.Img.Pix[i+1]) + float64(e.Img.Pix[i+2])) / 3
 				if lum > 120 {
 					n++
 				}
@@ -149,17 +150,17 @@ func TestBakeMoonPhases(t *testing.T) {
 
 	// 相位 nil 的口径（规格 2.3）：**不画月亮** ⇒ 月核区亮像素必须 = 0。
 	// 旧口径是"取不到就当满月"（bakeMoonAt 里 p:=0.5）⇒ 缺数据时画出一轮满月。
-	if n := bright(moonLayerGet(w, h, nil)); n != 0 {
+	if n := bright(sky.MoonLayerGet(w, h, nil)); n != 0 {
 		t.Errorf("phase=nil 月核区亮像素 = %d ⇒ 取不到月相还在画月亮（应不画，与新月一致）", n)
 	}
-	if n := bright(moonLayerGet(w, h, f64p(0.5))); n == 0 {
+	if n := bright(sky.MoonLayerGet(w, h, f64p(0.5))); n == 0 {
 		t.Errorf("phase=0.5 素材绘制月核区无亮像素")
 	}
-	if n := bright(moonLayerGet(w, h, f64p(0.0))); n != 0 {
+	if n := bright(sky.MoonLayerGet(w, h, f64p(0.0))); n != 0 {
 		t.Errorf("phase=0.0 新月应不画月亮，月核区却有 %d 个亮像素", n)
 	}
 	// 白天不画月亮（层函数直接返回 nil）
-	if e := moonLayerGet(w, h, f64p(0.5)); e == nil {
+	if e := sky.MoonLayerGet(w, h, f64p(0.5)); e == nil {
 		t.Skip("月亮层为空，白天判据不适用")
 	}
 }
@@ -171,20 +172,20 @@ func TestBakeMoonPhases(t *testing.T) {
 func TestMoonLayerSmallWindow(t *testing.T) {
 	for _, ph := range []*float64{nil, f64p(0.0), f64p(0.174), f64p(0.5), f64p(0.875)} {
 		for _, sz := range [][2]int{{810, 1389}, {1080, 1920}, {400, 700}, {320, 480}} {
-			e := moonLayerGet(sz[0], sz[1], ph)
+			e := sky.MoonLayerGet(sz[0], sz[1], ph)
 			if e == nil {
 				continue
 			}
-			if e.off.X < 0 || e.off.Y < 0 {
-				t.Errorf("尺寸 %dx%d phase=%v 层左上角为负: %v", sz[0], sz[1], ph, e.off)
+			if e.Off.X < 0 || e.Off.Y < 0 {
+				t.Errorf("尺寸 %dx%d phase=%v 层左上角为负: %v", sz[0], sz[1], ph, e.Off)
 			}
-			if e.off.X+e.size.X > sz[0] || e.off.Y+e.size.Y > sz[1] {
-				t.Errorf("尺寸 %dx%d phase=%v 层越出屏幕: off=%v size=%v", sz[0], sz[1], ph, e.off, e.size)
+			if e.Off.X+e.Size.X > sz[0] || e.Off.Y+e.Size.Y > sz[1] {
+				t.Errorf("尺寸 %dx%d phase=%v 层越出屏幕: off=%v size=%v", sz[0], sz[1], ph, e.Off, e.Size)
 			}
 			// 逐像素访问一遍，越界会直接 panic
-			for y := 0; y < e.size.Y; y++ {
-				for x := 0; x < e.size.X; x++ {
-					_ = e.img.Pix[y*e.img.Stride+x]
+			for y := 0; y < e.Size.Y; y++ {
+				for x := 0; x < e.Size.X; x++ {
+					_ = e.Img.Pix[y*e.Img.Stride+x]
 				}
 			}
 		}

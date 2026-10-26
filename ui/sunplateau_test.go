@@ -35,6 +35,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
 )
 
@@ -90,12 +91,12 @@ func TestNoSaturatedPlateau(t *testing.T) {
 		name string
 		pct  int
 	}{{"晴(云量0)", 0}, {"多云见日(云量45)", 45}} {
-		baked := renderSkyCPU(w, h, effect.Clear, true, nil, tc.pct)
+		baked := sky.RenderSkyCPU(w, h, effect.Clear, true, nil, tc.pct)
 		n, box := sunPlateauBrightRun(baked, 250.0)
 		cx, cy := int(math.Round(0.72*float64(w))), int(math.Round(0.095*float64(h)))
 		t.Logf("%s 烘焙帧 %dx%d 亮度>=250 像素数=%d bbox=%v(%dx%d) 盘心(%d,%d)亮度=%.1f 盘可见度=%.2f dim=%.3f",
 			tc.name, w, h, n, box, box.Dx(), box.Dy(), cx, cy, sunLum(baked, cx, cy),
-			sunDiscVisibility(effect.Clear, tc.pct), sunDimOf(tc.pct))
+			sky.SunDiscVisibility(effect.Clear, tc.pct), sky.SunDimOf(tc.pct))
 		if n != 0 {
 			t.Errorf("%s 帧内亮度>=250 的像素 = %d 个（bbox %v，%dx%d）⇒ 饱和平顶还在（规格 §1 基线 19611 个/182x182）",
 				tc.name, n, box, box.Dx(), box.Dy())
@@ -164,8 +165,8 @@ func sunPlateauRayScanFrom(lift func(x, y int) float64, cx, cy int, ux, uy float
 func TestCenterBelowClipAndMonotone(t *testing.T) {
 	w, h := sunProbeW, sunProbeH
 	cx, cy := int(math.Round(0.72*float64(w))), int(math.Round(0.095*float64(h)))
-	baked := renderSkyCPU(w, h, effect.Clear, true, nil, 0)
-	base := skyBaseCPU(w, h, effect.Clear, true)
+	baked := sky.RenderSkyCPU(w, h, effect.Clear, true, nil, 0)
+	base := sky.SkyBaseCPU(w, h, effect.Clear, true)
 	lift := func(x, y int) float64 { return sunLum(baked, x, y) - sunLum(base, x, y) }
 	center := sunLum(baked, cx, cy)
 	t.Logf("盘心(%d,%d) 亮度=%.1f RGB=(%d,%d,%d) 同帧底色=%.1f 净抬升=%.1f（判据 盘心 ≤245）",
@@ -176,10 +177,10 @@ func TestCenterBelowClipAndMonotone(t *testing.T) {
 		t.Errorf("盘心亮度 %.1f > 245 ⇒ 盘心还在钳平区里（规格 §1 实测盘心 (254,251,237)）", center)
 	}
 	// 盘组外沿 = 泛光外沿 6rc（与 TestSunProfileMonotone 的剖面起点同一条口径）
-	rc := sunDiscRcFrac * (sunRcDimMin + sunRcDimSlope*sunDimOf(0)) * float64(w)
-	spreadFrom := int(math.Ceil(sunBloomRcFrac * rc))
+	rc := sky.SunDiscRcFrac * (sky.SunRcDimMin + sky.SunRcDimSlope*sky.SunDimOf(0)) * float64(w)
+	spreadFrom := int(math.Ceil(sky.SunBloomRcFrac * rc))
 	t.Logf("盘半径 rc=%.1f px 盘/提亮作用半径=%.1f px 泛光外沿 6rc=%.1f px ⇒ 铺光窗 r=%d..400 px",
-		rc, sunLiftR2Frac*rc, sunBloomRcFrac*rc, spreadFrom)
+		rc, sky.SunLiftR2Frac*rc, sky.SunBloomRcFrac*rc, spreadFrom)
 	dirs := []struct {
 		name   string
 		ux, uy float64
@@ -300,7 +301,7 @@ func sunPlateauGaussLum(img *image.NRGBA, radius int) []float64 {
 // ⇒ 间距 >120 且亮度接近主峰 ⇒ 两条判据一起判红。
 func TestSingleBrightPeak(t *testing.T) {
 	w, h := sunProbeW, sunProbeH
-	baked := renderSkyCPU(w, h, effect.Clear, true, nil, 0)
+	baked := sky.RenderSkyCPU(w, h, effect.Clear, true, nil, 0)
 	sm := sunPlateauGaussLum(baked, 18)
 	at := func(x, y int) float64 { return sm[y*w+x] }
 	// 主峰 = 平滑场的全局最大
@@ -380,8 +381,8 @@ func TestCornerLiftKept(t *testing.T) {
 		{"右下", w - box - 2, h - box - 2},
 	}
 	pct := 90
-	baked := renderSkyCPU(w, h, effect.Clear, true, nil, pct)
-	base := skyBaseCPU(w, h, effect.Clear, true)
+	baked := sky.RenderSkyCPU(w, h, effect.Clear, true, nil, pct)
+	base := sky.SkyBaseCPU(w, h, effect.Clear, true)
 	var sum, worst float64
 	worst = math.Inf(1)
 	for _, c := range corners {
@@ -397,7 +398,7 @@ func TestCornerLiftKept(t *testing.T) {
 	}
 	mean := sum / float64(len(corners))
 	t.Logf("云量=%d dim=%.3f U=%.1f 级 四角净抬升 平均=%.2f 最弱角=%.2f（判据 平均 ≥4、每角 >0）",
-		pct, sunDimOf(pct), sunSkyUniform*sunDimOf(pct), mean, worst)
+		pct, sky.SunDimOf(pct), sky.SunSkyUniform*sky.SunDimOf(pct), mean, worst)
 	if mean < 4.0 {
 		t.Errorf("云量 %d 四角净抬升平均 %.2f 级 < 4 级 ⇒ 全天空常数没有把四角抬起来（铺到四角口径退化）", pct, mean)
 	}

@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
 )
 
@@ -259,50 +260,50 @@ func TestActiveCountConsumesBootCap(t *testing.T) {
 // TestBakeScaleFirstFrameAfterSizeChange 钉死 C3 第 2 条：
 // 尺寸变化后的首帧用比稳态粗一档的尺度，第二帧起回到稳态尺度，稳态口径不变。
 func TestBakeScaleFirstFrameAfterSizeChange(t *testing.T) {
-	if skyCacheScale != 2 {
-		t.Fatalf("稳态烘焙尺度 skyCacheScale = %d，口径 2（禁改）", skyCacheScale)
+	if sky.SkyCacheScale != 2 {
+		t.Fatalf("稳态烘焙尺度 sky.SkyCacheScale = %d，口径 2（禁改）", sky.SkyCacheScale)
 	}
-	if skyCacheBootScale != skyCacheScale*2 {
-		t.Fatalf("首帧尺度 skyCacheBootScale = %d，期望比稳态粗一档 = %d", skyCacheBootScale, skyCacheScale*2)
+	if sky.SkyCacheBootScale != sky.SkyCacheScale*2 {
+		t.Fatalf("首帧尺度 sky.SkyCacheBootScale = %d，期望比稳态粗一档 = %d", sky.SkyCacheBootScale, sky.SkyCacheScale*2)
 	}
-	if got := BakeScale(true); got != 4 {
-		t.Errorf("BakeScale(true) = %d，期望 4", got)
+	if got := sky.BakeScale(true); got != 4 {
+		t.Errorf("sky.BakeScale(true) = %d，期望 4", got)
 	}
-	if got := BakeScale(false); got != 2 {
-		t.Errorf("BakeScale(false) = %d，期望 2（稳态）", got)
+	if got := sky.BakeScale(false); got != 2 {
+		t.Errorf("sky.BakeScale(false) = %d，期望 2（稳态）", got)
 	}
 
-	skyCache = skyCacheType{}
-	skyStats = SkyCacheStats{}
+	sky.SkyCache = sky.SkyCacheType{}
+	sky.SkyStats = sky.SkyCacheStats{}
 	big := image.Pt(800, 600)
-	e0 := skyCached(big, effect.Clear, true, nil, 0) // 冷启动首烘 = 稳态口径
+	e0 := sky.SkyCached(big, effect.Clear, true, nil, 0) // 冷启动首烘 = 稳态口径
 	if e0 == nil {
-		t.Fatal("skyCached 返回 nil")
+		t.Fatal("sky.SkyCached 返回 nil")
 	}
-	if dx, dy := e0.img.Bounds().Dx(), e0.img.Bounds().Dy(); dx != 800/skyCacheScale || dy != 600/skyCacheScale {
-		t.Fatalf("冷启动首烘尺度不是稳态：%dx%d，期望 %dx%d", dx, dy, 800/skyCacheScale, 600/skyCacheScale)
+	if dx, dy := e0.Img.Bounds().Dx(), e0.Img.Bounds().Dy(); dx != 800/sky.SkyCacheScale || dy != 600/sky.SkyCacheScale {
+		t.Fatalf("冷启动首烘尺度不是稳态：%dx%d，期望 %dx%d", dx, dy, 800/sky.SkyCacheScale, 600/sky.SkyCacheScale)
 	}
 	small := image.Pt(400, 300)
-	e1 := skyCached(small, effect.Clear, true, nil, 0) // 尺寸变化后的首帧 ⇒ 粗一档
-	if dx, dy := e1.img.Bounds().Dx(), e1.img.Bounds().Dy(); dx != 400/skyCacheBootScale || dy != 300/skyCacheBootScale {
-		t.Fatalf("尺寸变化首帧尺度 = %dx%d，期望 %dx%d（粗一档）", dx, dy, 400/skyCacheBootScale, 300/skyCacheBootScale)
+	e1 := sky.SkyCached(small, effect.Clear, true, nil, 0) // 尺寸变化后的首帧 ⇒ 粗一档
+	if dx, dy := e1.Img.Bounds().Dx(), e1.Img.Bounds().Dy(); dx != 400/sky.SkyCacheBootScale || dy != 300/sky.SkyCacheBootScale {
+		t.Fatalf("尺寸变化首帧尺度 = %dx%d，期望 %dx%d（粗一档）", dx, dy, 400/sky.SkyCacheBootScale, 300/sky.SkyCacheBootScale)
 	}
-	e2 := skyCached(small, effect.Clear, true, nil, 0) // 第二帧 ⇒ 回到稳态
-	if dx, dy := e2.img.Bounds().Dx(), e2.img.Bounds().Dy(); dx != 400/skyCacheScale || dy != 300/skyCacheScale {
-		t.Fatalf("第二帧尺度 = %dx%d，期望 %dx%d（稳态）", dx, dy, 400/skyCacheScale, 300/skyCacheScale)
+	e2 := sky.SkyCached(small, effect.Clear, true, nil, 0) // 第二帧 ⇒ 回到稳态
+	if dx, dy := e2.Img.Bounds().Dx(), e2.Img.Bounds().Dy(); dx != 400/sky.SkyCacheScale || dy != 300/sky.SkyCacheScale {
+		t.Fatalf("第二帧尺度 = %dx%d，期望 %dx%d（稳态）", dx, dy, 400/sky.SkyCacheScale, 300/sky.SkyCacheScale)
 	}
-	e3 := skyCached(small, effect.Clear, true, nil, 0)
+	e3 := sky.SkyCached(small, effect.Clear, true, nil, 0)
 	if e3 != e2 {
 		t.Fatalf("第三帧换了图 ⇒ 稳态没命中缓存")
 	}
-	if b := SkyCacheGet().Builds; b != 3 {
+	if b := sky.SkyCacheGet().Builds; b != 3 {
 		t.Fatalf("Builds = %d，期望 3（冷启动 + 首帧粗 + 第二帧升级，之后全命中）", b)
 	}
 	// 同类同尺寸的月相变化（键变、尺寸没变）⇒ 稳态尺度，不吃粗尺度
-	e4 := skyCached(small, effect.Clear, true, f64p(0.5), 0)
-	if dx := e4.img.Bounds().Dx(); dx != 400/skyCacheScale {
-		t.Fatalf("键变（尺寸未变）后尺度 = %d，期望 %d（稳态）", dx, 400/skyCacheScale)
+	e4 := sky.SkyCached(small, effect.Clear, true, f64p(0.5), 0)
+	if dx := e4.Img.Bounds().Dx(); dx != 400/sky.SkyCacheScale {
+		t.Fatalf("键变（尺寸未变）后尺度 = %d，期望 %d（稳态）", dx, 400/sky.SkyCacheScale)
 	}
 	t.Logf("尺寸变化首帧 %dx%d → 第二帧 %dx%d → 命中同图",
-		e1.img.Bounds().Dx(), e1.img.Bounds().Dy(), e2.img.Bounds().Dx(), e2.img.Bounds().Dy())
+		e1.Img.Bounds().Dx(), e1.Img.Bounds().Dy(), e2.Img.Bounds().Dx(), e2.Img.Bounds().Dy())
 }

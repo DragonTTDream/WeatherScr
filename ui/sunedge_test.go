@@ -21,6 +21,7 @@ import (
 
 	"gioui.org/gpu/headless"
 
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
 )
 
@@ -73,8 +74,8 @@ func TestSunLightNoEdge(t *testing.T) {
 		{"灰蒙(宽光)", effect.Overcast, 100, true},
 	}
 	for _, c := range cases {
-		baked := renderSkyCPU(w, h, c.cls, true, nil, c.pct)
-		base := skyBaseCPU(w, h, c.cls, true)
+		baked := sky.RenderSkyCPU(w, h, c.cls, true, nil, c.pct)
+		base := sky.SkyBaseCPU(w, h, c.cls, true)
 		lift := func(x, y int) float64 { return sunLum(baked, x, y) - sunLum(base, x, y) }
 		if lift(cx, cy) <= 1 {
 			t.Fatalf("%s: 盘心净抬升 %.1f ≤ 1 ⇒ 太阳没画进烘焙，剖面测不到东西", c.name, lift(cx, cy))
@@ -105,7 +106,7 @@ func TestSunLightNoEdge(t *testing.T) {
 			// 同一条判据在 TestSunProfileNoHardEdge 里也是从 ceil(rc)+1 起量的。
 			// 晴档平顶那批把"加满钳平"换成逐通道留头合成之后，盘缘这一截不再被饱和区盖住
 			// ⇒ 盘缘内的陡段单独打印（discStep），硬边判据打在盘缘之外（maxStep ≤ 2 级）。
-			rcPx := sunDiscRcFrac * (sunRcDimMin + sunRcDimSlope*sunDimOf(c.pct)) * float64(w)
+			rcPx := sky.SunDiscRcFrac * (sky.SunRcDimMin + sky.SunRcDimSlope*sky.SunDimOf(c.pct)) * float64(w)
 			if c.cls == effect.Overcast {
 				rcPx = 0 // 灰蒙档不画盘 ⇒ 整条射线都是铺光，全窗判
 			}

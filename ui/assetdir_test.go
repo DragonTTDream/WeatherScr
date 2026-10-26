@@ -17,6 +17,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
 )
 
@@ -63,18 +64,18 @@ func TestAssetOverrideDisabledByDefault(t *testing.T) {
 	if _, _, _, ok := assetImage("sky_day.png"); ok {
 		t.Fatal("未启用时 assetImage 应返回 false")
 	}
-	if n := skyOverrideName(true); n != "" {
+	if n := sky.SkyOverrideName(true); n != "" {
 		t.Fatalf("未启用时天空底图应为空，得到 %s", n)
 	}
-	if n := skyOverrideName(false); n != "" {
+	if n := sky.SkyOverrideName(false); n != "" {
 		t.Fatalf("未启用时天空底图应为空，得到 %s", n)
 	}
-	if n := sunOverrideName(); n != "" {
+	if n := sky.SunOverrideName(); n != "" {
 		t.Fatalf("未启用时太阳贴图应为空（内嵌素材里没有 sun.png），得到 %s", n)
 	}
 	// 月亮 / 雨丝：**内嵌素材存在即走**（素材落地取证 1）。
 	// 未启用覆盖目录时这两项走的是内嵌素材，不再是"没有贴图"。
-	if n := moonOverrideName(); n != "moon.png" {
+	if n := sky.MoonOverrideName(); n != "moon.png" {
 		t.Fatalf("未启用覆盖目录时月亮应走内嵌素材，得到 %q", n)
 	}
 	if _, sz, ok := rainTexOverride(); !ok || sz.X <= 0 {
@@ -83,7 +84,7 @@ func TestAssetOverrideDisabledByDefault(t *testing.T) {
 	if tag := assetSourceTag("moon.png"); tag != "embed|moon.png" {
 		t.Fatalf("内嵌素材的来源标识应为 embed|moon.png，得到 %q", tag)
 	}
-	if k := skyBakeTexKey(true); k != "" {
+	if k := sky.SkyBakeTexKey(true); k != "" {
 		t.Fatalf("未启用时天空键的贴图项应为空，得到 %q", k)
 	}
 	if st := AssetOverrideStatus(); len(st) != 0 {
@@ -188,33 +189,33 @@ func TestSkyBranchConditions(t *testing.T) {
 	writeTestPNG(t, dir, "sky_sunset.png", mk(color.NRGBA{R: 250, G: 40, B: 40, A: 255}, 40, 80))
 	useAssetDir(t, dir)
 
-	if n := skyOverrideName(true); n != "sky_day.png" {
+	if n := sky.SkyOverrideName(true); n != "sky_day.png" {
 		t.Fatalf("白天应选 sky_day.png，得到 %s", n)
 	}
-	if n := skyOverrideName(false); n != "sky_night.png" {
+	if n := sky.SkyOverrideName(false); n != "sky_night.png" {
 		t.Fatalf("夜间应选 sky_night.png，得到 %s", n)
 	}
-	if skySunsetWindowActive() {
+	if sky.SkySunsetWindowActive() {
 		t.Fatal("无日出日落数据源时日落窗口不应启用")
 	}
-	if n := skyOverrideName(true); n == "sky_sunset.png" {
+	if n := sky.SkyOverrideName(true); n == "sky_sunset.png" {
 		t.Fatal("日落窗口未启用时不应选 sky_sunset")
 	}
-	if skyBakeTexKey(true) == "" || skyBakeTexKey(false) == "" {
+	if sky.SkyBakeTexKey(true) == "" || sky.SkyBakeTexKey(false) == "" {
 		t.Fatal("启用覆盖后天空缓存键的贴图项不应为空")
 	}
-	if skyBakeTexKey(true) == skyBakeTexKey(false) {
+	if sky.SkyBakeTexKey(true) == sky.SkyBakeTexKey(false) {
 		t.Fatal("白天/夜间的天空缓存键应不同（避免昼夜切换后仍用旧图）")
 	}
 
 	// 贴图取代渐变色填充：烘焙结果应等于贴图缩放后的颜色（取中部一点判色）
-	img := renderSkyCPU(40, 80, effect.Clear, true, nil, 0)
+	img := sky.RenderSkyCPU(40, 80, effect.Clear, true, nil, 0)
 	c := img.NRGBAAt(20, 40)
 	if c.R < 150 || c.G < 60 || c.B > 120 {
 		t.Fatalf("天空底图未取自贴图，中部像素 = %v", c)
 	}
 	// 夜间：星星照旧画在贴图之上 ⇒ 烘焙结果不等于纯贴图
-	nimg := renderSkyCPU(40, 80, effect.Clear, false, nil, 0)
+	nimg := sky.RenderSkyCPU(40, 80, effect.Clear, false, nil, 0)
 	plain := image.NewNRGBA(image.Rect(0, 0, 40, 80))
 	for y := 0; y < 80; y++ {
 		for x := 0; x < 40; x++ {
@@ -235,17 +236,17 @@ func TestSkyBranchConditions(t *testing.T) {
 	t.Logf("夜间烘焙相对纯贴图的差异像素 = %d/3200", diff)
 
 	// 缓存键含贴图名：昼夜两次 skyCached 应各建一次（不共用旧图）
-	skyCache = skyCacheType{}
+	sky.SkyCache = sky.SkyCacheType{}
 	size := image.Pt(80, 160)
-	eDay := skyCached(size, effect.Clear, true, nil, 0)
-	eNight := skyCached(size, effect.Clear, false, nil, 0)
+	eDay := sky.SkyCached(size, effect.Clear, true, nil, 0)
+	eNight := sky.SkyCached(size, effect.Clear, false, nil, 0)
 	if eDay == eNight {
 		t.Fatal("白天与夜间不应共用同一张烘焙纹理")
 	}
-	if skyCache.key.tex == "" {
+	if sky.SkyCache.Key.Tex == "" {
 		t.Fatal("天空缓存键的贴图项不应为空")
 	}
-	t.Logf("skyCache.key.tex = %s", skyCache.key.tex)
+	t.Logf("sky.SkyCache.Key.Tex = %s", sky.SkyCache.Key.Tex)
 }
 
 // 月亮分支（规格 1.3）：亮面用贴图表面细节、暗面保持透明、缓存键含贴图名。
@@ -261,47 +262,47 @@ func TestMoonBranchConditions(t *testing.T) {
 	useAssetDir(t, "")
 	w, h := 540, 960
 	ph := f64p(0.5)
-	off := moonLayerGet(w, h, ph)
+	off := sky.MoonLayerGet(w, h, ph)
 	assetResetForTest()
 	writeTestPNG(t, dir, "moon.png", moon)
 	useAssetDir(t, dir)
-	on := moonLayerGet(w, h, ph)
+	on := sky.MoonLayerGet(w, h, ph)
 	if on == nil || off == nil {
 		t.Fatal("月亮层不应为 nil")
 	}
-	if !strings.Contains(moonLayerCache.key.tex, "moon.png") {
-		t.Fatalf("月亮层缓存键应含贴图名与来源，得到 %q", moonLayerCache.key.tex)
+	if !strings.Contains(sky.MoonLayerCache.Key.Tex, "moon.png") {
+		t.Fatalf("月亮层缓存键应含贴图名与来源，得到 %q", sky.MoonLayerCache.Key.Tex)
 	}
-	if !strings.Contains(moonLayerCache.key.tex, dir) {
-		t.Fatalf("月亮层缓存键应含**来源**（覆盖目录路径），得到 %q", moonLayerCache.key.tex)
+	if !strings.Contains(sky.MoonLayerCache.Key.Tex, dir) {
+		t.Fatalf("月亮层缓存键应含**来源**（覆盖目录路径），得到 %q", sky.MoonLayerCache.Key.Tex)
 	}
 	// 亮面颜色被贴图改变（满月 = 整盘亮面）
 	cx, cy := int(0.72*float64(w)), int(0.095*float64(h))
-	ox, oy := on.off.X, on.off.Y
-	cOn := on.img.NRGBAAt(cx-ox, cy-oy)
-	cOff := off.img.NRGBAAt(cx-ox, cy-oy)
+	ox, oy := on.Off.X, on.Off.Y
+	cOn := on.Img.NRGBAAt(cx-ox, cy-oy)
+	cOff := off.Img.NRGBAAt(cx-ox, cy-oy)
 	if !(cOn.R > 200 && cOn.G < cOff.G) {
 		t.Fatalf("亮面未取贴图表面细节：贴图版=%v 程序化版=%v", cOn, cOff)
 	}
 	t.Logf("满月月心：贴图版=%v 程序化版=%v", cOn, cOff)
 	// 暗面保持透明：眉月 0.125 的左半边（亮面在右）应全透明
 	ph2 := f64p(0.125)
-	layer := moonLayerGet(w, h, ph2)
+	layer := sky.MoonLayerGet(w, h, ph2)
 	if layer == nil {
 		t.Fatal("眉月层不应为 nil")
 	}
-	rc := int(moonRcFrac * float64(w))
+	rc := int(sky.MoonRcFrac * float64(w))
 	dark := 0
 	for dy := -rc; dy <= rc; dy++ {
 		for dx := -rc; dx <= 0; dx++ {
 			x, y := cx+dx, cy+dy
-			if x < ox || y < oy || x >= ox+layer.size.X || y >= oy+layer.size.Y {
+			if x < ox || y < oy || x >= ox+layer.Size.X || y >= oy+layer.Size.Y {
 				continue
 			}
 			if dx*dx+dy*dy > rc*rc {
 				continue
 			}
-			if layer.img.NRGBAAt(x-ox, y-oy).A == 0 {
+			if layer.Img.NRGBAAt(x-ox, y-oy).A == 0 {
 				dark++
 			}
 		}
@@ -323,11 +324,11 @@ func TestSunBranchConditions(t *testing.T) {
 	}
 	w, h := 540, 960
 	useAssetDir(t, "")
-	off := renderSkyCPU(w/2, h/2, effect.Clear, true, nil, 0)
+	off := sky.RenderSkyCPU(w/2, h/2, effect.Clear, true, nil, 0)
 	assetResetForTest()
 	writeTestPNG(t, dir, "sun.png", sun)
 	useAssetDir(t, dir)
-	on := renderSkyCPU(w/2, h/2, effect.Clear, true, nil, 0)
+	on := sky.RenderSkyCPU(w/2, h/2, effect.Clear, true, nil, 0)
 	cx, cy := int(0.72*float64(w/2)), int(0.095*float64(h/2))
 	cOn := on.NRGBAAt(cx, cy)
 	cOff := off.NRGBAAt(cx, cy)

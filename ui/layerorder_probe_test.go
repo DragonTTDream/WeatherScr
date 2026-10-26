@@ -9,6 +9,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
 )
 
@@ -48,7 +49,7 @@ func TestMoonLayerOrder(t *testing.T) {
 	count := func(img *image.RGBA, thr int) int {
 		fw, fh := float64(PortraitW), float64(PortraitH)
 		cx, cy := int(0.72*fw), int(0.095*fh)
-		rc := int(moonRcFrac * fw)
+		rc := int(sky.MoonRcFrac * fw)
 		n := 0
 		for y := cy - rc; y <= cy+rc; y++ {
 			for x := cx - rc; x <= cx+rc; x++ {
@@ -68,7 +69,7 @@ func TestMoonLayerOrder(t *testing.T) {
 	{
 		fw, fh := float64(PortraitW), float64(PortraitH)
 		cx, cy := int(0.72*fw), int(0.095*fh)
-		rc := int(moonRcFrac * fw)
+		rc := int(sky.MoonRcFrac * fw)
 		base := render(nil, LayerSky|LayerDepth)
 		for y := cy - rc; y <= cy+rc; y++ {
 			for x := cx - rc; x <= cx+rc; x++ {

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
 )
 
@@ -41,8 +42,8 @@ func sunLuma(img *image.NRGBA, x, y int) float64 {
 // 量出来的就不是屏幕上真实存在的东西（本仓库既有口径）。
 // 返回值里的 centerLift = 盘心的净抬升（烘焙 - 基色），灰蒙档"留亮斑"的判据对象。
 func sunDiscPixels(cls effect.Class, cloudPct int) (int, float64, int, float64) {
-	baked := renderSkyCPU(sunProbeW, sunProbeH, cls, true, nil, cloudPct)
-	base := skyBaseCPU(sunProbeW, sunProbeH, cls, true)
+	baked := sky.RenderSkyCPU(sunProbeW, sunProbeH, cls, true, nil, cloudPct)
+	base := sky.SkyBaseCPU(sunProbeW, sunProbeH, cls, true)
 	w, h := sunProbeW, sunProbeH
 	rc := 0.045 * float64(w)
 	cx, cy := int(0.72*float64(w)), int(0.095*float64(h))
@@ -120,7 +121,7 @@ func TestSunDiscPerClass(t *testing.T) {
 		core0, peak0, box, lift0 := sunDiscPixels(cls, 40)
 		core100, peak100, _, lift100 := sunDiscPixels(cls, 100)
 		bright20, bright100 := sunDiscSignature(cls, 40), sunDiscSignature(cls, 100)
-		vis20, vis100 := sunDiscVisibility(cls, 40), sunDiscVisibility(cls, 100)
+		vis20, vis100 := sky.SunDiscVisibility(cls, 40), sky.SunDiscVisibility(cls, 100)
 		t.Logf("%-13s 云量40: 盘内核=%6d 盘心峰=%.1f 净抬升=%.1f 可见度=%.2f 盘体亮像素=%5d | 云量100: 盘内核=%6d 盘心峰=%.1f 净抬升=%.1f 可见度=%.2f 盘体亮像素=%5d | 太阳盒=%d px",
 			cls, core0, peak0, lift0, vis20, bright20, core100, peak100, lift100, vis100, bright100, box)
 		if box < 1000 {
@@ -158,8 +159,8 @@ func TestSunDiscPerClass(t *testing.T) {
 //  3. 盘缘之外（r ≥ rc 起）逐像素相邻差 ≤6 级、不升
 func TestSunProfileNoHardEdge(t *testing.T) {
 	for _, cls := range []effect.Class{effect.Clear, effect.PartlyCloudy} {
-		img := renderSkyCPU(sunProbeW, sunProbeH, cls, true, nil, 0)
-		rc := sunDiscRcFrac * float64(sunProbeW)
+		img := sky.RenderSkyCPU(sunProbeW, sunProbeH, cls, true, nil, 0)
+		rc := sky.SunDiscRcFrac * float64(sunProbeW)
 		cx, cy := int(math.Round(0.72*float64(sunProbeW))), int(math.Round(0.095*float64(sunProbeH)))
 		// 剖面长度 3rc → 6rc → 12rc（逐批改写，理由）：全天空那一组把盘外一大片抬进
 		// alpha 钳位区，"跌到盘心−30 级"这一点从 r≈24 px 外移到 r≈92 px = 3.79rc，
@@ -243,7 +244,7 @@ func TestSunProfileNoHardEdge(t *testing.T) {
 		// 盘体剖面函数本体：从 1 落到 0 的宽度
 		oneEnd, zeroAt := 0.0, 0.0
 		for r := 0.0; r <= 2.0*rc; r += 0.25 {
-			v := sunDiscProfile(r, rc)
+			v := sky.SunDiscProfile(r, rc)
 			if v >= 1.0 {
 				oneEnd = r
 			}
@@ -255,9 +256,9 @@ func TestSunProfileNoHardEdge(t *testing.T) {
 		if profWidth < 0 {
 			t.Fatalf("%s: 盘体剖面测量不自洽（取 1 到 %.1f px、取 0 从 %.1f px）", cls, oneEnd, zeroAt)
 		}
-		if math.Abs(profWidth-sunFeatherFrac*rc) > 2.0 {
+		if math.Abs(profWidth-sky.SunFeatherFrac*rc) > 2.0 {
 			t.Errorf("%s: 盘体羽化带宽 %.1f px，半径 12%% = %.1f px（±2 px）⇒ 羽化带宽越界",
-				cls, profWidth, sunFeatherFrac*rc)
+				cls, profWidth, sky.SunFeatherFrac*rc)
 		}
 		if edge < 0 {
 			t.Fatalf("%s: 两条射线在 12rc 窗口内都没有跌到盘心−30 级 ⇒ 盘缘不存在，测试无意义", cls)
@@ -280,8 +281,8 @@ func TestSunProfileNoHardEdge(t *testing.T) {
 			t.Errorf("%s: 盘缘之外相邻差峰值 %.1f 级 > 6 级 ⇒ 第二条硬边", cls, maxStep)
 		}
 		t.Logf("%s: 剖面射线=%s 中心 (%d,%d) rc=%.1f px 盘心=%.0f 复合平台终点=r%d 复合跌落点=r%d 盘内0..0.8rc落差=%.1f 级 复合过渡宽=%.1f px（铺光 L=%.2fw 决定，只打印） 盘体剖面带宽=%.1f px(半径12%%=%.1f px) 盘缘外相邻差峰值=%.1f 级 r=rc=%.0f r=2rc=%.0f r=3rc=%.0f",
-			cls, profDir, cx, cy, rc, peak, plateauEnd, edge, innerDrop, feather, sunMainLFrac,
-			profWidth, sunFeatherFrac*rc, maxStep,
+			cls, profDir, cx, cy, rc, peak, plateauEnd, edge, innerDrop, feather, sky.SunMainLFrac,
+			profWidth, sky.SunFeatherFrac*rc, maxStep,
 			prof[minInt(len(prof)-1, int(rc))], prof[minInt(len(prof)-1, int(2*rc))], prof[len(prof)-1])
 	}
 }

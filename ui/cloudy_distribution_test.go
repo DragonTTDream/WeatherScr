@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
 )
 
@@ -27,8 +28,8 @@ func TestCloudYDistribution(t *testing.T) {
 		}
 	}
 	// 月盘（不含光晕）：半径 0.06w，归一化 y 半径 = 0.06*W/H
-	dR := moonRcFrac
-	dRy := moonRcFrac * float64(PortraitW) / float64(PortraitH)
+	dR := sky.MoonRcFrac
+	dRy := sky.MoonRcFrac * float64(PortraitW) / float64(PortraitH)
 	// 云盘半高（归一化）：贴图 127 px × sc × (0.55+0.45·depth)
 	hit := 0
 	frames := 0

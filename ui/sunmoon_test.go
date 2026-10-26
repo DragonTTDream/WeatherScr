@@ -29,6 +29,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
 )
 
@@ -44,8 +45,8 @@ type sunProfileRay struct {
 
 // sunProfileRays 铺光剖面的两条射线（水平向左 + 垂直向下），窗口见文件头口径说明。
 func sunProfileRays(w, h, cx, cy int) []sunProfileRay {
-	rc := sunDiscRcFrac * float64(w)
-	start := int(math.Ceil(sunBloomRcFrac * rc)) // 盘组作用半径 = 泛光外沿 6rc
+	rc := sky.SunDiscRcFrac * float64(w)
+	start := int(math.Ceil(sky.SunBloomRcFrac * rc)) // 盘组作用半径 = 泛光外沿 6rc
 	hLeft := int(math.Min(0.60*float64(w), float64(cx)-0.10*float64(w)))
 	return []sunProfileRay{
 		// 水平向左：太阳在 0.72w ⇒ 向左只有 0.72w，扣掉盘组半径 0.27w 与屏左沿暗角带 0.10w
@@ -91,14 +92,14 @@ func sunProfileSlopeScan(lift func(x, y int) float64, r sunProfileRay) (n int, s
 func TestSunProfileMonotone(t *testing.T) {
 	w, h := sunProbeW, sunProbeH
 	cx, cy := int(math.Round(0.72*float64(w))), int(math.Round(0.095*float64(h)))
-	baked := renderSkyCPU(w, h, effect.Clear, true, nil, 0)
-	base := skyBaseCPU(w, h, effect.Clear, true)
+	baked := sky.RenderSkyCPU(w, h, effect.Clear, true, nil, 0)
+	base := sky.SkyBaseCPU(w, h, effect.Clear, true)
 	lift := func(x, y int) float64 { return sunLum(baked, x, y) - sunLum(base, x, y) }
 	if lift(cx, cy) <= 1 {
 		t.Fatalf("盘心净抬升 %.1f ≤ 1 ⇒ 太阳没画进烘焙，剖面测不到东西", lift(cx, cy))
 	}
 	t.Logf("晴档 云量=0 dim=%.3f 盘心净抬升=%.1f 盘半径 rc=%.1f px 泛光外沿=%.1f px",
-		sunDimOf(0), lift(cx, cy), sunDiscRcFrac*float64(w), sunBloomRcFrac*sunDiscRcFrac*float64(w))
+		sky.SunDimOf(0), lift(cx, cy), sky.SunDiscRcFrac*float64(w), sky.SunBloomRcFrac*sky.SunDiscRcFrac*float64(w))
 	for _, r := range sunProfileRays(w, h, cx, cy) {
 		n, slopePeak, changePeak, rises, last := sunProfileSlopeScan(lift, r)
 		t.Logf("%s剖面 r=%d..%d px（%d 个 20px 取样点）净抬升末端=%.1f 斜率峰=%.2f 级/20px 斜率变化峰=%.2f 级 上升处数=%d",
@@ -129,16 +130,16 @@ func TestSunProfileMonotone(t *testing.T) {
 func TestSunProfileNoEdge(t *testing.T) {
 	w, h := sunProbeW, sunProbeH
 	cx, cy := int(math.Round(0.72*float64(w))), int(math.Round(0.095*float64(h)))
-	rim := int(math.Round(0.5 * sunGlowWidthFrac * float64(w)))
+	rim := int(math.Round(0.5 * sky.SunGlowWidthFrac * float64(w)))
 	for _, pct := range []int{45, 90} {
-		baked := renderSkyCPU(w, h, effect.Clear, true, nil, pct)
-		base := skyBaseCPU(w, h, effect.Clear, true)
+		baked := sky.RenderSkyCPU(w, h, effect.Clear, true, nil, pct)
+		base := sky.SkyBaseCPU(w, h, effect.Clear, true)
 		lift := func(x, y int) float64 { return sunLum(baked, x, y) - sunLum(base, x, y) }
 		if lift(cx, cy) <= 1 {
 			t.Fatalf("云量 %d 盘心净抬升 %.1f ≤ 1 ⇒ 太阳没画进烘焙，剖面测不到东西", pct, lift(cx, cy))
 		}
 		t.Logf("云量=%d dim=%.3f 盘可见度=%.2f 盘心净抬升=%.1f",
-			pct, sunDimOf(pct), sunDiscVisibility(effect.Clear, pct), lift(cx, cy))
+			pct, sky.SunDimOf(pct), sky.SunDiscVisibility(effect.Clear, pct), lift(cx, cy))
 		for _, r := range sunProfileRays(w, h, cx, cy) {
 			n, slopePeak, changePeak, rises, last := sunProfileSlopeScan(lift, r)
 			t.Logf("云量=%d %s剖面 r=%d..%d px（%d 点）末端净抬升=%.1f 斜率峰=%.2f 斜率变化峰=%.2f 上升处数=%d",
@@ -171,7 +172,7 @@ func TestSunProfileNoEdge(t *testing.T) {
 		}
 		rimIn, rimOut := si/20.0, so/20.0
 		t.Logf("云量=%d 旧贴图 rim=%.1fw(%d px) 内侧 20px 均=%.2f 外侧 20px 均=%.2f 差=%.2f 级（判据 <3）",
-			pct, 0.5*sunGlowWidthFrac, rim, rimIn, rimOut, math.Abs(rimIn-rimOut))
+			pct, 0.5*sky.SunGlowWidthFrac, rim, rimIn, rimOut, math.Abs(rimIn-rimOut))
 		if d := math.Abs(rimIn - rimOut); d >= 3.0 {
 			t.Errorf("云量 %d 在旧贴图 rim(0.8w) 处两侧平均差 %.2f 级 ≥ 3 级 ⇒ rim 处仍有跳变", pct, d)
 		}
@@ -235,8 +236,8 @@ func TestSunCornerLift(t *testing.T) {
 		pct  int
 		need float64
 	}{{90, 4.0}, {0, 8.0}} {
-		baked := renderSkyCPU(w, h, effect.Clear, true, nil, tc.pct)
-		base := skyBaseCPU(w, h, effect.Clear, true)
+		baked := sky.RenderSkyCPU(w, h, effect.Clear, true, nil, tc.pct)
+		base := sky.SkyBaseCPU(w, h, effect.Clear, true)
 		var sum, worst float64
 		worst = math.Inf(1)
 		for _, c := range corners {
@@ -252,7 +253,7 @@ func TestSunCornerLift(t *testing.T) {
 		}
 		mean := sum / float64(len(corners))
 		t.Logf("云量=%d dim=%.3f U=%.1f 级 四角净抬升 平均=%.2f 最弱角=%.2f（判据 平均 ≥%.0f、每角 >0）",
-			tc.pct, sunDimOf(tc.pct), sunSkyUniform*sunDimOf(tc.pct), mean, worst, tc.need)
+			tc.pct, sky.SunDimOf(tc.pct), sky.SunSkyUniform*sky.SunDimOf(tc.pct), mean, worst, tc.need)
 		if mean < tc.need {
 			t.Errorf("云量 %d 四角净抬升平均 %.2f 级 < %.0f 级 ⇒ 全天空常数没有把四角抬起来", tc.pct, mean, tc.need)
 		}
@@ -277,10 +278,10 @@ func TestSunCornerLift(t *testing.T) {
 func TestMoonPhaseNilDrawsNothing(t *testing.T) {
 	w, h := PortraitW, PortraitH
 	cx, cy := int(math.Round(0.72*float64(w))), int(math.Round(0.095*float64(h)))
-	rc := moonRcFrac * float64(w)
+	rc := sky.MoonRcFrac * float64(w)
 
 	// 盘区月面像素计数：亮侧 = 月心右侧，暗侧 = 月心左侧
-	count := func(e *moonLayerEntry) (lit, dark, total int) {
+	count := func(e *sky.MoonLayerEntry) (lit, dark, total int) {
 		if e == nil {
 			return 0, 0, 0
 		}
@@ -290,15 +291,15 @@ func TestMoonPhaseNilDrawsNothing(t *testing.T) {
 				if math.Hypot(float64(x-cx), float64(y-cy)) > rc {
 					continue
 				}
-				lx, ly := x-e.off.X, y-e.off.Y
-				if lx < 0 || ly < 0 || lx >= e.size.X || ly >= e.size.Y {
+				lx, ly := x-e.Off.X, y-e.Off.Y
+				if lx < 0 || ly < 0 || lx >= e.Size.X || ly >= e.Size.Y {
 					continue
 				}
-				i := e.img.PixOffset(lx, ly)
-				if int(e.img.Pix[i+3]) < 200 {
+				i := e.Img.PixOffset(lx, ly)
+				if int(e.Img.Pix[i+3]) < 200 {
 					continue
 				}
-				lum := (float64(e.img.Pix[i]) + float64(e.img.Pix[i+1]) + float64(e.img.Pix[i+2])) / 3
+				lum := (float64(e.Img.Pix[i]) + float64(e.Img.Pix[i+1]) + float64(e.Img.Pix[i+2])) / 3
 				if lum <= 120 {
 					continue
 				}
@@ -315,17 +316,17 @@ func TestMoonPhaseNilDrawsNothing(t *testing.T) {
 
 	// 1) nil ⇒ 不画月亮
 	resetMoonLayerCache()
-	e := moonLayerGet(w, h, nil)
+	e := sky.MoonLayerGet(w, h, nil)
 	lit, dark, total := count(e)
 	t.Logf("相位 nil：层尺寸=%v 原点=%v 盘区月面像素 亮侧=%d 暗侧=%d 合计=%d（判据 =0）",
-		e.size, e.off, lit, dark, total)
+		e.Size, e.Off, lit, dark, total)
 	if total != 0 {
 		t.Errorf("相位 nil 的盘区月面像素 = %d ⇒ 取不到月相还在画月亮（应不画）", total)
 	}
 
 	// 2)+3) 0.296（盈凸月，照亮度 0.643）
 	resetMoonLayerCache()
-	e2 := moonLayerGet(w, h, f64p(0.296))
+	e2 := sky.MoonLayerGet(w, h, f64p(0.296))
 	lit2, dark2, total2 := count(e2)
 	t.Logf("相位 0.296：照亮度=%.3f 盘区月面像素 亮侧(右)=%d 暗侧(左)=%d 合计=%d 盘区总数=%d",
 		moonIllumination(0.296), lit2, dark2, total2, int(math.Pi*rc*rc))
@@ -340,7 +341,7 @@ func TestMoonPhaseNilDrawsNothing(t *testing.T) {
 	}
 	// 满盘对照：0.5（满月）的两侧应当对称，用来证明上面这条判据量的是月相几何
 	resetMoonLayerCache()
-	e3 := moonLayerGet(w, h, f64p(0.5))
+	e3 := sky.MoonLayerGet(w, h, f64p(0.5))
 	lit3, dark3, total3 := count(e3)
 	t.Logf("对照 相位 0.5（满月）：亮侧=%d 暗侧=%d 合计=%d 左右比=%.3f",
 		lit3, dark3, total3, float64(lit3)/math.Max(1.0, float64(dark3)))
@@ -351,6 +352,6 @@ func TestMoonPhaseNilDrawsNothing(t *testing.T) {
 
 // resetMoonLayerCache 清空月亮层缓存（判据要逐相位重新烘，不能命中上一相位的缓存）。
 func resetMoonLayerCache() {
-	moonLayerCache.key = moonLayerKey{}
-	moonLayerCache.ent = nil
+	sky.MoonLayerCache.Key = sky.MoonLayerKey{}
+	sky.MoonLayerCache.Ent = nil
 }

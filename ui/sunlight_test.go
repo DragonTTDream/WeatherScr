@@ -23,6 +23,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
 	"github.com/DragonTTDream/WeatherScr/weather"
 )
@@ -50,8 +51,8 @@ func sunGrid9(w, h int) [9][2]int {
 // 判据：四角净抬升 ≥12 级（需求："光线永远只有那一圈"⇒ 四角必须被抬起来）。
 func TestSunLightFullSky(t *testing.T) {
 	w, h := sunProbeW, sunProbeH
-	frame := renderSkyCPU(w, h, effect.Clear, true, nil, 0)
-	base := renderSkyCPU(w, h, effect.Overcast, true, nil, 100)
+	frame := sky.RenderSkyCPU(w, h, effect.Clear, true, nil, 0)
+	base := sky.RenderSkyCPU(w, h, effect.Overcast, true, nil, 100)
 	names := [9]string{"左上角", "上边中", "右上角", "左边中", "中心", "右边中", "左下角", "下边中", "右下角"}
 	grid := sunGrid9(w, h)
 	var corners []float64
@@ -100,7 +101,7 @@ func TestSunLightFullSky(t *testing.T) {
 func TestSunLightNoRing(t *testing.T) {
 	w, h := sunProbeW, sunProbeH
 	cx, cy := int(math.Round(0.72*float64(w))), int(math.Round(0.095*float64(h)))
-	rc := sunDiscRcFrac * float64(w)
+	rc := sky.SunDiscRcFrac * float64(w)
 	cases := []struct {
 		name string
 		cls  effect.Class
@@ -124,8 +125,8 @@ func TestSunLightNoRing(t *testing.T) {
 	}
 	var all []prof
 	for _, c := range cases {
-		baked := renderSkyCPU(w, h, c.cls, true, nil, c.pct)
-		base := skyBaseCPU(w, h, c.cls, true)
+		baked := sky.RenderSkyCPU(w, h, c.cls, true, nil, c.pct)
+		base := sky.SkyBaseCPU(w, h, c.cls, true)
 		start := int(math.Ceil(1.2 * rc))
 		// 四条射线：水平左/右、垂直上/下（合起来就是过中心的水平剖面与垂直剖面）
 		type ray struct {
@@ -271,7 +272,7 @@ func TestCloudShadowOnSky(t *testing.T) {
 	for i := 0; i < 60; i++ {
 		f.Step(time.Second/15, w, h)
 	}
-	sky := renderSkyCPU(w, h, cls, true, nil, 100)
+	sky := sky.RenderSkyCPU(w, h, cls, true, nil, 100)
 	shadowed, cov := compositeCloudShadowsOnSky(sky, f, w, h)
 	places := f.cloudShadowPlaces(w, h, f.t)
 	nPlace := len(places)
@@ -404,12 +405,12 @@ func TestCloudShadowOnSky(t *testing.T) {
 // ⇒ 云量越多，四角抬升必须越小。
 func TestSunLightDimMonotonic(t *testing.T) {
 	w, h := sunProbeW, sunProbeH
-	base := renderSkyCPU(w, h, effect.Overcast, true, nil, 100)
+	base := sky.RenderSkyCPU(w, h, effect.Overcast, true, nil, 100)
 	corners := [4][2]int{{2, 2}, {w - 3, 2}, {2, h - 3}, {w - 3, h - 3}}
 	pcts := []int{0, 30, 60, 85, 100}
 	var rows [4][]float64
 	for _, pct := range pcts {
-		frame := renderSkyCPU(w, h, effect.Clear, true, nil, pct)
+		frame := sky.RenderSkyCPU(w, h, effect.Clear, true, nil, pct)
 		for ci, g := range corners {
 			rows[ci] = append(rows[ci], sunLum(frame, g[0], g[1])-sunLum(base, g[0], g[1]))
 		}
@@ -418,7 +419,7 @@ func TestSunLightDimMonotonic(t *testing.T) {
 	for ci, vals := range rows {
 		t.Logf("%s 四角净抬升 云量 0/30/60/85/100 = %.1f / %.1f / %.1f / %.1f / %.1f 级（dim %.3f/%.3f/%.3f/%.3f/%.3f）",
 			names[ci], vals[0], vals[1], vals[2], vals[3], vals[4],
-			sunDimOf(0), sunDimOf(30), sunDimOf(60), sunDimOf(85), sunDimOf(100))
+			sky.SunDimOf(0), sky.SunDimOf(30), sky.SunDimOf(60), sky.SunDimOf(85), sky.SunDimOf(100))
 		for i := 1; i < len(vals); i++ {
 			if vals[i] > vals[i-1]+0.5 {
 				t.Errorf("%s：云量 %d→%d 净抬升上升 %.1f 级 ⇒ 云量越多阳光越亮，单调性反了（%.1f→%.1f）",

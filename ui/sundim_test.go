@@ -22,6 +22,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
 	"github.com/DragonTTDream/WeatherScr/weather"
 )
@@ -45,7 +46,7 @@ func sundimClasses() []effect.Class {
 // 隔离用的就是出厂那条调用本体（bakeCelestial），不是另抄一份画法。
 func celestialLayerCPU(w, h int, cls effect.Class, isDay bool, cloudPct int) *image.NRGBA {
 	dst := image.NewNRGBA(image.Rect(0, 0, w, h))
-	bakeCelestial(dst, w, h, cls, isDay, nil, cloudPct)
+	sky.BakeCelestial(dst, w, h, cls, isDay, nil, cloudPct)
 	return dst
 }
 
@@ -90,8 +91,8 @@ func TestSunAlwaysDay(t *testing.T) {
 					}
 				}
 			}
-			baked := renderSkyCPU(w, h, cls, true, nil, pct)
-			base := skyBaseCPU(w, h, cls, true)
+			baked := sky.RenderSkyCPU(w, h, cls, true, nil, pct)
+			base := sky.SkyBaseCPU(w, h, cls, true)
 			hard24, soft8 := 0, 0
 			for y := box.y0; y < box.y1; y++ {
 				for x := box.x0; x < box.x1; x++ {
@@ -106,7 +107,7 @@ func TestSunAlwaysDay(t *testing.T) {
 			}
 			center := box.px(baked, box.cx, box.cy) - box.px(base, box.cx, box.cy)
 			t.Logf("白天 %-13s 云量=%3d dim=%.3f 盒内天体亮像素=%d（>0 判据） 整屏盒内净抬升≥8 级=%d ≥24 级=%d 盘心净抬升=%.1f",
-				cls, pct, sunDimOf(pct), n, soft8, hard24, center)
+				cls, pct, sky.SunDimOf(pct), n, soft8, hard24, center)
 			if n <= 0 {
 				t.Errorf("白天 %s 云量=%d：固定太阳盒内亮像素 = %d ⇒ 白天没有画太阳", cls, pct, n)
 			}
@@ -131,8 +132,8 @@ func TestSunAlwaysDay(t *testing.T) {
 				}
 			}
 		}
-		baked := renderSkyCPU(w, h, cls, false, nil, 0)
-		base := skyBaseCPU(w, h, cls, false)
+		baked := sky.RenderSkyCPU(w, h, cls, false, nil, 0)
+		base := sky.SkyBaseCPU(w, h, cls, false)
 		starPx := 0
 		for y := box.y0; y < box.y1; y++ {
 			for x := box.x0; x < box.x1; x++ {
@@ -156,7 +157,7 @@ func TestSunAlwaysDay(t *testing.T) {
 func TestSunDimMonotonic(t *testing.T) {
 	w, h := sundimProbeSize()
 	box := newSunBox(w, h)
-	base := skyBaseCPU(w, h, effect.Clear, true)
+	base := sky.SkyBaseCPU(w, h, effect.Clear, true)
 	pcts := []int{0, 30, 60, 85, 100}
 	type row struct {
 		pct        int
@@ -166,17 +167,17 @@ func TestSunDimMonotonic(t *testing.T) {
 	}
 	var rows []row
 	for _, pct := range pcts {
-		baked := renderSkyCPU(w, h, effect.Clear, true, nil, pct)
+		baked := sky.RenderSkyCPU(w, h, effect.Clear, true, nil, pct)
 		lum := box.px(baked, box.cx, box.cy)
 		rows = append(rows, row{
-			pct: pct, dim: sunDimOf(pct),
+			pct: pct, dim: sky.SunDimOf(pct),
 			centerLum:  lum,
 			centerLift: lum - box.px(base, box.cx, box.cy),
 		})
 	}
 	for _, r := range rows {
 		t.Logf("云量=%3d dim=%.3f 盘心亮度=%.1f 盘心净抬升=%.1f 盘半径=%.1f px（rc=%.1f×(0.75+0.25·dim)）",
-			r.pct, r.dim, r.centerLum, r.centerLift, sunDiscRcFrac*(sunRcDimMin+sunRcDimSlope*r.dim)*float64(w), box.rc)
+			r.pct, r.dim, r.centerLum, r.centerLift, sky.SunDiscRcFrac*(sky.SunRcDimMin+sky.SunRcDimSlope*r.dim)*float64(w), box.rc)
 	}
 	for i := 1; i < len(rows); i++ {
 		if rows[i].centerLum > rows[i-1].centerLum+0.5 {
@@ -216,27 +217,27 @@ func TestSunDimMonotonic(t *testing.T) {
 func sunBakePredictedLum(base *image.NRGBA, x, y int, cx, cy, rc, dim float64, w int, disc bool) float64 {
 	dx, dy := float64(x)-cx, float64(y)-cy
 	d := math.Hypot(dx, dy)
-	L := sunMainLFrac * float64(w)
-	Lc := sunCoreExpLFrac * float64(w)
+	L := sky.SunMainLFrac * float64(w)
+	Lc := sky.SunCoreExpLFrac * float64(w)
 	rad := 1.5 * float64(w)
 	ul := d / L
 	uc := d / Lc
-	main := sunMainAmp * dim * sunSkyScale * math.Exp(-ul)
-	U := sunSkyUniform * dim * sunSkyScale
+	main := sky.SunMainAmp * dim * sky.SunSkyScale * math.Exp(-ul)
+	U := sky.SunSkyUniform * dim * sky.SunSkyScale
 	core, discLv, liftLv, bloomLv := 0.0, 0.0, 0.0, 0.0
 	if d <= rad {
 		if disc {
-			core = sunCoreExpAmp * dim * math.Exp(-uc)
+			core = sky.SunCoreExpAmp * dim * math.Exp(-uc)
 		}
-		if disc && d <= sunLiftR2Frac*rc {
-			discLv = sunDiscLevel * sunDiscProfile(d, rc)
-			liftLv = sunSkyLift(d, rc)
+		if disc && d <= sky.SunLiftR2Frac*rc {
+			discLv = sky.SunDiscLevel * sky.SunDiscProfile(d, rc)
+			liftLv = sky.SunSkyLift(d, rc)
 		}
-		if disc && d <= sunBloomRcFrac*rc {
-			bloomLv = sunBloomAt(dx, dy, rc) * dim
+		if disc && d <= sky.SunBloomRcFrac*rc {
+			bloomLv = sky.SunBloomAt(dx, dy, rc) * dim
 		}
 	}
-	w2 := wl2(d, rad)
+	w2 := sky.Wl2(d, rad)
 	k := math.Exp(-ul)
 	if disc && d <= rc {
 		k = 1.0
@@ -249,14 +250,14 @@ func sunBakePredictedLum(base *image.NRGBA, x, y int, cx, cy, rc, dim float64, w
 	}
 	// 与 bakeSunAnalytic 逐字同一条链：因子表一项不多一项不少，逐因子连乘留头乘子
 	kR, kG, kB := 1.0, 1.0, 1.0
-	kR, kG, kB = screenKeep(kR, kG, kB, main, col)
-	kR, kG, kB = screenKeep(kR, kG, kB, U, col)
+	kR, kG, kB = sky.ScreenKeep(kR, kG, kB, main, col)
+	kR, kG, kB = sky.ScreenKeep(kR, kG, kB, U, col)
 	if d <= rad {
-		kR, kG, kB = screenKeep(kR, kG, kB, main*w2, col)
-		kR, kG, kB = screenKeep(kR, kG, kB, core*w2, col)
-		kR, kG, kB = screenKeep(kR, kG, kB, discLv*w2, col)
-		kR, kG, kB = screenKeep(kR, kG, kB, liftLv*w2, col)
-		kR, kG, kB = screenKeep(kR, kG, kB, bloomLv*w2, col)
+		kR, kG, kB = sky.ScreenKeep(kR, kG, kB, main*w2, col)
+		kR, kG, kB = sky.ScreenKeep(kR, kG, kB, core*w2, col)
+		kR, kG, kB = sky.ScreenKeep(kR, kG, kB, discLv*w2, col)
+		kR, kG, kB = sky.ScreenKeep(kR, kG, kB, liftLv*w2, col)
+		kR, kG, kB = sky.ScreenKeep(kR, kG, kB, bloomLv*w2, col)
 	}
 	i := base.PixOffset(x, y)
 	// 逐通道算（与烘焙的写入同一口径），最后取三通道均值
@@ -287,10 +288,10 @@ func sunBakePredictedLum(base *image.NRGBA, x, y int, cx, cy, rc, dim float64, w
 func TestNoSunLiftRing(t *testing.T) {
 	w, h := sundimProbeSize()
 	box := newSunBox(w, h)
-	baked := renderSkyCPU(w, h, effect.Clear, true, nil, 0)
-	base := skyBaseCPU(w, h, effect.Clear, true)
+	baked := sky.RenderSkyCPU(w, h, effect.Clear, true, nil, 0)
+	base := sky.SkyBaseCPU(w, h, effect.Clear, true)
 	rc := box.rc
-	dim := sunDimOf(0)
+	dim := sky.SunDimOf(0)
 	type pt struct {
 		k    float64
 		x, y int
@@ -308,8 +309,8 @@ func TestNoSunLiftRing(t *testing.T) {
 		pts = append(pts, pt{
 			k: k, x: x, y: y,
 			got:  box.px(baked, x, y),
-			pred: sunBakePredictedLum(base, x, y, float64(box.cx), float64(box.cy), rc, dim, w, !sunNoDisc(0)),
-			lift: sunSkyLift(k*rc, rc),
+			pred: sunBakePredictedLum(base, x, y, float64(box.cx), float64(box.cy), rc, dim, w, !sky.SunNoDisc(0)),
+			lift: sky.SunSkyLift(k*rc, rc),
 		})
 	}
 	for _, p := range pts {
@@ -327,7 +328,7 @@ func TestNoSunLiftRing(t *testing.T) {
 	}
 	for _, p := range pts {
 		if p.lift != 0 {
-			t.Errorf("sunSkyLift(%.0frc) = %.2f ≠ 0 ⇒ 提亮函数没有归零", p.k, p.lift)
+			t.Errorf("sky.SunSkyLift(%.0frc) = %.2f ≠ 0 ⇒ 提亮函数没有归零", p.k, p.lift)
 		}
 	}
 	// 判据必须量到东西：两点实测亮度全黑说明烘焙没画东西，测不到圈
@@ -508,30 +509,30 @@ func TestFlashLocalized(t *testing.T) {
 // 这条判据量的是"云量变化会不会换图"，不是公式。
 func TestSkyCacheCloudKey(t *testing.T) {
 	size := image.Pt(PortraitW, PortraitH)
-	got := SkyCacheGet()
-	e0a := skyCached(size, effect.Clear, true, nil, 0)
-	e0b := skyCached(size, effect.Clear, true, nil, 0)
+	got := sky.SkyCacheGet()
+	e0a := sky.SkyCached(size, effect.Clear, true, nil, 0)
+	e0b := sky.SkyCached(size, effect.Clear, true, nil, 0)
 	if e0a == nil || e0b == nil {
-		t.Fatalf("skyCached 返回 nil ⇒ 测试无意义")
+		t.Fatalf("sky.SkyCached 返回 nil ⇒ 测试无意义")
 	}
 	if e0a != e0b {
 		t.Errorf("同云量连取两次换了图 ⇒ 键里有多余的抖动项")
 	}
-	after := SkyCacheGet()
+	after := sky.SkyCacheGet()
 	buildsForSame := after.Builds - got.Builds
 	if buildsForSame != 1 {
 		t.Errorf("同云量两次取用重建了 %d 次，期望 1 次（第二次应命中）", buildsForSame)
 	}
-	e100 := skyCached(size, effect.Clear, true, nil, 100)
-	after2 := SkyCacheGet()
+	e100 := sky.SkyCached(size, effect.Clear, true, nil, 100)
+	after2 := sky.SkyCacheGet()
 	if e100 == e0a {
 		t.Errorf("云量 0→100 没有重建 ⇒ 缓存键里没有云量，太阳亮度会停在旧云量上")
 	}
-	l0 := sunLuma(e0a.img, e0a.img.Bounds().Dx()*72/100, e0a.img.Bounds().Dy()*95/1000)
-	l100 := sunLuma(e100.img, e100.img.Bounds().Dx()*72/100, e100.img.Bounds().Dy()*95/1000)
+	l0 := sunLuma(e0a.Img, e0a.Img.Bounds().Dx()*72/100, e0a.Img.Bounds().Dy()*95/1000)
+	l100 := sunLuma(e100.Img, e100.Img.Bounds().Dx()*72/100, e100.Img.Bounds().Dy()*95/1000)
 	t.Logf("重建次数：同云量两次=%d，云量 0→100 后=%d；盘心亮度 云量0=%.1f 云量100=%.1f（烘焙图 %dx%d 与 %dx%d）",
 		buildsForSame, after2.Builds-after.Builds, l0, l100,
-		e0a.img.Bounds().Dx(), e0a.img.Bounds().Dy(), e100.img.Bounds().Dx(), e100.img.Bounds().Dy())
+		e0a.Img.Bounds().Dx(), e0a.Img.Bounds().Dy(), e100.Img.Bounds().Dx(), e100.Img.Bounds().Dy())
 	if after2.Builds-after.Builds != 1 {
 		t.Errorf("云量 0→100 重建了 %d 次，期望 1 次", after2.Builds-after.Builds)
 	}

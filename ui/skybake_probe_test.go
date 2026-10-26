@@ -3,11 +3,12 @@ package ui
 import (
 	"testing"
 
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
 )
 
 func TestSkyBakeProbe(t *testing.T) {
-	img := renderSkyCPU(540, 960, effect.Cloudy, true, nil, 0)
+	img := sky.RenderSkyCPU(540, 960, effect.Cloudy, true, nil, 0)
 	if img == nil {
 		t.Fatal("nil")
 	}
