@@ -22,8 +22,9 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 
-	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/effect"
+	"github.com/DragonTTDream/WeatherScr/ui/overlay"
+	"github.com/DragonTTDream/WeatherScr/ui/sky"
 	"github.com/DragonTTDream/WeatherScr/weather"
 )
 
@@ -382,10 +383,12 @@ func flashProbeFrame(t *testing.T, win *headless.Window, f *Field, flash float64
 // 取样步长 3 px（矩形 550×540 ⇒ 约 3.4 万格），峰值落在枝干上。
 // 盒子 = 以落点为中心的 bolt 绘制矩形（口径见 drawBolt / boltRectPx），不随类缩放。
 func flashPeakDelta(on, off *image.RGBA, ax, ay int) (float64, [2]int) {
-	e := boltGlowMask(0, PortraitW, PortraitH)
+	// R5 卡 4：形状掩膜本体逐字迁到 ui/overlay.BoltGlowMask（贴图查询口 = ui 侧注入），
+	// 取数口径不变（同一张 bolt1、同一幅面 ⇒ 同一块矩形）。
+	e := overlay.BoltGlowMask(0, PortraitW, PortraitH, boltSpriteImg)
 	halfW, halfH := 300.0, 300.0
-	if e.ok {
-		halfW, halfH = e.dw/2, e.dh/2
+	if e.Ok {
+		halfW, halfH = e.Dw/2, e.Dh/2
 	}
 	best, bestAt := 0.0, [2]int{ax, ay}
 	for y := int(math.Max(0, float64(ay)-halfH)); y < int(math.Min(float64(PortraitH), float64(ay)+halfH)); y += 3 {

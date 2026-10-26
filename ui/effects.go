@@ -23,6 +23,7 @@ import (
 import (
 	"github.com/DragonTTDream/WeatherScr/ui/kinetics"
 	"github.com/DragonTTDream/WeatherScr/ui/metrics"
+	"github.com/DragonTTDream/WeatherScr/ui/overlay"
 	"github.com/DragonTTDream/WeatherScr/ui/particles"
 	"github.com/DragonTTDream/WeatherScr/ui/screenfit"
 )
@@ -404,6 +405,25 @@ const (
 
 var rainStreakCapPx = particles.RainStreakCapPx
 
+// 以下常量 = ui/overlay 的**兼容别名**（R5 卡 4 纯迁移：定义本体逐字迁出到
+// ui/overlay/{fog,flash}.go，plans/active.md:208；ui 侧调用点与既有测试口径逐字不变，
+// 别名与定义同值 ⇒ 没有第二份真值）。
+const (
+	fogScBase         = overlay.FogScBase
+	fogScSpan         = overlay.FogScSpan
+	fogAlphaMul       = overlay.FogAlphaMul
+	snowFogCurtainN   = overlay.SnowFogCurtainN
+	flashRadiusFrac   = overlay.FlashRadiusFrac
+	flashAmpMax       = overlay.FlashAmpMax
+	flashBoostMax     = overlay.FlashBoostMax
+	flashAnchorY      = overlay.FlashAnchorY
+	boltFlashMin      = overlay.BoltFlashMin
+	boltAlphaMax      = overlay.BoltAlphaMax
+	boltLenFrac       = overlay.BoltLenFrac
+	boltGlowSigmaFrac = overlay.BoltGlowSigmaFrac
+	boltGlowMaskN     = overlay.BoltGlowMaskN
+)
+
 // genMote：不规则软尘团。
 func genMote(sz image.Point, rng *rand.Rand) *image.NRGBA {
 	img := image.NewNRGBA(image.Rect(0, 0, sz.X, sz.Y))
@@ -543,14 +563,6 @@ const (
 	// 把 Kenney 云的硬边拉成糊团（同一素材在原生 1:1 下视觉模型判"锐利清晰的卡通硬边"，
 	// 素材图判读（Kenney cloud1..9 实测）。现上限 1.5，配合 2× 超采样 ⇒ GPU 侧近似 1:1。
 	cloudScSpan = 0.8 // 粒子云改大：0.25 → 0.8（sc 上限 2.3 ⇒ 屏宽 512×2.3 = 1178 px = 云带最宽一档）
-	fogScBase   = 1.3
-	fogScSpan   = 1.5 // 上限 2.8（此前 3.2 时"很夸张 很糊"）
-	// fogAlphaMul 雾浓度倍率：**运行时参数，不烘进贴图**。
-	// 需求：雾比初版淡一档（对比图选定，倍率 0.6）。
-	// 上一版把 0.6 烘进 fog*.png 的 alpha（均值 93 → 55），
-	// 结果出厂贴图与选定的那张效果图不是同一份东西 ⇒ 贴图保持效果图原样，
-	// 淡浓在这里调，出图与出厂永远可比。
-	fogAlphaMul = 0.6
 )
 
 // ---- 逐类云形态口径（2026-10-20 云规则改动，规格 2 的表逐字落地）----
@@ -1019,10 +1031,6 @@ func countsRaw(cls effect.Class, isDay bool) int {
 	return 0
 }
 
-// snowFogCurtainN Snow 灰幕的团数（P3 判据 B：20 团 → 3 团）。
-// 取法 = idx%86==85 ⇒ 260 个里命中 idx = 85 / 171 / 257（推导写在 spawn 的 Snow 分支）。
-const snowFogCurtainN = 3
-
 // spawnCloudTier 粒子云档（Cloudy / PartlyCloudy / Overcast，P3 起再加 Fog 的一半）
 // 共用的粒子云初始化。整段口径逐字不变（含 **RNG 取数顺序** x → y → sc → alpha → depth，
 // 顺序一动，同 seed 的落位序列就整体漂移），只是从 spawn 的 switch 里搬出来，
@@ -1163,15 +1171,13 @@ func (f *Field) spawn(fresh bool, idx int) particle {
 			break
 		}
 		p.kind = pkFog
-		// y 初始分布避开中央信息带，按半径外扩（同云）。
-		// 雾 sc 上限 4.2 × 256 px = 1075 px，半高 537 px = 0.28 屏高（1920 px 屏）。
-		p.x, p.y = r.Float64(), bandFreeY(r, bandPadJitN(pkFog, f.sh))
-		p.sc = fogScBase + fogScSpan*r.Float64()
-		// 雾浓度 = 贴图原样 alpha × 运行时倍率（fogAlphaMul 注释写明为什么不烘贴图）
-		p.alpha = (0.06 + 0.16*r.Float64()*(0.35+0.65*p.depth)) * fogAlphaMul
-		p.vx = 0.010 + 0.030*r.Float64()
-		p.vy = 0.002 + 0.006*r.Float64()
-		p.depth = 0.2 + 0.8*r.Float64()
+		// R5 卡 4：雾团生成口径逐字迁到 ui/overlay.SpawnFog（旧 ui/effects.go:1165-1172，
+		// sc 上限与"越近越浓"的全部口径注释随迁）。depth = 分支之前抽好的 p.depth（口径不动）；
+		// y 的落位口 = 旧实现里紧跟 x 的那一句 bandFreeY(r, bandPadJitN(pkFog, f.sh))
+		// ⇒ 以回调注入，带宽/带避让口径留在 ui（随机数取用位置逐字同序）。
+		q := overlay.SpawnFog(r, p.depth, func() float64 { return bandFreeY(r, bandPadJitN(pkFog, f.sh)) })
+		p.x, p.y, p.sc, p.alpha = q.X, q.Y, q.Sc, q.Alpha
+		p.vx, p.vy, p.depth = q.Vx, q.Vy, q.Depth
 	case effect.Rain, effect.Thunder:
 		p.kind = pkDrop
 		// R5 卡 3：雨滴生成口径逐字迁到 ui/particles.SpawnDrop（旧 ui/effects.go:1259-1281，
@@ -1206,13 +1212,13 @@ func (f *Field) spawn(fresh bool, idx int) particle {
 			// （实测 seed=20261023：随机落位 0.218/0.241 两团并排 ⇒ 漂移重叠
 			// dualPct = 61.02% > 判据线 60%，见 out/notes-p3.md 的判据 2 实跑）。
 			// y 仍走现口径 bandFreeY（带避让口径不动）；sc/alpha/vx/vy/depth 一行没动。
-			p.x = (float64((idx-85)/86) + 0.5) / float64(snowFogCurtainN)
-			p.y = bandFreeY(r, bandPadJitN(pkFog, f.sh))
-			p.sc = fogScBase + fogScSpan*r.Float64()
-			p.alpha = (0.06 + 0.16*r.Float64()*(0.35+0.65*p.depth)) * fogAlphaMul
-			p.vx = 0.010 + 0.030*r.Float64()
-			p.vy = 0.002 + 0.006*r.Float64()
-			p.depth = 0.2 + 0.8*r.Float64()
+			// R5 卡 4：雪天灰幕的生成口径逐字迁到 ui/overlay.SpawnSnowCurtain
+			// （旧 ui/effects.go:1201-1213：逐团等分的 x、雾的 sc/alpha/vx/vy/depth 一行没动；
+			//   幕层索引常量 = 该处原字面量 86/85，推导注释随迁）。
+			// y 仍走现口径 bandFreeY（带避让口径不动）⇒ 与 Fog 档同一份回调注入。
+			q := overlay.SpawnSnowCurtain(r, p.depth, idx, func() float64 { return bandFreeY(r, bandPadJitN(pkFog, f.sh)) })
+			p.x, p.y, p.sc, p.alpha = q.X, q.Y, q.Sc, q.Alpha
+			p.vx, p.vy, p.depth = q.Vx, q.Vy, q.Depth
 			break
 		}
 		p.kind = pkFlake
@@ -1265,11 +1271,9 @@ func (f *Field) spawn(fresh bool, idx int) particle {
 			p.spr = idx % len(sp.cloud)
 		}
 	case pkFog:
-		n := len(sp.fog)
-		if n == 0 {
-			n = len(sp.cloud)
-		}
-		p.spr = idx % n
+		// R5 卡 4：雾的变体轮换逐字迁到 ui/overlay.FogSpriteIndex（旧 ui/effects.go:1267-1272，
+		// 含"雾贴图组缺失时退到云贴图张数"的退路）。
+		p.spr = overlay.FogSpriteIndex(idx, len(sp.fog), len(sp.cloud))
 	case pkMote:
 		p.spr = particles.MoteSpriteIndex(r, len(sp.mote))
 	}
@@ -1297,7 +1301,11 @@ func (f *Field) spawn(fresh bool, idx int) particle {
 		if f.cls == effect.Snow {
 			fogCapPx = 346.0
 		}
-		f.clampFogWidthPx(&p, fogCapPx)
+		// R5 卡 4：封顶本体逐字迁到 ui/overlay.ClampFogWidthPx（旧 ui/effects.go:4944-4964）。
+		// 贴图表与退路尺寸 = ui 的贴图装配口径（f.sp.fogSz / spriteSize(spritesOnce(), pkFog)），
+		// 净倍率常量 fogNetScale 同在 ui（assets.go）⇒ 以参数注入，公式与阈值一行没动。
+		p.sc = overlay.ClampFogWidthPx(p.sc, p.depth, p.scaleMul, fogNetScale, fogCapPx,
+			p.spr, f.sp.fogSz, spriteSize(spritesOnce(), pkFog))
 	}
 	if p.kind == pkFlake && f.cls == effect.Snow {
 		f.sizeFlakeByTarget(&p)
@@ -1890,9 +1898,7 @@ const (
 	boltGap97Hi  = 15.0
 	boltGap99Lo  = 6.0 // 码 99（最强）
 	boltGap99Hi  = 15.0
-	boltGapFloor = 6.0  // 三档里最小的间隔 ⇒ 不许频闪的下限
-	boltAlphaMax = 0.75 // 峰值 alpha 上限
-	boltLenFrac  = 0.28 // 长轴 = 0.28 屏高（旧折线闪电的屏上长轴 560 px / 1920 = 0.29，同量级）
+	boltGapFloor = 6.0 // 三档里最小的间隔 ⇒ 不许频闪的下限
 	// 落位区：云带画面上沿所在的上部天空带。
 	// 实测压顶档（雨/雷）的云带左上角 -0.12…-0.02 屏高、带高 0.24–0.57 屏高
 	// ⇒ 带体在屏内的可见上沿从 0 起，闪电取 0.06–0.20 屏高 = 落在带体上沿之上/之中，
@@ -3184,45 +3190,18 @@ func distSeg(px, py float64, sg [4]float64) float64 {
 	return math.Hypot(px-(x1+t*dx), py-(y1+t*dy))
 }
 
-// drawBolt 画一道闪电（规格 1.5：贴图 bolt1..3），亮度跟随闪现包络。
+// drawBolt 画一道闪电（全部口径注释见 ui/overlay.DrawBolt）。
 //
-// 三条口径：
-//
-//	1 贴图 = embed/bolt1..3（Kenney spark_01..03 的白热闪电枝），
-//	   逐次闪现换一张（boltIdx 在闪现开始时抽好，闪现期间不变 ⇒ 不逐帧跳）；
-//	   贴图组缺失时退到 genBolt 的程序折线（退路，出厂路径走不到）；
-//	2 落位 = 闪现开始时抽好的随机点（boltX/boltY，见常量注释），
-//	   长轴 = 0.28 屏高，短轴按贴图宽高比等比；
-//	3 峰值 alpha ≤ 0.75（boltAlphaMax）：透明度 = 0.75 × 包络，包络峰值 1。
+// R5 卡 4：绘制本体逐字迁出 ui/overlay.DrawBolt（旧 ui/effects.go:3197-3226）。
+// 留在 ui 的两件：boltDrawn 自检计数（旧实现里它就是函数体第一行 ⇒ 同序加在调用之前）、
+// 闪电贴图选图（f.sp.bolt/boltOps + boltSpriteIndex = Field 的闪现状态与贴图装配口径）。
 func (f *Field) drawBolt(gtx layout.Context, w, h int, flash float64) {
 	f.boltDrawn++
 	img, sz := f.sp.bolt, f.sp.boltSz
 	if i := f.boltSpriteIndex(); i >= 0 {
 		img, sz = f.sp.boltOps[i], f.sp.boltSzOps[i]
 	}
-	if sz.X <= 0 || sz.Y <= 0 {
-		return
-	}
-	dw, dh := boltRectPx(sz, w, h)
-	px := f.boltX*float64(w) - dw/2
-	py := f.boltY*float64(h) - dh/2
-	a := boltAlphaMax * math.Min(1.0, math.Max(0.0, flash))
-	if a <= 0.01 {
-		return
-	}
-	ts := op.Affine(f32.Affine2D{}.
-		Scale(f32.Point{}, f32.Point{X: float32(dw / float64(sz.X)), Y: float32(dh / float64(sz.Y))}).
-		Offset(f32.Pt(float32(px), float32(py)))).Push(gtx.Ops)
-	st := paint.PushOpacity(gtx.Ops, float32(a))
-	cl := clip.Rect(image.Rect(0, 0, sz.X, sz.Y)).Push(gtx.Ops)
-	img.Add(gtx.Ops)
-	paint.PaintOp{}.Add(gtx.Ops)
-	if f.probeCount {
-		f.draws++ // P1 探针计数：drawBolt 闪电本体
-	}
-	cl.Pop()
-	st.Pop()
-	ts.Pop()
+	overlay.DrawBolt(gtx, w, h, flash, f.boltX, f.boltY, img, sz, f.probeCount, &f.draws)
 }
 
 // Jitter 一个粒子的实例抖动三元组（自检口径）。
@@ -3260,55 +3239,6 @@ func (f *Field) AirOverlapStats() (pairs, air int) {
 	return
 }
 
-// ---- D3 闪光局域化 ----
-//
-// 旧口径 = 整屏白洗（PushOpacity(flash) + paint.Fill 满屏 alpha）：
-// 屏幕上每个像素一起变白，云与天空同涨同落，读成"整块屏幕闪一下"。
-// 现口径 = 以闪电锚点为中心的局部提亮：
-//
-//	锚点 = 本次闪电的落点 (boltX, boltY)（闪现开始时抽好、闪现期间不动）；
-//	       锚点没抽过时取云带顶部的随机 x、y = 0.12 屏高
-//	形状 = 闪电本体（boltGlowMask：当前那张闪电贴图高斯模糊烘出的形状掩膜），
-//	       不再是圆（旧圆罩见下面 boltGlow 的口径说明）
-//	幅度 = 中心 0.30 上限（预览基准：0.30 档 = 非背景像素 44.8% 的观感）
-//	时长 = 单次 0.15–0.30 s 不动（走 boltEnvelope，见 stepBolt）
-//	对象 = 提亮范围内的天空与云：云 alpha 在粒子循环里按 flashMaskAt
-//	       （0.35 屏宽的 cos² 圆）抬升（云变实），
-//	       体色由提亮层抬（提亮层画在云与粒子之后，落在云像素上）
-//
-// dev 开关 FX_FLASH 的语义 = 强制一次局域闪光（见 SetFlash）。
-const (
-	flashRadiusFrac = 0.35 // 云 alpha 抬升掩膜的半径 = 0.35 × 屏宽（云变实的范围，不是光的形状）
-	flashAmpMax     = 0.30 // 提亮幅度上限（预览基准 0.30 档，不动）
-	flashBoostMax   = 0.60 // 云 alpha 的抬升系数上限（掩膜满处 alpha ×(1+0.60)，不动）
-	flashAnchorY    = 0.12 // 锚点没抽过时用的 y（云带顶部）
-)
-
-// ---- 闪电形状光罩 boltGlow ----
-//
-// 需求原话：闪电的光线是圆的，而发光体就是闪电本身。
-// 实测根因：提亮掩膜 = 圆罩贴图（Kenney Light Masks circle_a 的角向平均剖面，
-// 宽 0.70 倍屏宽）⇒ 提亮形状是一个圆，与闪电本体的走向没有任何关系。
-//
-// 现口径 = 把本次闪现用的那张闪电贴图（bolt1..3 之一）的 alpha 做高斯模糊
-// （σ = boltGlowSigmaFrac × 屏宽 = 0.03 倍屏宽）烘成形状掩膜 boltGlow：
-//
-//	形状 = 闪电本体（沿闪电走向），掩膜按最大值归一 ⇒ 最亮处就是闪电本体；
-//	锚点 = 闪电落点 (boltX, boltY)（贴图中心 = 落点，口径不动）；
-//	绘制矩形 = 闪电本体那一块（长轴 0.28 屏高 = boltLenFrac，短轴按贴图宽高比）；
-//	幅度 = flash × flashAmpMax（0.30 上限不动）；
-//	云 alpha 抬升（flashMaskAt 的 0.35 屏宽 cos² 圆 + 系数 0.60）不动。
-//
-// 圆罩贴图退役：embed 目录里的文件保留，代码里不再引用（见 out/notes 的说明）。
-const (
-	boltGlowSigmaFrac = 0.03 // 高斯模糊 σ = 0.03 倍屏宽（屏幕像素）
-	boltGlowMaskN     = 192  // 掩膜栅格边长（像素）
-	// 闪电本体的可见阈值：0.25 → 0.12。
-	// 实测根因：本体只在 flash>0.25 才画，而闪现包络在 0.25 以下的区间占整次的
-	// 大半 ⇒ 低幅度闪光时"只见亮不见电"。
-	boltFlashMin = 0.12
-)
-
 // ---- 云影层（云遮挡阳光）----
 //
 // 需求："你那个光线居然没有被云给影响。又是以前的毛病，云没有盖住影响背后的阳光。"
@@ -3324,17 +3254,6 @@ const (
 	cloudShadowSizeMul = 1.15 // 半影：影比云本体大 15%
 )
 
-// flashMaskAt 局域提亮在归一化坐标 (x,y) 处的掩膜 0..1。
-// 距离按**屏宽**归一（半径是 0.35 倍屏宽，纵向同分母 ⇒ 各向同性的圆）。
-func (f *Field) flashMaskAt(x, y float64) float64 {
-	d := math.Hypot(x-f.boltX, y-f.boltY) / flashRadiusFrac
-	if d >= 1.0 {
-		return 0
-	}
-	c := math.Cos(d * math.Pi * 0.5)
-	return c * c
-}
-
 // boltSpriteIndex 本次闪现用的闪电贴图下标（与 drawBolt 的选图口径同一份，两处不各写一份）。
 // 返回 -1 = 闪电贴图组没落地（drawBolt 走 genBolt 的程序折线退路）。
 func (f *Field) boltSpriteIndex() int {
@@ -3349,234 +3268,28 @@ func (f *Field) boltSpriteIndex() int {
 	return i
 }
 
-// boltRectPx 闪电本体在屏幕上的绘制矩形（与 drawBolt 同口径）：
-// 长轴 = boltLenFrac × 屏高，短轴按贴图宽高比等比。
-func boltRectPx(sz image.Point, w, h int) (float64, float64) {
-	dh := boltLenFrac * float64(h)
-	return dh * float64(sz.X) / float64(sz.Y), dh
-}
-
-// gaussKernel 归一化一维高斯核（σ 单位 = 栅格像素，半径 3σ，端点钳到 0）。
-func gaussKernel(sigma float64) []float64 {
-	r := int(math.Ceil(3.0 * sigma))
-	if r < 1 {
-		r = 1
-	}
-	k := make([]float64, 2*r+1)
-	sum := 0.0
-	for i := range k {
-		x := float64(i - r)
-		k[i] = math.Exp(-x * x / (2.0 * sigma * sigma))
-		sum += k[i]
-	}
-	for i := range k {
-		k[i] /= sum
-	}
-	return k
-}
-
-// boltGlowKey 形状掩膜的缓存键（同一张闪电 + 同一幅面只烘一次）。
-type boltGlowKey struct {
-	idx, w, h int
-}
-
-type boltGlowEntry struct {
-	op        paint.ImageOp
-	mask      *image.NRGBA // 掩膜本体（自检取用：判据要能算出屏幕上那一层的形状）
-	dw, dh    float64      // 屏幕上的绘制矩形（与闪电本体同一块）
-	peakAtC   float64      // 归一后掩膜在矩形中心处的取值（自检打印用）
-	builtMSec float64
-	ok        bool
-}
-
-var boltGlowCache struct {
-	mu  sync.Mutex
-	ent map[boltGlowKey]*boltGlowEntry
-}
-
-// boltGlowMask 把第 idx 张闪电贴图（bolt1..3）的 alpha 高斯模糊烘成形状掩膜。
+// flashMaskAt 局域提亮在归一化坐标 (x,y) 处的掩膜 0..1。
 //
-// 步骤（全部在屏幕像素口径下做，与屏幕上看到的一致）：
-//  1. 在 boltGlowMaskN 的栅格上双线性采出闪电本体的 alpha（栅格铺满闪电的绘制矩形）；
-//  2. separable 高斯模糊，σ = boltGlowSigmaFrac × 屏宽 换算到栅格像素；
-//  3. 按最大值归一 ⇒ 最亮处 = 闪电本体，掩膜峰值对应提亮幅度 flashAmpMax；
-//  4. RGB 写固定的冷白（与太阳泛光/宽光同一条口径：源图 RGB 一个字节都不写进屏幕），
-//     alpha = 掩膜值。
-//
-// 缓存 = (贴图下标, 屏宽, 屏高)，逐帧零生成成本；一次烘的成本 = 栅格² × 核长 × 2。
-// 贴图没落地 ⇒ ok=false（调用方不画提亮层，退回"只见闪电本体"）。
-func boltGlowMask(idx, w, h int) *boltGlowEntry {
-	k := boltGlowKey{idx: idx, w: w, h: h}
-	boltGlowCache.mu.Lock()
-	defer boltGlowCache.mu.Unlock()
-	if boltGlowCache.ent == nil {
-		boltGlowCache.ent = map[boltGlowKey]*boltGlowEntry{}
-	}
-	if e, ok := boltGlowCache.ent[k]; ok {
-		return e
-	}
-	t0 := time.Now()
-	e := &boltGlowEntry{}
-	boltGlowCache.ent[k] = e
-	name := "bolt" + itoa(idx+1) + ".png"
-	src := spriteImg(name)
-	if src == nil {
-		return e
-	}
-	sb := src.Bounds()
-	sw, sh := float64(sb.Dx()), float64(sb.Dy())
-	dw, dh := boltRectPx(sb.Size(), w, h)
-	if dw <= 0 || dh <= 0 {
-		return e
-	}
-	n := boltGlowMaskN
-	if n < 8 {
-		n = 8
-	}
-	srcA := make([]float64, n*n)
-	at := func(x, y int) float64 {
-		if x < 0 {
-			x = 0
-		}
-		if y < 0 {
-			y = 0
-		}
-		if x > int(sw)-1 {
-			x = int(sw) - 1
-		}
-		if y > int(sh)-1 {
-			y = int(sh) - 1
-		}
-		return float64(src.Pix[src.PixOffset(sb.Min.X+x, sb.Min.Y+y)+3]) / 255.0
-	}
-	for j := 0; j < n; j++ {
-		fy := (float64(j) + 0.5) / float64(n) * sh
-		y0 := int(math.Floor(fy))
-		ty := fy - float64(y0)
-		for i := 0; i < n; i++ {
-			fx := (float64(i) + 0.5) / float64(n) * sw
-			x0 := int(math.Floor(fx))
-			tx := fx - float64(x0)
-			v := (at(x0, y0)*(1-tx)+at(x0+1, y0)*tx)*(1-ty) +
-				(at(x0, y0+1)*(1-tx)+at(x0+1, y0+1)*tx)*ty
-			srcA[j*n+i] = v
-		}
-	}
-	// σ：屏幕像素 → 栅格像素（栅格铺满 dw，故 1 栅格像素 = dw/n 屏幕像素）
-	sig := boltGlowSigmaFrac * float64(w) * float64(n) / dw
-	if sig < 0.5 {
-		sig = 0.5
-	}
-	kk := gaussKernel(sig)
-	tmp := make([]float64, n*n)
-	blurred := make([]float64, n*n)
-	conv := func(in, out []float64, horiz bool) {
-		half := (len(kk) - 1) / 2
-		for j := 0; j < n; j++ {
-			for i := 0; i < n; i++ {
-				var s float64
-				for t, kv := range kk {
-					o := t - half
-					ii, jj := i, j
-					if horiz {
-						ii = i + o
-						if ii < 0 {
-							ii = 0
-						} else if ii >= n {
-							ii = n - 1
-						}
-					} else {
-						jj = j + o
-						if jj < 0 {
-							jj = 0
-						} else if jj >= n {
-							jj = n - 1
-						}
-					}
-					s += kv * in[jj*n+ii]
-				}
-				out[j*n+i] = s
-			}
-		}
-	}
-	conv(srcA, tmp, true)
-	conv(tmp, blurred, false)
-	peak := 0.0
-	for _, v := range blurred {
-		if v > peak {
-			peak = v
-		}
-	}
-	if peak <= 0 {
-		return e
-	}
-	img := image.NewNRGBA(image.Rect(0, 0, n, n))
-	for j := 0; j < n; j++ {
-		for i := 0; i < n; i++ {
-			a := blurred[j*n+i] / peak
-			if a > 1.0 {
-				a = 1.0
-			}
-			p := img.PixOffset(i, j)
-			img.Pix[p+0] = 235
-			img.Pix[p+1] = 240
-			img.Pix[p+2] = 255
-			img.Pix[p+3] = uint8(math.Round(a * 255))
-		}
-	}
-	e.op = paint.NewImageOp(img)
-	e.mask = img
-	e.dw, e.dh = dw, dh
-	e.peakAtC = blurred[(n/2)*n+n/2] / peak
-	e.builtMSec = float64(time.Since(t0).Microseconds()) / 1000.0
-	e.ok = true
-	return e
+// R5 卡 4：本体逐字迁出到 ui/overlay.FlashMaskAt（旧 ui/effects.go:3327-3336，
+// 半径常量 flashRadiusFrac 与 cos² 公式一行没动）；
+// 锚点 = Field 的闪现落点 (f.boltX, f.boltY) ⇒ 以参数注入，两个调用点逐字不变。
+func (f *Field) flashMaskAt(x, y float64) float64 {
+	return overlay.FlashMaskAt(f.boltX, f.boltY, x, y)
 }
 
-// drawFlash 画局域提亮层：以闪电落点 (f.boltX, f.boltY) 为中心、
-// 铺在闪电本体那块矩形上（长轴 0.28 屏高、短轴按贴图宽高比）的**形状**提亮，
-// 峰值幅度 = flash × 0.30（flash 是闪现包络 0..1）。
+// drawFlash 画局域提亮层（全部口径注释见 ui/overlay.DrawFlash）。
 //
-// 掩膜 = boltGlowMask（当前那张闪电贴图高斯模糊烘出的形状掩膜）⇒ 提亮沿闪电走向，
-// 不再是圆罩（需求：发光体就是闪电）。锚点口径不动。
-//
-// 绘制链与云精灵同构（Scale → Offset，Push/Pop 成对）；
-// 掩膜是 straight alpha 的 NRGBA，gioui 上传时预乘 ⇒ src-over 叠加 = 向白色抬。
+// R5 卡 4：本体逐字迁出 ui/overlay.DrawFlash（旧 ui/effects.go:3536-3580）。
+// 留在 ui 的两件 = 本次闪现用第几张贴图（boltSpriteIndex，Field 的闪现状态）
+// 与内嵌贴图查询口（boltSpriteImg = 旧实现写在 boltGlowMask 里的那一行）⇒ 以参数注入。
 func (f *Field) drawFlash(gtx layout.Context, w, h int) {
-	if f.flash <= 0.01 {
-		return
-	}
-	amp := f.flash * flashAmpMax
-	if amp <= 0.002 {
-		return
-	}
-	idx := f.boltSpriteIndex()
-	if idx < 0 {
-		return
-	}
-	e := boltGlowMask(idx, w, h)
-	if !e.ok {
-		return
-	}
-	sz := e.op.Size()
-	if sz.X <= 0 || sz.Y <= 0 {
-		return
-	}
-	cx, cy := f.boltX*float64(w), f.boltY*float64(h)
-	tr := f32.Affine2D{}.
-		Scale(f32.Point{}, f32.Pt(float32(e.dw/float64(sz.X)), float32(e.dh/float64(sz.Y)))).
-		Offset(f32.Pt(float32(cx-e.dw/2), float32(cy-e.dh/2)))
-	ts := op.Affine(tr).Push(gtx.Ops)
-	st := paint.PushOpacity(gtx.Ops, float32(amp))
-	cl := clip.Rect(image.Rect(0, 0, sz.X, sz.Y)).Push(gtx.Ops)
-	e.op.Add(gtx.Ops)
-	paint.PaintOp{}.Add(gtx.Ops)
-	if f.probeCount {
-		f.draws++ // P1 探针计数：drawFlash 局域提亮层
-	}
-	cl.Pop()
-	st.Pop()
-	ts.Pop()
+	overlay.DrawFlash(gtx, w, h, f.flash, f.boltX, f.boltY, f.boltSpriteIndex(), boltSpriteImg, f.probeCount, &f.draws)
+}
+
+// boltSpriteImg 第 idx 张闪电贴图（旧实现里那一行写在 boltGlowMask 的取图处：
+// spriteImg("bolt"+itoa(idx+1)+".png")；R5 卡 4 把取图口随烘焙一起注入 ui/overlay）。
+func boltSpriteImg(idx int) *image.NRGBA {
+	return spriteImg("bolt" + itoa(idx+1) + ".png")
 }
 
 // SetWeatherCode 传入该场对应的 WMO 码（调用方每帧传，值变了才生效）。
@@ -3643,21 +3356,11 @@ func genCloudShadow(sz image.Point, rng *rand.Rand) *image.NRGBA {
 }
 
 // drawHaze 底部浓、顶部淡的雾霭梯度，做出空气透视纵深。
+//
+// R5 卡 4：函数本体逐字迁出到 ui/overlay.DrawHaze（旧 ui/effects.go:3645-3661）。
+// 这里只留 Field 的探针计数注入口（P1 探针的 draws 计数器归 Field，累加位置与条件一行没动）。
 func (f *Field) drawHaze(gtx layout.Context, w, h int, t float64) {
-	cl := clip.Rect(image.Rect(0, 0, w, h)).Push(gtx.Ops)
-	// 两端同色、只变 alpha：gioui 的渐变按端点色插值，两端 RGB 不同
-	// 会把整屏插成白色（实测背景变成 255,255,255）。
-	paint.LinearGradientOp{
-		Stop1:  f32.Pt(0, float32(h)*0.30),
-		Color1: color.NRGBA{198, 206, 214, 0},
-		Stop2:  f32.Pt(0, float32(h)),
-		Color2: color.NRGBA{198, 206, 214, 96},
-	}.Add(gtx.Ops)
-	paint.PaintOp{}.Add(gtx.Ops)
-	if f.probeCount {
-		f.draws++ // P1 探针计数：drawHaze 雾霭梯度
-	}
-	cl.Pop()
+	overlay.DrawHaze(gtx, w, h, t, f.probeCount, &f.draws)
 }
 
 // airHalfN 云/雾精灵的半宽/半高（归一化）：与绘制口径逐字一致
@@ -4146,11 +3849,10 @@ func spriteScale(p *particle) float64 {
 		return p.sc * p.scaleMul / bandNetDiv
 	}
 	if p.kind == pkFog {
-		// 效果图口径：雾团尺寸 = sc·(0.55+0.45·depth)·scaleMul × fogNetScale(=1.0)，
-		// 1024 px 源图 ⇒ 屏上 732–2867 px，与效果图（2048 源 × 同式 ÷2）逐档相同。
-		// 上一版把雾收成常量 fogNetScale 0.143（净宽 128 px = 旧 Kenney 净宽），
-		// 雾从"整片体积雾"缩成"小团"，与选定效果图不符 ⇒ 恢复逐粒子口径。
-		return p.sc * (0.55 + 0.45*p.depth) * p.scaleMul * fogNetScale
+		// R5 卡 4：雾的倍率本体逐字迁到 ui/overlay.FogScale（旧 ui/effects.go:4148-4153，
+		// "效果图口径 / 净宽 128 px 的旧版为什么撤掉"那四行注释随迁）；
+		// 净倍率常量 fogNetScale 归 ui 的贴图口径（assets.go:377）⇒ 参数注入，公式一行没动。
+		return overlay.FogScale(p.sc, p.depth, p.scaleMul, fogNetScale)
 	}
 	// 其余类（星/雪/尘/光晕）：贴图没有被超采样，÷2 就是它们的既有净口径。
 	return p.sc * (0.55 + 0.45*p.depth) * p.scaleMul / spriteNetDiv
@@ -4939,26 +4641,4 @@ func (f *Field) placeAirXInBand(p *particle) {
 		}
 	}
 	p.x = bestC
-}
-
-// clampFogWidthPx 雾团屏宽按类封顶（P7 用户判据"最多的时候也只能首尾相连，不能重叠"）：
-// 同带 Σ全宽 + 间隙 ≤ 1 屏宽 ⇒ Snow 3 张灰幕 ⇒ 每张 ≤ (1080−42)/3 = 346 px；
-// Fog 1 团（配 1 朵 ≤500 px 的云）⇒ ≤ 540 px。缩的是 sc（绘制倍率本体），
-// 逐字不动 alpha / vx / 团数 / 落位口径。实测封顶前：Snow 单张 1135 px、Fog 884 px。
-func (f *Field) clampFogWidthPx(p *particle, capPx float64) {
-	if capPx <= 0 || p.sc <= 0 {
-		return
-	}
-	sz := metrics.SpriteSizeOr(f.sp.fogSz, p.spr)
-	if sz.X <= 0 {
-		sz = spriteSize(spritesOnce(), pkFog)
-	}
-	if sz.X <= 0 {
-		return
-	}
-	w := float64(sz.X) * spriteScale(p)
-	if w <= capPx {
-		return
-	}
-	p.sc *= capPx / w
 }
