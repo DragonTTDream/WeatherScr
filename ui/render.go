@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"time"
 
-	"gioui.org/f32"
-	"gioui.org/font"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -17,6 +15,8 @@ import (
 	"gioui.org/text"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
+
+	"github.com/DragonTTDream/WeatherScr/ui/panel"
 
 	"github.com/DragonTTDream/WeatherScr/effect"
 	"github.com/DragonTTDream/WeatherScr/ui/sky"
@@ -38,148 +38,38 @@ func New() *Screen {
 var (
 	ink     = color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
 	inkSoft = color.NRGBA{R: 0xe8, G: 0xee, B: 0xf6, A: 0xd8}
-	// inkSep 对应原版 Separator 的 separatorColor（细、半透明）。
-	//
-	// 降到 0x2A 后，客观指标（bin/fxmetrics.py panel_step）实测
-	// 分隔线处**落差仍是 68/255**，且直接量像素得到线色 (98,105,114)、
-	// 背景 (28,37,51) ⇒ **有效 alpha ≈ 0.37**，而声明值是 0x165。
-	// 根因（这才是"白条"没真正消失的机制）：gioui 的 layout.Flex 对子控件
-	// 先测量后绘制，1 px 线段被**叠加绘制 2–3 次**，
-	// 累积 alpha = 1−(1−a)^n：0x2A 时 n=3 → 0.418。
-	// 故按叠加次数反推：目标"线比背景亮约 15 级" ⇒ 累积 alpha ≈ 0.08
-	// ⇒ 单次 a ≈ 0.041 → **0x0A**。颜色 RGB 不动（同色只变 alpha 铁律）。
-	inkSep = color.NRGBA{R: 0xd8, G: 0xe2, B: 0xee, A: 0x0A}
+	// inkSep 转发色：本体 = panel.InkSep（R5 卡 7 迁到 ui/panel/style.go，叠加口径注释随本体迁出）。
+	inkSep = panel.InkSep
 )
 
-// separatorLenFrac 分隔线的**内缩比例**：
-// 线宽 = 该块内容宽度 × 0.62，水平居中，不得触及面板/屏幕全宽。
-// 此前：0.62 → 0.42，让线段占比低于行中位数的采样过半线，
-// 指标不再被单条线主导（也进一步降低"切割感"）。
-const separatorLenFrac = 0.90 // 需求：上下的分割线拉长 ⇒ 0.42 拉到 0.90
+// separatorLenFrac 转发常量（本体 = panel.SeparatorLenFrac，注释随本体迁 ui/panel/style.go）。
+const separatorLenFrac = panel.SeparatorLenFrac
 
-// borderAlphaScale 面板描边的实际 alpha 系数：
-// 启用描边时 alpha = border_opacity × 0.35。默认 border_opacity = 0.0 = 不描边。
-const borderAlphaScale = 0.35
+// borderAlphaScale 转发常量（本体 = panel.BorderAlphaScale）。
+const borderAlphaScale = panel.BorderAlphaScale
 
-// shadowInk 逐字照抄上游 rendering/quick/qml/ShadowedText.qml 的
-// `shadowColor: "#96000000"`（ARGB，alpha 0x96=150 的暗色副本）。
-// 证据：需求 2；本次不改。
-var shadowInk = color.NRGBA{R: 0, G: 0, B: 0, A: 0x96}
+// shadowInk 转发色（本体 = panel.ShadowInk，逐字照抄上游 ShadowedText.qml 的 shadowColor）。
+var shadowInk = panel.ShadowInk
 
-// shadowOffsetPx = 2 是**下限**，语义来自上游 ShadowedText.qml
-// `shadowOffsetY: 2.0` / `shadowOffsetX: 0.0`。
-//
-// 旧版把它当固定值照抄，实测结果 = 缺陷 2："文字
-// 信息）看起来是纯白色的，没有明显的投影或阴影效果"（视觉判读
-// 离屏图 lane_cloudy。根因：上游的 2.0 px 是给它的 25 pt 天气字号用的
-// （default_settings.py 'weather' 块 font_size 25），本复刻时钟是 144 pt
-// （声明值 ClockFontSize=144，低性能 x86 小主机配置 font_size 144→174，
-// 见 ui/layout.go:31-32，2 px 在 144 pt 上等于没有。
-const shadowOffsetPx = 2
+// shadowOffsetPx 转发常量（本体 = panel.ShadowOffsetPx，上游 shadowOffsetY 的下限语义随本体迁出）。
+const shadowOffsetPx = panel.ShadowOffsetPx
 
-// shadowOffsetForPx 阴影偏移随字号走：max(2, round(字号px × 0.03))
-// 下限 2 保持上游语义：
-// 144 pt → 4 px、174 pt → 5 px、25 pt → 1 → 取下限 2（与上游一致）、
-// 本复刻天气 40 pt → 1 → 取下限 2。
-//
-// 字号px 口径：gioui 的 unit.Sp 经 gtx.Sp() 换成设备像素
-// （unit/unit.go:48-51 `Metric.Sp = round(PxPerSp × v)`）；竖屏目标与 fxshot
-// 的 Viewport.Scale=1、TextScale=1 → PxPerSp=1 → 字号 px 就是声明的 sp 值。
-func shadowOffsetForPx(px int) int {
-	o := int(math.Round(float64(px) * 0.03))
-	if o < shadowOffsetPx {
-		return shadowOffsetPx
-	}
-	return o
-}
+// shadowOffsetForPx 转发到 panel.ShadowOffsetForPx（R5 卡 7 纯迁移：本体见 ui/panel/style.go，
+// 公式 max(2, round(字号px × 0.03)) 与字号 px 口径逐字不变）。
+func shadowOffsetForPx(px int) int { return panel.ShadowOffsetForPx(px) }
 
-// panelRadiusMaxPx 面板圆角半径上限。上游 weather 块无此键（取证未覆盖），
-// 取一个与上游面板视觉一致的常量作为**上限**。TODO(未取证)：上游圆角半径口径。
-//
-// 半径随面板高度自适应 =
-// min(panelRadiusMaxPx, 面板高/6)，不再用固定 8 px。
-const panelRadiusMaxPx = 18
+// panelRadiusMaxPx 转发常量（本体 = panel.PanelRadiusMaxPx）。
+const panelRadiusMaxPx = panel.PanelRadiusMaxPx
 
-// panelRadiusPx 面板圆角半径（像素）= min(18, 面板高/6)。
-func panelRadiusPx(panelH int) int {
-	r := panelH / 6
-	if r > panelRadiusMaxPx {
-		r = panelRadiusMaxPx
-	}
-	if r < 0 {
-		r = 0
-	}
-	return r
-}
+// panelRadiusPx 转发到 panel.PanelRadiusPx（= min(18, 面板高/6)，逐字同式）。
+func panelRadiusPx(panelH int) int { return panel.PanelRadiusPx(panelH) }
 
-// PanelStyle 是面板底与文字样式，键名与取值逐字照抄上游
-// core/settings/default_settings.py 的 'weather' 块 :1523-1540
-// （'clock' 块 :503-528 带同名键）。
-// 证据：需求 2（实测）。
-type PanelStyle struct {
-	// Set=false 时 Layout 用 DefaultPanelStyle()（fxshot 等未显式传值的调用方）。
-	Set bool
-	// Show = 上游 show_background（默认 True）。
-	Show bool
-	// BG = 上游 bg_color [35,35,35,255]；BGOpacity = 上游 bg_opacity 0.3。
-	BG        color.NRGBA
-	BGOpacity float64
-	// ClockBGOpacity 时钟块面板底的不透明度，配置键 `clock_bg_opacity`，默认 0.26。
-	//
-	// **这是有记录的偏离上游**：
-	// 上游 'clock' 块（core/settings/default_settings.py:503-528）是
-	// `bg_color [35,35,35,255]`、`bg_opacity 0.3`、**`show_background: False`**
-	// —— 上游时钟默认**没有**面板底，因为它的背景是 shader，不忙。
-	// 本复刻的背景是忙碌的 Kenney 云/雾精灵（ui/embed/*.png + effects.go），
-	// 实测云直接压在时间数字上（视觉判读），故时钟区需要遮罩，
-	// 此前把两个默认值一起减淡（0.45→0.26、0.3→0.22），遮罩仍强于天气块（0.26 > 0.22）。
-	ClockBGOpacity float64
-	// Border = 上游 border_color [255,255,255,255]；BorderOpacity 默认 0.0
-	// = 不描边（上游是 1.0）。
-	// 启用时实际 alpha = BorderOpacity × borderAlphaScale(0.35)。
-	Border        color.NRGBA
-	BorderOpacity float64
-	// Margin = 上游 margin 30：面板矩形 = 内容区 rect 外扩 margin。
-	Margin int
-	// TextColor = 上游 color [255,255,255,230]（alpha 230）。
-	TextColor color.NRGBA
-	// Shadow = 上游 ShadowedText.shadowEnabled（默认 true）。
-	Shadow bool
-}
+// PanelStyle = panel.Style 的兼容别名（R5 卡 7：面板底样式本体迁 ui/panel/style.go，键名键序逐字不变）。
+// ⇒ 调用点 ui/settings_ui.go、cmd/scr/main.go 一字不改。
+type PanelStyle = panel.Style
 
-// DefaultPanelStyle 上游缺省值（default_settings.py:1523-1540 逐字），
-// 外加 ClockBGOpacity = 本复刻的有记录偏离（见 PanelStyle.ClockBGOpacity）。
-//
-// 三个默认值按视觉读图整改：
-//
-//	BGOpacity      0.3  → 0.22   （天气面板底）
-//	ClockBGOpacity 0.45 → 0.26   （时钟面板底）
-//	BorderOpacity  1.0  → 0.0    （默认不描边）
-//
-// 描边默认关闭的判据 = 读图判读"白色细边框在夜间非常刺眼，像旧式 Windows
-// 窗口残留"；面板底减淡的判据 = 底 0.45/0.3 把天空压成两块灰板。
-// 键语义与键名不变（铁律：不改配置键语义），只改默认值。
-// DefaultPanelStyle 面板底默认值。
-//
-// 2026-10-16 修掉一个**双真相源**缺陷：config 的默认值与这里的默认值各写一份，
-// 需求"全透明"落地时只改了 config，`cmd/fxshot` 走的是本函数
-// ⇒ 预览图仍是不透明面板，看到的与生产路径不一致。
-// 现在两处必须同口径：**全透明**（无底无边框）。
-// 生产路径仍由 `cmd/scr/main.go: panelStyle()` 从 config 覆盖。
-func DefaultPanelStyle() PanelStyle {
-	return PanelStyle{
-		Set:            true,
-		Show:           false, // 全透明
-		BG:             color.NRGBA{35, 35, 35, 255},
-		BGOpacity:      0.0,
-		ClockBGOpacity: 0.0,
-		Border:         color.NRGBA{255, 255, 255, 255},
-		BorderOpacity:  0.0,
-		Margin:         30,
-		TextColor:      color.NRGBA{255, 255, 255, 230},
-		Shadow:         true, // 透明底下的可读性全靠上游阴影字（ShadowedText.qml）
-	}
-}
+// DefaultPanelStyle 转发到 panel.DefaultStyle（上游 default_settings.py 缺省值 + 本复刻的有记录偏离）。
+func DefaultPanelStyle() PanelStyle { return panel.DefaultStyle() }
 
 // Frame 一帧的输入。
 type Frame struct {
@@ -314,81 +204,19 @@ func (s *Screen) Layout(gtx layout.Context, f Frame) layout.Dimensions {
 	return layout.Dimensions{Size: size}
 }
 
-// mulAlpha 按系数缩放 alpha：alpha = 色 alpha × opacity（上游 bg_color 自带
-// alpha 255，bg_opacity 0.3 → 255×0.3 = 76.5 → 77，实测口径。
-func mulAlpha(c color.NRGBA, k float64) color.NRGBA {
-	if k < 0 {
-		k = 0
-	}
-	if k > 1 {
-		k = 1
-	}
-	c.A = uint8(math.Round(float64(c.A) * k))
-	return c
-}
+// mulAlpha 转发到 panel.MulAlpha（alpha = 色 alpha × opacity，钳位 [0,1] 逐字同式）。
+func mulAlpha(c color.NRGBA, k float64) color.NRGBA { return panel.MulAlpha(c, k) }
 
-// fillPanel 画面板底：
-// 1. 圆角矩形内填 bg_color，alpha = bg_opacity × 255；
-// 2. 沿同一圆角矩形描 1px 边，颜色 = border_color，
-// alpha = border_opacity × borderAlphaScale × 255。
-// border_opacity = 0（默认）时**不描边**。
-//
-// 描边用 clip.Stroke（gioui v0.10.3 实测 API：clip.Stroke{Path, Width}.Op()，
-// Path 由 RRect.Path(ops) 给出。受 show_background 控制。
-//
-// bgOpacity 由调用方给：时钟块传 PanelStyle.ClockBGOpacity
-// 默认 0.26，天气块传 PanelStyle.BGOpacity（默认 0.22）
-// —— 上游口径。
-//
-// 圆角半径 = min(18, 面板高/6)，随面板高度自适应。
+// fillPanel 转发到 panel.FillPanel（面板底 + 描边的绘制顺序与 alpha 口径逐字不变）。
 func fillPanel(gtx layout.Context, r image.Rectangle, st PanelStyle, bgOpacity float64) {
-	if !st.Show {
-		return
-	}
-	if r.Max.X <= r.Min.X || r.Max.Y <= r.Min.Y {
-		return
-	}
-	rr := gtx.Dp(unit.Dp(panelRadiusPx(r.Dy())))
-	outer := clip.RRect{Rect: r, SE: rr, SW: rr, NW: rr, NE: rr}
-	cl := outer.Push(gtx.Ops)
-	// **平铺单色填充 = 上游原样**
-	// "时钟底版和天气信息的底版要么跟原版一样，要么全透明也挺好看的，
-	// 怎么现在是个四不像！"。
-	//
-	// 此前曾把面板改成三段边缘渐隐（上下 alpha 归零），
-	// 目的是消掉 bin/fxmetrics.py 测到的 panel_step 断层。
-	// 结果：既不是原版的实底面板，也不是干净的全透明 —— 四不像。
-	// **教训：指标驱动的改动不得越过"与上游一致"这条线。**
-	// panel_step 那个"断层"本来就是上游面板的样子。
-	base := mulAlpha(st.BG, bgOpacity)
-	paint.Fill(gtx.Ops, base)
-	cl.Pop()
-
-	if st.BorderOpacity <= 0 {
-		return // 默认不描边
-	}
-	border := clip.Stroke{Path: outer.Path(gtx.Ops), Width: 1}.Op().Push(gtx.Ops)
-	paint.Fill(gtx.Ops, mulAlpha(st.Border, st.BorderOpacity*borderAlphaScale))
-	border.Pop()
+	panel.FillPanel(gtx, r, st, bgOpacity)
 }
 
-// shadowed 照抄上游 ShadowedText.qml 的语义：同一字形先在偏移
-// (0, +偏移) 画一份 alpha 0x96 的暗色副本（上游 z:0），再以主字色画在 (0,0)
-// （上游 z:1）。**无模糊、无 MultiEffect、无 layer capture**（该文件注释明说）。
-// row 是"按给定颜色画这一行"工厂，整行（含内联多段文字）一起复制两份。
-//
-// 偏移 = shadowOffsetForPx(gtx.Sp(sp))，随字号走
-// （旧版固定 2 px 在 144 pt 大字上实测不可见 = 缺陷 2）。
+// shadowed 转发到 panel.Shadowed（阴影副本 + 主字的两遍绘制逐字不变）。
+// 图层掩码是 ui 帧调度侧的量（LayerMask 留在本文件）⇒ 这里把「要不要阴影」算成布尔传给 panel，
+// 旧实现的判据 st.Shadow && layers.on(LayerShadow) 逐字保持。
 func (s *Screen) shadowed(st PanelStyle, sp unit.Sp, row rowFn, layers LayerMask) layout.Widget {
-	return func(gtx layout.Context) layout.Dimensions {
-		if st.Shadow && layers.on(LayerShadow) {
-			off := shadowOffsetForPx(gtx.Sp(sp))
-			mac := op.Offset(image.Pt(0, off)).Push(gtx.Ops)
-			row(shadowInk)(gtx)
-			mac.Pop()
-		}
-		return row(st.TextColor)(gtx)
-	}
+	return panel.Shadowed(st, sp, row, layers.on(LayerShadow))
 }
 
 // clamp8 把任意浮点亮度收进 [0,255]。
@@ -419,16 +247,9 @@ func inPx(gtx layout.Context, px PxRect, content layout.Widget) {
 	mac.Pop()
 }
 
+// label 转发到 panel.Label（字号/颜色/对齐口径逐字不变，主题取屏保侧 s.Theme）。
 func (s *Screen) label(txt string, sp unit.Sp, col color.NRGBA, align text.Alignment) layout.Widget {
-	return func(gtx layout.Context) layout.Dimensions {
-		if txt == "" {
-			return layout.Dimensions{}
-		}
-		l := material.Label(s.Theme, sp, txt)
-		l.Color = col
-		l.Alignment = align
-		return layout.Center.Layout(gtx, l.Layout)
-	}
+	return panel.Label(s.Theme, txt, sp, col, align)
 }
 
 // shiftY 把像素矩形整体上下偏移 dy（布局偏移面板项）。
@@ -442,98 +263,39 @@ func panelRect(px PxRect, margin int) image.Rectangle {
 	return image.Rect(px.X-margin, px.Y-margin, px.X+px.W+margin, px.Y+px.H+margin)
 }
 
-// rowFn 是"按给定颜色画一行文字"工厂：shadowed 用它把整行画两遍
-// （阴影副本 + 主字），内联多段文字的条件行也整体复制。
-type rowFn = func(col color.NRGBA) layout.Widget
+// rowFn = panel.RowFn 的兼容别名（「按给定颜色画一行文字」工厂）。
+type rowFn = panel.RowFn
 
-// rowText 单行文字。mod 用于粗体/斜体等字形修饰。
+// rowText 转发到 panel.RowText（单行文字 + 字形修饰，逐字不变）。
 func (s *Screen) rowText(txt string, sp unit.Sp, mod func(*material.LabelStyle)) rowFn {
-	return func(col color.NRGBA) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			if txt == "" {
-				return layout.Dimensions{}
-			}
-			l := material.Label(s.Theme, sp, txt)
-			l.Color = col
-			l.Alignment = text.Middle
-			if mod != nil {
-				mod(&l)
-			}
-			return layout.Center.Layout(gtx, l.Layout)
-		}
-	}
+	return panel.RowText(s.Theme, txt, sp, mod)
 }
 
-// rowCondition 条件行：温度(0.81×) " - " + 条件
-// rendering/quick/widgets/weather.py:758-772 的 0.81 口径。
+// rowCondition 转发到 panel.RowCondition（温度 0.81× +「 - 」+ 条件，逐字不变）。
+// 条件行字号 = ui 侧的 WeatherFontSize 档（layout.go 的上游实况常量，卡 7 不点名 ⇒ 留在这里传参）。
 func (s *Screen) rowCondition(temp, cond string) rowFn {
-	return func(col color.NRGBA) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{
-					Axis:      layout.Horizontal,
-					Alignment: layout.Middle,
-				}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						l := material.Label(s.Theme, unit.Sp(WeatherFontSize*0.81), temp)
-						l.Color = col
-						return l.Layout(gtx)
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						l := material.Label(s.Theme, unit.Sp(WeatherFontSize), " - "+cond)
-						l.Color = col
-						return l.Layout(gtx)
-					}),
-				)
-			})
-		}
-	}
+	return panel.RowCondition(s.Theme, temp, cond, unit.Sp(WeatherFontSize))
 }
 
-func bold(l *material.LabelStyle)   { l.Font.Weight = font.Bold }
-func italic(l *material.LabelStyle) { l.Font.Style = font.Italic }
+// bold / italic 转发到 panel.Bold / panel.Italic（字形修饰逐字不变）。
+func bold(l *material.LabelStyle)   { panel.Bold(l) }
+func italic(l *material.LabelStyle) { panel.Italic(l) }
 
-// clockBlock 时钟块：时间行 + 日期行。
-//
-// 文字部分走 ui/textcache.go 的绘制缓存：键 = 两行文字 + 落点/度量/字色/阴影，
-// 键不变 ⇒ 不重排、不重 shape，直接重放录好的绘制宏。
-// 时钟的可见输入每秒只变一次（TimeLine 带秒），15 fps 下约 15 帧里
-// 有 14 帧是重放。面板底 fillPanel 仍在块外逐帧画（1–2 个 op，不在缓存范围）。
-// clockLineWidthCache 横屏时钟行宽的单条记忆（键 = 文本|字号）。
-// 时钟行的可见输入每秒才变一次（TimeLine 带秒）⇒ 单条记忆足够，15 fps 下约 15 帧里
-// 只有 1 帧真正测量一次（其余走记忆），不引入新的每帧排版成本。
-type clockLineWidthCache struct {
-	key string
-	w   int
-}
-
-var clockLineWidth clockLineWidthCache
+// 时钟行宽/字号档的本体在 ui/panel/clocklayout.go（R5 卡 7 纯迁移）：
+// 单条记忆 clockLineWidthCache、量宽与横屏 0.30W 封顶的公式都在那边，逐字不变。
+// 这里只留薄壳：量宽口径 measureText 与横屏封顶函数 landscapeClockFontCapPx 住在
+// ui/alert.go、ui/layout.go（卡 7 不点名 ⇒ 以参数注入，不复制公式）。
 
 // measureClockLineWidth 用现口径字号实测一行文字的实画宽（px）。
 func (s *Screen) measureClockLineWidth(gtx layout.Context, txt string, sp int) int {
-	key := txt + "|" + strconv.Itoa(sp)
-	if clockLineWidth.key == key {
-		return clockLineWidth.w
-	}
-	d := measureText(gtx, s.label(txt, unit.Sp(sp), color.NRGBA{}, text.Middle))
-	clockLineWidth.key, clockLineWidth.w = key, d.Size.X
-	return d.Size.X
+	return panel.MeasureClockLineWidth(gtx, txt, sp, s.Theme, measureText)
 }
 
-// clockLineSp 时钟两行的字号（px）。
-//
-// 竖屏（w ≤ h）逐字返回现口径：时间行 ClockFontSizeShown=174、日期行 WeatherFontSize=40
-// （ui/layout.go:33-34，竖屏版式测试钉死，不许变）。
-// 横屏（w > h）走 L5 封顶：字号 = min(现口径, 由 0.30W 反解的字号) ⇒ 行宽 ≤ 0.30W
-// ⇒ 1920 横屏时钟宽 ≤ 576 px（判据见 ui/landscape_layout_test.go）。
+// clockLineSp 时钟两行的字号（px）：竖屏逐字现口径，横屏走 L5 封顶。
 func (s *Screen) clockLineSp(gtx layout.Context, size image.Point, timeStr, dateStr string) (int, int) {
-	if !IsLandscape(size.X, size.Y) {
-		return ClockFontSizeShown, WeatherFontSize
-	}
-	return landscapeClockFontCapPx(ClockFontSizeShown, s.measureClockLineWidth(gtx, timeStr, ClockFontSizeShown), size.X),
-		landscapeClockFontCapPx(WeatherFontSize, s.measureClockLineWidth(gtx, dateStr, WeatherFontSize), size.X)
+	return panel.ClockLineSp(gtx, size, timeStr, dateStr,
+		ClockFontSizeShown, WeatherFontSize, s.Theme, measureText, landscapeClockFontCapPx)
 }
-
 func (s *Screen) clockBlock(gtx layout.Context, size image.Point, f Frame) {
 	timeStr := f.Clock.TimeLine(f.Now)
 	dateStr := f.Clock.DateLine(f.Now)
@@ -660,62 +422,12 @@ func (s *Screen) weatherBlock(gtx layout.Context, size image.Point, f Frame) {
 	inPx(gtx, px, col)
 }
 
-// separator 对应原版的 detailsSeparator / forecastSeparator（1px 细线）。
-//
-// **内缩短线** —— 线宽 = 该块内容宽度
-// × 0.62、水平居中、1 px、alpha 0x2A。原实现画的是 gtx.Constraints.Max 全宽
-// （= 天气块内容宽，1021 px @1080 屏），读图判为"像一道伤疤一样切断了天空背景"。
-// 布局返回值仍是全宽，保证 Flex 的行距与原版一致（只有画出来的线段变短）。
-func (s *Screen) separator() layout.Widget {
-	return func(gtx layout.Context) layout.Dimensions {
-		size := gtx.Constraints.Max
-		if size.X <= 0 {
-			return layout.Dimensions{}
-		}
-		h := 1
-		lw := int(float64(size.X) * separatorLenFrac)
-		if lw < 1 {
-			lw = 1
-		}
-		if lw > size.X {
-			lw = size.X
-		}
-		x0 := (size.X - lw) / 2
-		mac := op.Offset(image.Pt(0, 0)).Push(gtx.Ops)
-		cl := clip.Rect(image.Rect(x0, 0, x0+lw, h)).Push(gtx.Ops)
-		paint.Fill(gtx.Ops, inkSep)
-		cl.Pop()
-		mac.Pop()
-		return layout.Dimensions{Size: image.Pt(size.X, h)}
-	}
-}
+// separator 转发到 panel.Separator（1px 内缩细线，居中落点与 alpha 逐字不变）。
+func (s *Screen) separator() layout.Widget { return panel.Separator() }
 
-// drawSprite 把精灵贴进绝对矩形 (x,y)–(x+w,y+h)：op.Offset 定位 + clip.Rect 限定 +
-// 直接矩阵缩放。
-//
-// **不用 Affine2D 的 .Scale 方法**：ui/render.go:1036-1043 的 headless 逐像素探针
-// （probe_blit）实测 `NewAffine2D(1,0,0,0,1,0).Scale(pt, origin)`
-// 画不出东西（整屏全透明），而直接矩阵 `NewAffine2D(sx,0,0,0,sy,0)` 整屏覆盖可用。
-// 变换与裁剪必须 Push/Pop 成对（gioui 的 Affine.Add 是累加语义，
-// 见 ui/effects.go:1261-1264 的实测注释。
-//
-// 缩放系数直接算：250→30 就是 30.0/250.0，250→192 就是 192.0/250.0
-// （需求 3）。
+// drawSprite 转发到 panel.DrawSprite（图标位：绝对矩形贴图的定位/裁剪/矩阵缩放逐字不变）。
 func drawSprite(gtx layout.Context, x, y, w, h int, img paint.ImageOp, sz image.Point) {
-	if w <= 0 || h <= 0 || sz.X <= 0 || sz.Y <= 0 {
-		return
-	}
-	mac := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
-	cl := clip.Rect(image.Rect(0, 0, w, h)).Push(gtx.Ops)
-	tr := op.Affine(f32.NewAffine2D(
-		float32(w)/float32(sz.X), 0, 0,
-		0, float32(h)/float32(sz.Y), 0,
-	)).Push(gtx.Ops)
-	img.Add(gtx.Ops)
-	paint.PaintOp{}.Add(gtx.Ops)
-	tr.Pop()
-	cl.Pop()
-	mac.Pop()
+	panel.DrawSprite(gtx, x, y, w, h, img, sz)
 }
 
 // detailItem 详情行的一项（kind 对应上游 _DETAIL_ICON_FILES 的键）。
