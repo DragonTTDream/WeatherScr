@@ -165,6 +165,7 @@ var (
 	// R13（spec §2）：卸载结果状态（核验通过=true），供完成页文案取值
 	uninstallOK bool
 	lastFail    string
+	// R16-C：lastVerify 声明在无 build tag 的 installguard.go（finishpage.go 无 tag，需要跨平台可见）
 
 	logLines []string
 )
