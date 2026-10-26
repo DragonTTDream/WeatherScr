@@ -69,7 +69,9 @@ func TestSettingsPanelUndoLock(t *testing.T) {
 	changed := m
 	changed.Margin = 12
 	changed.Units = "i"
-	p.history = append(p.history, m)
+	// R12：数据结构换成 stack.Stack[PanelModel] 后，这里的压栈口径与生产入栈点
+	// 一致（证据 R12 / settings_ui.go 的 p.history.Push(before)）。
+	p.history.Push(m)
 	p.setModel(changed)
 	if p.Model().Margin != 12 {
 		t.Fatalf("改动未生效: %+v", p.Model())

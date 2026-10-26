@@ -18,6 +18,9 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/DragonTTDream/WeatherScr/geo"
+
+	// R12：撤销栈的数据结构（证据 R12 / 旧 ui/settings_ui.go:136 history []PanelModel）。
+	"github.com/zyedidia/generic/stack"
 )
 
 // 设置面板。
@@ -133,7 +136,10 @@ type SettingsPanel struct {
 
 	kt settingsKeyTag
 
-	history  []PanelModel // Ctrl+Z 撤销栈
+	// history 是 Ctrl+Z 撤销栈（R12：github.com/zyedidia/generic/stack 平替旧切片
+	// `history []PanelModel`，证据 R12 / 旧 ui/settings_ui.go:136）。
+	// 栈顶 = 最近一次改动前的快照；泛型零值可直接用（Push/Pop/Size 不依赖构造器）。
+	history  stack.Stack[PanelModel]
 	locked   bool
 	changed  bool
 	status   string
@@ -293,13 +299,17 @@ func (p *SettingsPanel) setModel(m PanelModel) {
 }
 
 // Undo 弹撤销栈（上游 Ctrl+Z → custom_layout_undo_requested，input_controller.py:207-214）。
+//
+// R12 迁移（证据 R12 / 旧 ui/settings_ui.go:295-306）：弹栈口径逐字不变
+// —— 空栈 ⇒ 状态「无可撤销」且返回 false；非空 ⇒ 弹栈顶、setModel、状态「已撤销」、返回 true。
+// generic/stack v1.2.1 的 Pop() 只返回值、空栈返回零值（无 ok 标志），
+// 所以"空栈"判据继续走 Size()（旧代码的 len(p.history) == 0）。
 func (p *SettingsPanel) Undo() bool {
-	if len(p.history) == 0 {
+	if p.history.Size() == 0 {
 		p.status = "无可撤销"
 		return false
 	}
-	prev := p.history[len(p.history)-1]
-	p.history = p.history[:len(p.history)-1]
+	prev := p.history.Pop()
 	p.setModel(prev)
 	p.status = "已撤销"
 	return true
@@ -431,9 +441,21 @@ func (p *SettingsPanel) Layout(gtx layout.Context, th *material.Theme) layout.Di
 	p.m = p.model()
 	if p.m != before {
 		p.changed = true
-		p.history = append(p.history, before)
-		if len(p.history) > 64 {
-			p.history = p.history[1:]
+		// R12 压栈（证据 R12 / 旧 ui/settings_ui.go:434-436：
+		// `append(p.history, before)` 之后 `if len(p.history) > 64 { p.history = p.history[1:] }`
+		// ⇒ 上限 64、溢出**丢最旧**，栈顶始终是"最近一次改动前的快照"）。
+		// 溢出方向逐字保持：generic/stack v1.2.1 没有"删栈底"API（entries 是私有字段），
+		// 这里把整栈弹出（顺序 = 顶→底，buf[n-1] 即最旧）后跳过最旧那份、
+		// 按原序压回 ⇒ 得到的栈与旧的 history[1:] 逐项逐字相同。
+		p.history.Push(before)
+		if n := p.history.Size(); n > 64 {
+			buf := make([]PanelModel, n)
+			for i := 0; i < n; i++ {
+				buf[i] = p.history.Pop()
+			}
+			for i := n - 2; i >= 0; i-- {
+				p.history.Push(buf[i])
+			}
 		}
 	}
 	return dims
