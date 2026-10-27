@@ -41,3 +41,4 @@ config.json
 # The line below is deliberately commented out: git does not ignore tracked files,
 # and listing it here would only suggest that committing the binary is expected.
 # cmd/setup/payload/WeatherScr.scr
+fxshot_*.png

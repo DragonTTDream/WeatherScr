@@ -7,6 +7,62 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Landscape (wide) settings window: the settings window is now always a
+  landscape rectangle (width > height) regardless of monitor orientation.
+  On portrait displays it requests 1100x640 with a 720x420 minimum, clamped
+  to the work area (`sizeH = min(sizeH, sizeW - 60)` keeps width > height
+  by construction); landscape displays keep the previous 1920x1080 / 900x540
+  pair. The rule is a pure function (`settingsSizeFor`) pinned by unit tests
+  at (1920,1080)->(1920,1080), (1080,1920)->(1080,640), (800,600), (700,900)
+  and (480,1920); every portrait case asserts width > height.
+- Two-column settings panel on landscape windows: the dual-column threshold
+  dropped from 1200 px to 900 px of layout width, so a 1080x640 settings
+  window lays rows in two columns (left: location/language/units/refresh,
+  right: panel appearance/alerts/misc); below 900 px it falls back to a
+  single column. Pinned in `ui/settings/parity_test.go` at 899/900/1080/1920.
+- Offscreen settings renderer `cmd/setshot` (GOOS=linux, `-tags=novulkan`):
+  renders the settings panel at requested sizes and prints the measured
+  layout lines (`THEME_LAND`/`PANEL` with row count and non-background ratio)
+  for shape gates. Measured at 1080x640: dual-column, non-background 6.2%;
+  at 899x640: single-column fallback, 1.8%.
+- Alert logic redesign: official-signal layer (rain/melt-alert official
+  signals, 10 min province-level fetch cycle), coordinate-based administrative
+  lookup (province derived from coordinates), four-state corner badge
+  (bottom-left), alert copy pinned verbatim, and an "no Chinese glyphs in
+  English strings" master switch enforced by a test gate.
+- Full-screen coverage on Windows: the screensaver takes over geometry itself
+  (`WS_POPUP | WS_VISIBLE` + `SW_SHOWNORMAL`, foreground lock) instead of
+  requesting gioui Fullscreen, so it covers all monitors with no
+  taskbar/left-strip gap. Coverage formula pinned in `covermath_test.go`.
+- Log line prefixes now carry month-day (`01-02 15:04:05.000`), pinned by
+  `TestLogLineHasDate`; every `logf` site goes through the same formatter.
+- Wizard single-round driver: atomic re-entry lock for install/uninstall
+  (`installguard.go`, second call within 30 s is refused with a log line),
+  finish page now self-verifies the deployed file (`SHA256 matches the
+  built payload`, 16 hex prefix, from the post-install verify step), and the
+  finish page closes/uninstalls cleanly; pinned by `TestInstallGuardReentry`
+  and `TestFinishBodyHashLine`.
+- `ui/settings` split completed: the panel implementation moved into
+  `ui/settings` (parity tests moved with it, compat forward keeps the old
+  import path working, zero diff on the 44-frame baseline).
+- `zyedidia/generic` dependency: the undo stack is now
+  `github.com/zyedidia/generic/stack` with parity test pinning the
+  80-push sequence and cap-64 overflow semantics.
+- Module map (13 ui subpackages): `ui/metrics`, `ui/sky`, `ui/particles`,
+  `ui/overlay`, `ui/geometry`, `ui/assets`, `ui/panel`, each extracted with
+  a parity test (baseline 44 frames pixel-identical at every step).
+- Landscape layout (1920x1080 targets): panel yields to the cloud bands,
+  margins on the 0.0194W grid, clock capped at 0.30W, cloud widths follow
+  the landscape kinetics table (853-932 px at 1920), z-order clouds-then-text;
+  pinned by `TestLandscapeLayout`.
+- Kinetics module (`ui/kinetics`): three speed tiers (0.0085/0.0040/0.0022
+  W/s) with a 0.0140 freeze cap, lower width bound 0.444W (480 px at 1080)
+  with at most 2 clouds per band and 0.0194W gaps, cloud-sprite whitelist
+  {cloud1,cloud2,cloud4}, and an entry queue that forbids same-time
+  spawn/exit overlap; probe verdicts: 0 violations.
+- `ui/screenfit`: the lowest geometry layer (baseline arithmetic,
+  fallbacks, reference width) extracted with zero behavior migration;
+  baseline 44 frames pixel-identical.
 - Shape mask for the lightning flash: the flash glow is now built by Gaussian-blurring
   the bolt sprite that the flash is drawing (`bolt1..3.png`, sigma = 0.03 x screen
   width, normalised to its peak), so the lit area follows the bolt's own outline

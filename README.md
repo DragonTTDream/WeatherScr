@@ -227,9 +227,22 @@ that is stated here rather than smoothed away.
 ```bash
 make gate     # the single check: build, vet, test, Windows cross-compile
 make fxshot   # headless renderer (Linux, -tags=novulkan)
+make setshot  # offscreen settings-panel renderer + layout line probe (Linux, -tags=novulkan)
+make wfetch   # weather endpoint probe
+make winlist  # window-state probe (Windows: enumerate screensaver/settings windows)
 make icon     # regenerate the .syso resource from icons/WeatherScr.ico
 make clean
 ```
+
+Diagnostic entries for field forensics (all print measured lines, none change state):
+
+- `cmd/alertdiag` — dump the alert decision inputs/outputs for the current config.
+- `cmd/alertreplay` — replay recorded alert frames through the decision layer offline.
+- `cmd/geodiag`  — coordinate → administrative-region lookup probe (`geo/`).
+- `cmd/nmcdiag`  — NMC endpoint/parse probe behind the official-signal layer.
+
+Sprites live in `ui/embed/` (`go:embed`; `ui/embed/ATTRIBUTION.md` lists provenance),
+so the shipped binary carries its own art and needs no external asset folder.
 
 `cmd/fxshot` renders the production layout path to PNG with no window system, which is
 how the visual work is iterated without a display:
