@@ -28,12 +28,12 @@ type Config struct {
 	Units           string `json:"units"`
 	RefreshMinutes  int    `json:"refresh_minutes"`
 
-	// WeatherBaseURL 非空 = 天气请求走自建代理（低性能 x86 小主机无 DNS/无外网）。
+	// WeatherBaseURL 非空 = 天气请求走自建代理（低性能 x86 实机无 DNS/无外网）。
 	// 空 = 直连 Open-Meteo。
 	WeatherBaseURL string `json:"weather_base_url"`
 
 	// FetchTimeoutSeconds 单次天气请求超时。上游 timeout=10；
-	// 批次 A1 S4（spec/a1-fetch-polite.md）：默认值 5 ⇒ 10，与上游 timeout=10 对齐。
+	// 默认值 5 ⇒ 10，与上游 timeout=10 对齐。
 	// 取数在后台 goroutine 里跑 ⇒ 屏保启动照旧不被网络卡住。
 	FetchTimeoutSeconds int `json:"fetch_timeout_seconds"`
 
@@ -41,14 +41,13 @@ type Config struct {
 	FontFamily    string   `json:"font_family"`
 
 	// ---- 面板底与呈现（键名逐字照抄上游 core/settings/default_settings.py
-	// 'weather' 块 :1523-1540；'clock' 块 :503-528 带同名键；
-	// 'input' 块 :27 的 interaction_mode。色值形状同上游 = [R,G,B,A]。
+	// 'weather' 块 :1523-1540；'clock' 块 带同名键；
+	// 'input' 块 的 interaction_mode。色值形状同上游 = [R,G,B,A]。
 	// 证据：----
 
 	BgColor   [4]int  `json:"bg_color"`   // 上游 [35,35,35,255]
 	BgOpacity float64 `json:"bg_opacity"` // 上游 0.3；本复刻默认 0.22
 	// ClockBgOpacity 时钟块面板底不透明度，默认 0.26。
-	//
 	// **偏离上游**：上游 'clock' 块
 	// （core/settings/default_settings.py:503-528）是 bg_opacity 0.3 +
 	// **show_background: False** —— 上游时钟默认没有面板底（它的背景是 shader，
@@ -73,7 +72,7 @@ type Config struct {
 	ShowForecast        bool    `json:"show_forecast"`          // 上游 True
 	ShowFiveDayForecast bool    `json:"show_five_day_forecast"` // 上游 False
 
-	// InteractionMode 上游 'input' 块 :27 'interaction_mode': False。
+	// InteractionMode 上游 'input' 块 'interaction_mode': False。
 	// False = 传统"一动就退出"；True = 交互模式（不因鼠标输入退出）。
 	InteractionMode bool `json:"interaction_mode"`
 
@@ -92,7 +91,7 @@ type Config struct {
 	AlertThresholdPct int   `json:"alert_threshold_pct"`
 	AlertYOffset      int   `json:"alert_y_offset"`
 	AlertPulse        *bool `json:"alert_pulse"`
-	// 预警视野旋钮已在批次 b-alert-v1b 第 2 步拆掉：窗口由官方四级**配对**决定
+	// 预警视野旋钮已在拆掉：窗口由官方四级**配对**决定
 	// （红/橙 3 h、黄 6 h、蓝 12 h），日常层视野 = 常量 2 h（weather.umbrellaViewHours）。
 	// 旧键 alert_window_hours 与旧的视野小时键读到时只写一行日志，不映射成任何视野值。
 	// AlertMinMM = 日常层的淋湿门槛（mm / 15 分钟格），默认 0.05（≈0.2 mm/h）。
@@ -114,7 +113,7 @@ func Defaults() Config {
 		WallpaperIntS:   40,
 		Units:           "c",
 		// 刷新间隔 30 → 1 分钟。需求：获取天气不占资源时按 1 分钟刷新。
-		// 实测成立（低性能 x86 小主机，真实接口地址）：
+		// 实测成立（低性能 x86 实机，真实接口地址）：
 		// 地理编码已缓存 ⇒ 一次刷新 = 1 个请求、平均 476 ms 网络等待、响应体 1090 B；
 		// 1 分钟刷新 = 60 次/小时 ≈ 60 KB/小时，等待在独立 goroutine 里，CPU 可忽略。
 		RefreshMinutes:      1,
@@ -125,14 +124,12 @@ func Defaults() Config {
 		FontFamily: ui.FontFamily,
 
 		// 逐字照抄上游 'weather' 块（default_settings.py:1523-1540）与
-		// 'input' 块 :27。
-		//
+		// 'input' 块。
 		// 按视觉读图整改三个默认值：
 		// 面板底 = **全透明**
-		//
 		// 需求：面板底取全透明（两个可选项：与上游一致 / 全透明，取后者）。
 		// 实现走上游自己的开关语义：'weather' 块 `show_background`
-		// 是可调项（上游 :521 'clock' 就是 False） ⇒ 置 False = 无底无边框，
+		// 是可调项（上游 'clock' 就是 False） ⇒ 置 False = 无底无边框，
 		// 不新增任何上游没有的键。
 		// 上游原值留档在此，供设置面板/文档对照：
 		// bg_color [35,35,35,255] / bg_opacity 0.3 /
@@ -176,9 +173,8 @@ func NormalizeAlertMinMM(v float64) (float64, bool) {
 	return defaultAlertMinMM, true
 }
 
-// MigrateAlertWindowHours 旧键处置（批次 b-alert-v1b 第 2 步）：**只作废、不映射**。
-//
-// 视野旋钮已拆（spec/b-alert-v1b.md「标定实测」：视野 12 h ⇒ 亮时占比 36%、
+// MigrateAlertWindowHours 旧键处置：**只作废、不映射**。
+// 视野旋钮已拆（'标定实测'：视野 12 h ⇒ 亮时占比 36%、
 // 提前量中位 13.75 h，同时违反两条目标；视野 2 h + 门槛 0.05 三条目标同时达标）。
 // 预警窗口由官方四级**配对**决定（红/橙 3 h、黄 6 h、蓝 12 h，见 weather/window.go），
 // 日常层视野 = 常量 2 h ⇒ 旧键 alert_window_hours 读到时**不再映射成任何视野值**，
@@ -215,13 +211,12 @@ func CachePath() string {
 // （屏保约束：配置读不到也要能跑，不得空白或崩）。
 func Load() Config { return LoadFrom(Path()) }
 
-// LoadFrom 从指定路径读配置（Load 用 Path()；测试用临时文件，
-// 因为 Path() 是 Windows 安装目录，非 Windows 的自检只能走显式路径。
-//
-// 读完后收口（批次 b-alert-v1 第 8 步 + b-alert-v1b 第 2 步）：
+// LoadFrom 从指定路径读配置（Load 用 Path；测试用临时文件，
+// 因为 Path 是 Windows 安装目录，非 Windows 的自检只能走显式路径。
+// 读完后收口（+）：
 //
 //	旧键 alert_window_hours 读到时写一行作废日志（窗口由官方量级配对决定，
-//	  本键作废且不映射成任何视野值）；
+//	 本键作废且不映射成任何视野值）；
 //	alert_min_mm 合法范围 0.02–0.5，越界回落 0.05 并写日志。
 func LoadFrom(path string) Config {
 	c := Defaults()
@@ -270,7 +265,7 @@ func (c Config) Path() string {
 	return Path()
 }
 
-// MarshalString 把配置序列化成缩进 JSON 串（/c 用）。
+// MarshalString 把配置序列化成缩进 JSON 串（c 用）。
 func (c Config) MarshalString() (string, error) {
 	b, err := json.MarshalIndent(c, "", "    ")
 	if err != nil {

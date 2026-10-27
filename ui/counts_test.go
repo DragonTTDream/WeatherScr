@@ -1,21 +1,18 @@
 package ui
 
-// 批次 A2 / C5a（降图元上限）的钉死单测 + 必查项（idx% 分组依赖）取证落点。
-//
+// / C5a（降图元上限）的钉死单测 + 必查项（idx% 分组依赖）取证落点。
 // 必查项逐条（grep 全树 idx% 的口径，非测试代码里的全部取模分组）：
-//
 //	ui/effects.go:counts(Snow) 注释指认（幕层取法，P3 起 = idx%86==85 的 3 团）
-//	ui/effects.go:981   idx%5 == 0  → 只在 spawn 的 Clear + isDay 分支（白天补云）
+//	ui/effects.go:981 idx%5 == 0 → 只在 spawn 的 Clear + isDay 分支（白天补云）
 //	ui/effects.go:idx%86 == 85 → 只在 spawn 的 Snow 分支（P3 起 3 团灰幕）
-//	ui/effects.go:1209  cfi[idx%n]   → n = 云形态贴图表长度（cloudFormOf().idx），与总数无关
-//	ui/effects.go:1229  idx%2 == 1   → mirror，仅 pkCloud / pkFog 生效
-//	ui/effects.go:1934  i%2 == 1     → 云带 mirror，自变量 = 带序号 i（bandCount 由类别定）
-//
+//	ui/effects.go:1209 cfi[idx%n] → n = 云形态贴图表长度（cloudFormOf.idx），与总数无关
+//	ui/effects.go:1229 idx%2 == 1 → mirror，仅 pkCloud / pkFog 生效
+//	ui/effects.go:1934 i%2 == 1 → 云带 mirror，自变量 = 带序号 i（bandCount 由类别定）
 // ⇒ Rain / Thunder / Dust 三类的 idx% 依赖 = **无**：
-//   Rain、Thunder 在 spawn 里整档走 `case effect.Rain, effect.Thunder:` ⇒ 全 pkDrop，
-//   贴图按景深挑档（p.spr = int(depth×6.999)，effects.go:1193-1201），全程不吃 idx 取模；
-//   Dust 走 `case effect.Dust:` ⇒ 全 pkMote，贴图 p.spr = r.Intn(len(sp.mote))（随机，不吃 idx）。
-//   三类的 mirror 恒 false（idx%2 只给 pkCloud/pkFog），也没有灰幕那样的整档分组。
+// Rain、Thunder 在 spawn 里整档走 `case effect.Rain, effect.Thunder:` ⇒ 全 pkDrop，
+// 贴图按景深挑档（p.spr = int(depth×6.999)，effects.go:1193-1201），全程不吃 idx 取模；
+// Dust 走 `case effect.Dust:` ⇒ 全 pkMote，贴图 p.spr = r.Intn(len(sp.mote))（随机，不吃 idx）。
+// 三类的 mirror 恒 false（idx%2 只给 pkCloud/pkFog），也没有灰幕那样的整档分组。
 // 下面每条都钉成断言（改数后分组数量 = 预期）。
 
 import (
@@ -81,7 +78,7 @@ func TestCountsTotalCountMatches(t *testing.T) {
 	want := map[effect.Class]int{
 		effect.Rain: 220, effect.Thunder: 300, effect.Dust: 320,
 		effect.Snow: 260, effect.Fog: 2, effect.Cloudy: 2,
-		effect.PartlyCloudy: 2, effect.Overcast: 2, // P3 判据 B：Fog 20→2、Overcast 5→2；B3/R4：Cloudy 3→2（同带 ≤2 朵）
+		effect.PartlyCloudy: 2, effect.Overcast: 2, // P3 判据 B：Fog 20→2、Overcast 5→2；Cloudy 3→2（同带 ≤2 朵）
 	}
 	for cls, n := range want {
 		for _, isDay := range []bool{true, false} {
@@ -94,7 +91,6 @@ func TestCountsTotalCountMatches(t *testing.T) {
 }
 
 // TestIdxGroupRainThunderDustNone 必查项：Rain / Thunder / Dust 三类无 idx% 分组依赖。
-//
 // 钉法：改数后**逐粒子种类计数**必须等于"整档一类"的预期（0 个分组），
 // 且 mirror（idx%2 的分组）在三类里恒 false（idx%2 只给 pkCloud/pkFog）。
 func TestIdxGroupRainThunderDustNone(t *testing.T) {
@@ -195,7 +191,7 @@ func TestIdxGroupSnowIntact(t *testing.T) {
 			// 原断言：雪花 240 片（= 260 − 20 团灰幕）。新断言：257 片 = 260 − 3 团灰幕。
 			// 规格"不许动"钉的是 counts(Snow) = **260**（上面第一条 Fatalf 照钉 260）；
 			// 灰幕从同一池 260 里取 ⇒ 幕层 20 → 3 时雪粒 240 → 257 是同一池的算术结果，
-			// 保 240 就得把总数降到 243 ⇒ 撞判据 3 的 counts(Snow)==260（推导写进 out/notes-p3.md）。
+			// 保 240 就得把总数降到 243 ⇒ 撞判据 3 的 counts(Snow)==260（推导写进）。
 			if flake != 257 {
 				t.Fatalf("Snow seed=%d isDay=%v：雪花瓣数 = %d，期望 257（260 − 3 团灰幕）", seed, isDay, flake)
 			}
@@ -227,7 +223,7 @@ func TestIdxGroupCloudTiersIntact(t *testing.T) {
 	if other != 1 {
 		t.Errorf("Clear 白天非云粒子 = %d，期望 1（B3/R4：counts 4→2 ⇒ 1 云 + 1 光晕；原断言钉 3）", other)
 	}
-	// P3 判据 B：Overcast 粒子数 5 → 2（原断言钉 5）；B3/R4：Cloudy 3 → 2（同带 ≤2 朵）。
+	// P3 判据 B：Overcast 粒子数 5 → 2（原断言钉 5）；B3/：Cloudy 3 → 2（同带 ≤2 朵）。
 	// 本测试的另一半（"这些档的粒子必须全是 pkCloud"）一条没动。
 	for cls, n := range map[effect.Class]int{effect.Cloudy: 2, effect.PartlyCloudy: 2, effect.Overcast: 2} {
 		gf := NewField(cls, true, 20261023)

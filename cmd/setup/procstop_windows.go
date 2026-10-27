@@ -2,11 +2,11 @@
 
 package main
 
-// 卸载前停运行中的屏保进程 + 轮询「文件可删除」（Windows 侧实现）。
-// 走 kernel32 直调（spec publish-uninstall-stopscr §3：禁 taskkill/wmic/PowerShell 子进程，
+// 卸载前停运行中的屏保进程 + 轮询'文件可删除'（Windows 侧实现）。
+// 走 kernel32 直调（禁 taskkill/wmic/PowerShell 子进程，
 // 只用 x/sys）；句柄与 LazyProc 声明在 main.go 的 DLL 句柄块，配对由
 // internal/setupcheck/procdll_test.go 闸门强制登记。
-// 证据：out/notes-b5c.md §3（运行中镜像占用 ⇒ 删除被拒；终止后锁短暂残留 ⇒ 必须轮询）。
+// 证据： （运行中镜像占用 ⇒ 删除被拒；终止后锁短暂残留 ⇒ 必须轮询）。
 
 import (
 	"os"
@@ -25,9 +25,9 @@ const (
 	errSharingViolation = syscall.Errno(32) // ERROR_SHARING_VIOLATION
 )
 
-// stopRunningScrImages 枚举系统进程，终止所有「镜像基名 = 待删文件基名」（大小写无关）的
-// 进程，返回命中并终止的个数（spec §1 A1；日志口径由调用方打印）。
-// 跳过自身 PID（安装器自身基名与目标不同，此判定只防「安装器被改名成 .scr 跑」的自杀边界）。
+// stopRunningScrImages 枚举系统进程，终止所有'镜像基名 = 待删文件基名'（大小写无关）的
+// 进程，返回命中并终止的个数（A1；日志口径由调用方打印）。
+// 跳过自身 PID（安装器自身基名与目标不同，此判定只防'安装器被改名成 .scr 跑'的自杀边界）。
 // 快照句柄与 OpenProcess 句柄都经 CloseHandle 关闭。
 func stopRunningScrImages(target string) int {
 	want := imageBaseName(target)
@@ -67,11 +67,11 @@ func terminateProcessById(pid uint32) bool {
 	return r == 1
 }
 
-// waitFileDeletable 轮询「打开该文件请求删除权」判可删（spec §1 A2）：
+// waitFileDeletable 轮询'打开该文件请求删除权'判可删：
 // CreateFileW(DELETE, READ|WRITE|DELETE 共享, OPEN_EXISTING) 成功 ⇒ 可删；
 // 共享冲突 ⇒ 锁未释放，继续等；文件已不存在 ⇒ 视作可删（与 --delete-only 分支
 // os.IsNotExist ⇒ DEL_OK 的既有口径一致）；其它错误（含 ACCESS_DENIED：非提权侧对
-// System32 的 ACL 拒绝，非锁信号）⇒ 按「未可删」继续等，预算耗尽返回 false，
+// System32 的 ACL 拒绝，非锁信号）⇒ 按'未可删'继续等，预算耗尽返回 false，
 // 调用方照旧走提权删除（行为不比现状更差）。
 // 节奏 stopPollEveryMS=200 ms × stopPollMax=50 次 = 10 s。
 func waitFileDeletable(path string) bool {
@@ -89,8 +89,8 @@ func waitFileDeletable(path string) bool {
 			0, // dwFlagsAndAttributes
 			0, // hTemplateFile
 		)
-		// B14（定因证据：out/b45-run.log 18:17:59 = `openfiles` 指名占用者就是本安装器
-		// `1024 Administrator 1524 b9_setup.exe C:\Windows\System32\WeatherScr.scr`）。
+		// 定因证据（实机 18:17:59）：`openfiles` 指名占用者就是本安装器进程本身
+		// ——它握着 System32 里那个目标文件的独占句柄。
 		// LazyProc.Call 的第三个返回值是 error（动态类型 syscall.Errno），**恒非 nil** ——
 		// 成功时它是 Errno(0)，不是 nil。原先写 `h != InvalidHandle && errno == nil` ⇒ 成功
 		// 分支永不进入 ⇒ 每轮泄漏一个 dwShareMode=0 的独占句柄，10 秒轮询泄漏 50 个，
@@ -110,18 +110,17 @@ func waitFileDeletable(path string) bool {
 	return false
 }
 
-// waitFileWritable 轮询「目标可写」（安装侧 A1，spec publish-install-verify §1 A1；
+// waitFileWritable 轮询'目标可写'（安装侧 A1， A1；
 // 与 waitFileDeletable 同风格、同节奏 stopPollEveryMS=200 ms × stopPollMax=50 = 10 s）。
 // 判据 = CreateFileW(path, GENERIC_WRITE, 0, NULL, OPEN_EXISTING) 的返回值，
 // 逐档口径由纯函数 writableVerdict 给出（procname.go，Linux 侧 T5 断言）：
-//   - 成功 ⇒ 已存在且可写 ⇒ 通过（CloseHandle 后返回）
-//   - ERROR_FILE_NOT_FOUND(2) ⇒ 名字空闲、可创建 ⇒ 通过
-//   - ERROR_ACCESS_DENIED(5) / ERROR_SHARING_VIOLATION(32) ⇒ 被锁（delete-pending）⇒ 继续轮询
-//   - 其它错误 ⇒ 不通过且不再轮询（轮询下去也不会变好）
-//
+// - 成功 ⇒ 已存在且可写 ⇒ 通过（CloseHandle 后返回）
+// - ERROR_FILE_NOT_FOUND(2) ⇒ 名字空闲、可创建 ⇒ 通过
+// - ERROR_ACCESS_DENIED(5) / ERROR_SHARING_VIOLATION(32) ⇒ 被锁（delete-pending）⇒ 继续轮询
+// - 其它错误 ⇒ 不通过且不再轮询（轮询下去也不会变好）
 // dwShareMode 传 0（独占打开）：delete-pending 状态下请求独占写权会被拒 ⇒ 正是锁信号。
-// 证据 out/b18-run.log:100-105（删除成功后立刻 Copy-Item ⇒ Access is denied）、
-// out/b19-run.log:2（约 40 s 后 COPY_OK attempt=0）。
+// 证据（删除成功后立刻 Copy-Item ⇒ Access is denied）、
+// 2（约 40 s 后 COPY_OK attempt=0）。
 func waitFileWritable(path string) bool {
 	p, err := windows.UTF16PtrFromString(path)
 	if err != nil {
@@ -137,7 +136,7 @@ func waitFileWritable(path string) bool {
 			0, // dwFlagsAndAttributes
 			0, // hTemplateFile
 		)
-		// B14：同 waitFileDeletable —— 成功判据只看句柄，句柄必关（errno 恒非 nil，
+		// 同 waitFileDeletable —— 成功判据只看句柄，句柄必关（errno 恒非 nil，
 		// 原先的 `errno == nil` 让独占句柄每轮泄漏一个，自己把目标锁死）。
 		if h != uintptr(windows.InvalidHandle) {
 			procCloseHandle.Call(h)

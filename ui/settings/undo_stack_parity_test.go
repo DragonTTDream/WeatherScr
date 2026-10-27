@@ -11,28 +11,25 @@ import (
 	"gioui.org/widget/material"
 )
 
-// TestUndoStackParity 钉死 Ctrl+Z 撤销栈在 64 上限处的溢出行为（R12 判据 3）。
-//
+// TestUndoStackParity 钉死 Ctrl+Z 撤销栈在 64 上限处的溢出行为（判据 3）。
 // 压栈走**生产入栈点** Panel.Layout（ui/settings_ui.go:429-437：
 // 本帧 model 与上一帧不同 ⇒ 压入 before，容量 64，溢出丢最旧）；
 // 弹栈走生产 Panel.Undo（ui/settings_ui.go:295-306）；
 // 状态文案直接读 p.status。
-//
-// 基准：迁移前旧实现（history []Model + append + 「len>64 ⇒ history = history[1:]」）
-// 于 2026-10-26 实测打印的 82 项序列（80 次压栈越 64 上限，随后 82 次 Undo），
+// 基准：迁移前旧实现（history []Model + append + 'len>64 ⇒ history = history[1:]'）
+// 于 实测打印的 82 项序列（80 次压栈越 64 上限，随后 82 次 Undo），
 // 逐字写死在下面；换成 github.com/zyedidia/generic/stack 之后复跑必须逐字一致。
-//
 // 口径：每帧只改 edMargin（第 i 帧写 100+i），Layout 末尾压入"上一帧的模型"
 // ⇒ 压栈序列的 Margin 依次 30、101、102、…、179；越上限丢最旧后栈里剩
-// 116…179（顶 = 179）⇒ 前 64 项弹栈 179→116 全「已撤销」，后 18 项空栈
-// 「无可撤销」且模型停在 116。
+// 116…179（顶 = 179）⇒ 前 64 项弹栈 179→116 全'已撤销'，后 18 项空栈
+// '无可撤销'且模型停在 116。
 func TestUndoStackParity(t *testing.T) {
 	const (
 		steps = 80 // 压栈次数（越 64 上限）
 		pops  = 82 // 64 次命中 + 18 次空栈
 	)
 
-	// 迁移注（R5 卡 8）：旧写法 th := New().Theme（ui.Screen 的主题 = material.NewTheme()
+	// 迁移注：旧写法 th := New.Theme（ui.Screen 的主题 = material.NewTheme
 	// + WeatherFontSize 40sp 覆写）⇒ ui/settings 不 import ui，取 material.NewTheme() 基线；
 	// 本判据的三项字段（Margin / 状态文案 / Undo 返回值）与字号无关（82 项逐字对拍照绿）。
 	th := material.NewTheme()
@@ -65,7 +62,7 @@ func TestUndoStackParity(t *testing.T) {
 			t.Fatalf("第 %d 项弹栈对拍不一致\ngot  %s\nwant %s", i, got[i], want)
 		}
 	}
-	t.Logf("撤销栈 82 项弹栈序列逐字一致：前 64 项 179→116「已撤销」，后 18 项 116「无可撤销」")
+	t.Logf("撤销栈 82 项弹栈序列逐字一致：前 64 项 179→116'已撤销'，后 18 项 116'无可撤销'")
 }
 
 // goldenUndoPopSequence 是旧实现实测序列，格式 "Margin:状态文案:Undo 返回值"。

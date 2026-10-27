@@ -24,7 +24,7 @@ func normalizeDialog(hwnd uintptr, wpx, hpx int, landscape bool) {}
 // 恒返回 false ⇒ 设置窗口一律走竖屏钳制档（settingsSizeFor(false, …) ⇒ 1100×640 口径）。
 func workAreaIsLandscape() bool { return false }
 
-// workAreaSizePx 桩（b11-setrect brief §1）：返回竖屏样例 1080×1920（ok=true），
+// workAreaSizePx 桩：返回竖屏样例 1080×1920（ok=true），
 // 与 workAreaIsLandscape=false 同口径 ⇒ linux 侧构建/单测走竖屏钳制档。
 func workAreaSizePx() (int, int, bool) { return 1080, 1920, true }
 

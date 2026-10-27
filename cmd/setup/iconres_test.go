@@ -3,7 +3,7 @@ package main
 import "testing"
 
 // TestIconSizes 表驱动：GetSystemMetrics(SM_CXSMICON) 的各种返回值 ⇒ 两次 LoadImageW
-// 要的边长（判据来自 spec/publish-window-icons-brief.md §1「hIcon 32 px、hIconSm SM_CXSMICON px」）。
+// 要的边长（判据来自 'hIcon 32 px、hIconSm SM_CXSMICON px'）。
 func TestIconSizes(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -28,8 +28,8 @@ func TestIconSizes(t *testing.T) {
 	}
 }
 
-// TestPickIconResourceID 表驱动：图标组 ID 候选的择一（判据 = brief §2 的 ID 1 +
-// 实测 cmd/setup 的 syso 里 RT_GROUP_ICON 落在 ID 2，见 out/notes-window-icons.md）。
+// TestPickIconResourceID 表驱动：图标组 ID 候选的择一（判据 = 设计口径的 ID 1 +
+// 实测 cmd/setup 的 syso 里 RT_GROUP_ICON 落在 ID 2，见）。
 func TestPickIconResourceID(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -56,15 +56,15 @@ func TestPickIconResourceID(t *testing.T) {
 	}
 }
 
-// TestIconResourceIDs 锁住候选序列本身：第 1 候选必须是 brief §2 的 1。
+// TestIconResourceIDs 锁住候选序列本身：第 1 候选必须是 设计口径的 1。
 func TestIconResourceIDs(t *testing.T) {
 	if len(iconResourceIDs) == 0 || iconResourceIDs[0] != iconResourceID {
-		t.Errorf("iconResourceIDs = %v，第 1 候选必须是 brief §2 的 %d", iconResourceIDs, iconResourceID)
+		t.Errorf("iconResourceIDs = %v，第 1 候选必须是 %d", iconResourceIDs, iconResourceID)
 	}
 }
 
-// TestIconHandles 表驱动：兜底选择（判据来自 brief §2「LoadImageW 返回 0 时不得 panic，
-// 走 LoadIconW(0, IDI_APPLICATION) 兜底」）。
+// TestIconHandles 表驱动：兜底选择（判据来自 设计口径 'LoadImageW 返回 0 时不得 panic，
+// 走 LoadIconW(0, IDI_APPLICATION) 兜底'）。
 func TestIconHandles(t *testing.T) {
 	const fb = uintptr(idiApplication) // 兜底句柄哨兵：LoadIconW(0, IDI_APPLICATION) 成功时返回的非 0 值
 	tests := []struct {
@@ -96,7 +96,7 @@ func TestIconHandles(t *testing.T) {
 	}
 }
 
-// TestIconConstants 锁住 brief §2 逐字给出的常量，防止改名/改值时悄悄跑偏。
+// TestIconConstants 锁住 逐字给出的常量，防止改名/改值时悄悄跑偏。
 func TestIconConstants(t *testing.T) {
 	tests := []struct {
 		name string
@@ -109,7 +109,7 @@ func TestIconConstants(t *testing.T) {
 		{"SM_CXICON", smCxIcon, 0},
 		{"SM_CXSMICON", smCxSmIcon, 19},
 		{"IDI_APPLICATION", idiApplication, 0x7F00},
-		{"hIcon 边长（brief §1）", wizardIconPx, 32},
+		{"hIcon 边长", wizardIconPx, 32},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

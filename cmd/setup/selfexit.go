@@ -2,7 +2,7 @@
 
 package main
 
-// R5 拆分卡 10：进程自退 —— 提权子进程模式/设置直达（--settings 起设置进程后自行退出）。
+// 安装器拆分：进程自退 —— 提权子进程模式/设置直达（--settings 起设置进程后自行退出）。
 // 完成按钮/取消点击 → PostQuitMessage 的退出分支在 wndProc 内，随 wndProc 逐字搬在 pageflow.go。
 // 原 cmd/setup/main.go:1365-1400 逐字搬移，零行为变化。
 
@@ -17,12 +17,10 @@ import (
 // runSettingsShortcut 实现 `WeatherScr_setup.exe --settings`：
 // 用**直接 CreateProcess** 启动 System32 里的屏保并传 `/c`（配置对话框），
 // 启动成功后本进程立即退出。
-//
 // 取证 36.16.5：`HKCR\scrfile\shell\open\command = "%1" /S` ⇒ 任何经 shell
 // 关联的启动（双击、快捷方式、Start-Process）参数都被强制替换成 `/S` ⇒
 // "设置"快捷方式永远开全屏屏保。同目标用直接 CreateProcess 传 `/c`
 // 得到的是设置窗口（title=WeatherScr 设置，client=624x1061）。
-//
 // 因此本分支**不得**用 ShellExecute / 文件关联：那正是被关联劫持的那条路。
 // lpApplicationName = 目标 exe，lpCommandLine = `"目标" /c`（带引号，
 // 与取证里那条命令行逐字同口径）。

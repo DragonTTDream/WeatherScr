@@ -1,16 +1,14 @@
 package ui
 
 // 阳光铺满整片天空 + 云遮挡阳光 + 闪电以自身为中心照亮 的判据。
-//
 // 共同纪律：每条都真的测量并打印数字。取样盒/取样点是固定口径，
 // 不随天气类或云量缩放；测不到东西时直接判红（不写恒真断言）。
-//
-//	TestSunLightFullSky        晴档昼帧 9 点网格：四角相对"无太阳基线"净抬升 ≥12 级
-//	TestSunLightNoRing         过太阳中心的水平/垂直剖面，逐像素相邻差峰 ≤3 级
-//	TestCloudShadowOnSky       同帧内云覆盖点比无云天空点低 ≥15 级
-//	TestSunLightDimMonotonic   云量 0/30/60/85/100 的四角净抬升单调下降
+//	TestSunLightFullSky 晴档昼帧 9 点网格：四角相对"无太阳基线"净抬升 ≥12 级
+//	TestSunLightNoRing 过太阳中心的水平/垂直剖面，逐像素相邻差峰 ≤3 级
+//	TestCloudShadowOnSky 同帧内云覆盖点比无云天空点低 ≥15 级
+//	TestSunLightDimMonotonic 云量 0/30/60/85/100 的四角净抬升单调下降
 //	TestBoltVisibleDuringFlash flash=0.20 时闪电本体像素 >0
-//	TestFlashAnchorIsBolt      flash=0.30 时锚点增量 > 远处点增量 ×5
+//	TestFlashAnchorIsBolt flash=0.30 时锚点增量 > 远处点增量 ×5
 
 import (
 	"image"
@@ -44,7 +42,6 @@ func sunGrid9(w, h int) [9][2]int {
 }
 
 // TestSunLightFullSky 晴档昼帧的 9 点网格净抬升。
-//
 // 基线 = 同幅面的"无太阳"帧：阴天（Overcast）+ 云量 100（dim 落在下限 0.20，
 // 盘不画、宽光衰减到最低）⇒ 网格点上的太阳贡献接近 0。
 // 测量帧 = 晴（Clear）+ 云量 0（dim=1，全天空抬升取满 A_sky=90）。
@@ -87,15 +84,14 @@ func TestSunLightFullSky(t *testing.T) {
 }
 
 // TestSunLightNoRing 过太阳中心的水平与垂直剖面：逐像素相邻差峰 ≤3 级。
-//
 // 两条口径说明（都是实测逼出来的）：
 //
 //	1 剖面量的是**净抬升**（烘焙 - 同类同幅面的天空基色），不是绝对亮度。
-//	  天空基本身是 top→horizon 的竖向渐变（实测 540×960 顶行 56 级、底行 166 级），
-//	  拿绝对亮度量"铺光有没有圈边"时，基色梯度在垂直方向就是 0.13 级/px 的上升坡，
-//	  131 处上升全部来自基色，不是铺光。
+//	 天空基本身是 top→horizon 的竖向渐变（实测 540×960 顶行 56 级、底行 166 级），
+//	 拿绝对亮度量"铺光有没有圈边"时，基色梯度在垂直方向就是 0.13 级/px 的上升坡，
+//	 131 处上升全部来自基色，不是铺光。
 //	2 剖面从 1.2×盘半径起、向**两侧**各走到画布边缘。盘体羽化带在 [0.88rc, rc]，
-//	  是盘自身的边缘，不在"铺光有没有圈边"这条判据的范围内。
+//	 是盘自身的边缘，不在"铺光有没有圈边"这条判据的范围内。
 //
 // 两条档都量：晴档（画盘 + 星芒）与灰蒙档（云量 100，宽光罩）。
 func TestSunLightNoRing(t *testing.T) {
@@ -190,7 +186,6 @@ func TestSunLightNoRing(t *testing.T) {
 }
 
 // compositeCloudShadowsOnSky 把本帧的云影合成到天空纹理上（CPU 侧）。
-//
 // 影的几何与 alpha 直接取 Field.cloudShadowPlaces（与 GPU 绘制同一份数据），
 // 影的像素取 sprites.tintedImg(-255)（= GPU 上传的那张纯黑副本，alpha 逐字不动），
 // 两处都不在探针里重抄一遍。
@@ -256,7 +251,6 @@ func compositeCloudShadowsOnSky(sky *image.NRGBA, f *Field, w, h int) (*image.NR
 }
 
 // TestCloudShadowOnSky 云影层对天空亮度的削弱（需求："云没有盖住影响背后的阳光"）。
-//
 // 口径：同一帧内（同一个场、同一时刻、同一张天空纹理）
 //
 //	云覆盖点 = 影覆盖率最大的那一点（云团中心）
@@ -327,9 +321,9 @@ func TestCloudShadowOnSky(t *testing.T) {
 	t.Logf("云影片数=%d 云覆盖点(%d,%d) 影覆盖率=%.3f 无云点(%d,%d) 影覆盖率=0", nPlace, cx, cy, maxCov, fx, cy)
 	t.Logf("云覆盖点亮度=%.1f 无云天空点亮度=%.1f 差=%.1f 级（判据 ≥15）", lowLum, highLum, highLum-lowLum)
 	t.Logf("同点影自身削弱：无影天空=%.1f → 有影天空=%.1f 差=%.1f 级", skyLow, lowLum, skyLow-lowLum)
-	// B3/R3 后的判据口径（记 out/notes-b3-kinetics.md）：
+	// B3/ 后的判据口径（记）：
 	// 白名单 cloud1/cloud2/cloud4 的最大 alpha = 95/81/61，停用组 cloud3/5/6 = 252/229/255
-	// （evidence/p8-numbers-20261023.md:26-33）⇒ 影层可叠加的覆盖率被贴图 alpha 顶死
+	// （26-33）⇒ 影层可叠加的覆盖率被贴图 alpha 顶死
 	// （实测最大影覆盖率 0.213）。跨取样点差（云覆盖点 vs 无云点）里混着天空基色梯度
 	// （本例取样点基色差 88.0−76.7 = 11.3 级），旧钉的"跨点 ≥15 级"在白名单下物理不可达
 	// （实测 6.3 级）。现钉**同点口径**（基色中性：同一像素 无影天空 → 有影天空）≥ 15 级，
@@ -399,7 +393,6 @@ func TestCloudShadowOnSky(t *testing.T) {
 }
 
 // TestSunLightDimMonotonic 云量 0/30/60/85/100 时四角净抬升单调下降。
-//
 // 净抬升 = 晴档该云量的烘焙 - 同幅面无太阳基线（阴天云量 100）。
 // 全天空抬升与近场光斑都乘 dim = 1 − 0.8·(云量/100)（夹 [0.20,1.00]）
 // ⇒ 云量越多，四角抬升必须越小。
@@ -436,10 +429,8 @@ func TestSunLightDimMonotonic(t *testing.T) {
 }
 
 // TestBoltVisibleDuringFlash flash=0.20 时闪电本体必须画得出来。
-//
 // 改动前本体阈值 flash>0.25 ⇒ flash=0.20 这一帧本体像素 = 0（只见亮不见电）。
 // 现阈值 boltFlashMin=0.12。
-//
 // 测量口径：同一个场连渲两帧，中间只把 f.flash 从 0.20 改成 0
 // ⇒ 两帧之差 = 闪光层（软光罩 + 云 alpha 抬升）+ 闪电本体 的贡献。
 // 软光罩是缓坡，本体是锐利枝：取"闪电外接框内的增量中位数"当光罩基线，
@@ -452,7 +443,7 @@ func TestBoltVisibleDuringFlash(t *testing.T) {
 	defer win.Release()
 	f := NewField(effect.Thunder, true, 20261015)
 	f.SetWeatherCode(95)
-	// 批次 A2 / C1：模拟时长按 fixedStep 换算成**步数**（C1 第 1 条把位移基准写死 fixedStep，
+	// / C1：模拟时长按 fixedStep 换算成**步数**（C1 第 1 条把位移基准写死 fixedStep，
 	// flash 包络也随步数推进）⇒ "90 秒模拟" = 90 s ÷ fixedStep = 5400 步，
 	// 每帧喂一个 fixedStep ⇒ 一帧一步，逐**步**采样 flash（旧口径 1/15 s 一帧只采到
 	// 每第 3 步，0.15–0.30 s 的闪现只有 1–2 步落在 (0.12,0.30) 内 ⇒ 采不到）。
@@ -536,7 +527,6 @@ func TestBoltVisibleDuringFlash(t *testing.T) {
 }
 
 // TestFlashAnchorIsBolt 闪光的照亮中心 = 闪电落点。
-//
 // flash=0.30 时量两点增量：锚点（= f.boltX/f.boltY，也是 drawBolt 的落位中心）
 // 与沿水平方向距锚点 0.5 屏宽处（软光罩半径 0.35 屏宽之外）。
 // 判据：锚点增量 > 远处增量 ×5，且锚点增量 ≥10 级（量到东西）。

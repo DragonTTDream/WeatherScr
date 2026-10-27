@@ -53,7 +53,7 @@ func TestInitialOverlapBudget(t *testing.T) {
 		// （Cloudy 1.99 / Fog 1.81 / Snow 4.16）在同屏不相叠在算术上不可能，
 		// 其含粒子占比下界 = (Σ宽/span − 1)×100 ≈ Snow 45.6%
 		// （span = 3080 px = 2.857 屏宽，avgLayers 实测 1.53）。
-		// 出处：evidence/p6b-placement-arithmetic-20261023.md（2026-10-23 实测表）。
+		// 出处（实测表）。
 		pinIncl := map[string]map[string]float64{
 			"cloudy": {"铺放": 22.53, "400": 0.00, "800": 0.00},
 			"snow":   {"铺放": 0.00, "400": 48.67, "800": 38.75},

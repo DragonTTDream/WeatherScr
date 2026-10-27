@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestDbgLogPath 钉死带外日志落点口径（2026-10-22 实机取证：
+// TestDbgLogPath 钉死带外日志落点口径（实机取证：
 // exe 同目录要跨 ACL/完整性级别的墙，取证不能依赖安装位置）。
 func TestDbgLogPath(t *testing.T) {
 	want := filepath.Join(`C:\Temp`, "WeatherScr-scr_run.log")

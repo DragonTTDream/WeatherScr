@@ -14,9 +14,8 @@ func eq(c color.NRGBA, r, g, b, a uint8) bool {
 	return c.R == r && c.G == g && c.B == b && c.A == a
 }
 
-// TestPaletteForModeExact 对应 spec §3 T1：四色写死期望值，不许只比大小。
-//
-// 浅色 = material.NewTheme() 的固定四色（widget/material/theme.go:58-63）。
+// TestPaletteForModeExact 对应 T1：四色写死期望值，不许只比大小。
+// 浅色 = material.NewTheme 的固定四色（widget/material/theme.go:58-63）。
 // 深色 = 本批次自定并写死的深底浅字（ui/theme.go paletteForMode）。
 func TestPaletteForModeExact(t *testing.T) {
 	light := paletteForMode(false)
@@ -65,7 +64,7 @@ func TestPaletteForModeExact(t *testing.T) {
 	}
 }
 
-// TestPanelTextSp 对应 spec §3 T3：panelTextSp 存在且 ≤ 20。
+// TestPanelTextSp 对应 T3：panelTextSp 存在且 ≤ 20。
 func TestPanelTextSp(t *testing.T) {
 	if panelTextSp <= 0 || panelTextSp > 20 {
 		t.Errorf("panelTextSp = %v，期望 (0, 20]", float32(panelTextSp))

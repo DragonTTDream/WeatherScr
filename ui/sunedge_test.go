@@ -1,16 +1,14 @@
 package ui
 
 // 铺光无边界 + 闪电形状光 + 云速平滑 + 云带整朵出屏 的六条判据。
-//
 // 共同纪律：每条都真的测量并打印数字。取样盒/取样点由图幅与常量决定，
 // 不随天气类或云量缩放；样本不足/测不到东西时直接判红（不写恒真断言）。
-//
-//	TestSunLightNoEdge           过盘心的四条剖面：单调不升 + 0.45w 净抬升 ≥ 峰值 25%
-//	                             + 相邻差峰 ≤ 2 级 + 旧贴图 rim 处两侧 20 px 平均差 ≤ 2 级
-//	TestFlashShapeIsBolt         flash=0.30 时提亮沿闪电走向（同一半径上最大/最小方向比 ≥ 2）
-//	TestCloudVxSmooth            600 帧逐帧 |Δvx| 最大值 ≤ cloudVxSlew
-//	TestCloudNoJerkyMotion       600 帧每帧屏幕位移 ≤ 4 px、加速度峰 ≤ 0.6 px/帧²
-//	TestBandWrapFullyOffscreen   每条带 wrap 那一刻左边缘 ≥ 屏宽、进场那一刻右边缘 ≤ 0
+//	TestSunLightNoEdge 过盘心的四条剖面：单调不升 + 0.45w 净抬升 ≥ 峰值 25%
+//	 + 相邻差峰 ≤ 2 级 + 旧贴图 rim 处两侧 20 px 平均差 ≤ 2 级
+//	TestFlashShapeIsBolt flash=0.30 时提亮沿闪电走向（同一半径上最大/最小方向比 ≥ 2）
+//	TestCloudVxSmooth 600 帧逐帧 |Δvx| 最大值 ≤ cloudVxSlew
+//	TestCloudNoJerkyMotion 600 帧每帧屏幕位移 ≤ 4 px、加速度峰 ≤ 0.6 px/帧²
+//	TestBandWrapFullyOffscreen 每条带 wrap 那一刻左边缘 ≥ 屏宽、进场那一刻右边缘 ≤ 0
 //	TestParticleCloudRecycleUnchanged 粒子云整朵出屏判据回归（照跑 TestRecycleFullyOffscreen）
 
 import (
@@ -35,14 +33,12 @@ const sunEdgeRimFrac = 0.465
 const sunEdgeQuant = 1.0
 
 // TestSunLightNoEdge 过太阳中心的四条射线剖面（合起来 = 水平剖面 + 垂直剖面）。
-//
 // 剖面量的是**净抬升**（烘焙 - 同类同幅面的天空基色 skyBaseCPU）：
 // 天空基本身是竖向渐变（实测 540×960 顶行 63 级、底行 166 级），
 // 拿绝对亮度量"铺光有没有边界"时，基色梯度会整个混进剖面。
-//
 // 两条档都量：
 //
-//	晴（云量 0）  = 盘 + 星芒贴图 + 两项解析铺光
+//	晴（云量 0） = 盘 + 星芒贴图 + 两项解析铺光
 //	灰蒙（云量 100）= 不画盘，宽光软形状底 + 两项解析铺光
 //
 // 四条断言：
@@ -50,8 +46,8 @@ const sunEdgeQuant = 1.0
 //	1 从中心到画布边缘单调不升（上升处数 = 0，容差 = 量化噪声 1 级）
 //	2 半径 0.45w 处净抬升 ≥ 剖面峰值（盘心净抬升）的 25%
 //	3 盘缘之外（r > rc）逐像素相邻差峰 ≤ 2 级；盘缘内的盘体陡段单独打印
-//	  （盘体 120 级落在 12% 半径的 cos² 羽化带上 = 每像素几十级，规格明令盘半径/羽化口径不动；
-//	   旧口径的"加满钳平"把这一截盖在饱和区里，留头合成之后它露出来了）
+//	 （盘体 120 级落在 12% 半径的 cos² 羽化带上 = 每像素几十级，规格明令盘半径/羽化口径不动；
+//	 旧口径的"加满钳平"把这一截盖在饱和区里，留头合成之后它露出来了）
 //	4 旧贴图 rim 半径 0.465w 处，内侧 20 px 平均与外侧 20 px 平均之差 ≤ 2 级
 //
 // 第 4 条的档：rim 是**贴图掩膜归零**的那个半径，只有灰蒙档画那张贴图
@@ -170,7 +166,6 @@ func TestSunLightNoEdge(t *testing.T) {
 }
 
 // TestFlashShapeIsBolt 闪光的提亮形状 = 闪电本体（不是圆）。
-//
 // 口径：同一个场连渲两帧（flash=0.30 与 flash=0），两帧的逐像素差 = 提亮层+闪电本体的贡献。
 // 三张闪电贴图逐张量（f.boltIdx 逐张指定，判据对三张都要成立）：
 //
@@ -321,7 +316,6 @@ func fmtAngle(th float64) string {
 }
 
 // TestCloudVxSmooth 云速低通的实测：600 帧里逐朵记录每帧 |Δvx|，最大值 ≤ cloudVxSlew。
-//
 // 回收（spawn 换掉整朵）那一帧的速度是重新生成的，不属于"逐帧修正"，跳过；
 // 判据只量在场云的速度变化。样本数打印出来（不足 2000 次说明云没在场/没被调，判红）。
 func TestCloudVxSmooth(t *testing.T) {
@@ -371,7 +365,6 @@ func TestCloudVxSmooth(t *testing.T) {
 }
 
 // TestCloudNoJerkyMotion 云屏幕位移的实测：600 帧，每帧位移 ≤ 4 px、加速度峰 ≤ 0.6 px/帧²。
-//
 // 位移 = Δx × 屏宽；加速度 = 位移的一阶差分（= 每帧位移的变化量）。
 // 回收帧跳过（x 从屏幕右沿瞬移回屏幕外，不是运动）。
 func TestCloudNoJerkyMotion(t *testing.T) {
@@ -428,13 +421,12 @@ func TestCloudNoJerkyMotion(t *testing.T) {
 
 // TestBandWrapFullyOffscreen 云带 wrap 的实测：400 帧里逐条带抓 wrap 那一刻，
 // 断言出屏那一刻带左边缘 ≥ 屏宽（整朵出屏）、进场那一刻带右边缘 ≤ 0（整朵在屏外）。
-//
 // wrap 是相位 mod 的瞬移，逐帧采样只能看到瞬移前后两个位置，抓不到"那一刻"。
 // 这里把时刻解出来：相位 phase(t) = 速度·t + span·i/N，wrap 发生在 phase = k·span_i，
 // 于是 t* = (k·span_i − span·i/N)/速度，取 t*∓1ms 两点就是瞬移前/后的带位置。
 // 速度口径 = 绘制用的 0.03·屏宽·0.725（带间均速，公共口径不动），span_i = w + 2·dw_i（逐带）。
 func TestBandWrapFullyOffscreen(t *testing.T) {
-	// 批次 A2 / C1：位移改固定步长后，一帧 dt=1 s 只推进追赶上限 3 步 = fixedStepCatchup×fixedStep
+	// / C1：位移改固定步长后，一帧 dt=1 s 只推进追赶上限 3 步 = fixedStepCatchup×fixedStep
 	// 的动画时间（旧口径一帧 = 1 s）。判据量的是 400 s 动画时长里的 wrap 次数 ⇒ 帧数必须按
 	// fixedStep 常量换算：400 s ÷ (fixedStepCatchup × fixedStep) = 8000 帧。
 	// 换算口径变了（产品语义按批准变更），判据本体（wrap 次数 ≥1 + 出屏/进场几何）逐字不变。

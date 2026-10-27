@@ -2,7 +2,7 @@ package main
 
 import "testing"
 
-// T5（spec §3）：卸载回滚值的三种输入 ⇒ 空 / 自指路径 / 他机屏保路径。
+// 卸载回滚值的三种输入 ⇒ 空 / 自指路径 / 他机屏保路径。
 func TestUninstallScrActionThreeInputs(t *testing.T) {
 	const self = `C:\Windows\System32\WeatherScr.scr`
 	cases := []struct {
@@ -11,7 +11,7 @@ func TestUninstallScrActionThreeInputs(t *testing.T) {
 		want string
 	}{
 		{"空（安装前没有屏保）", "", scrActionDelete},
-		{"自指路径（双安装把回滚值覆盖成安装后的值，spec §0.4/§0.5）", self, scrActionDelete},
+		{"自指路径（双安装把回滚值覆盖成安装后的值）", self, scrActionDelete},
 		{"自指路径 · 大小写不同", `c:\windows\system32\weatherscr.SCR`, scrActionDelete},
 		{"自指路径 · 带引号", `"C:\Windows\System32\WeatherScr.scr"`, scrActionDelete},
 		{"自指路径 · 正斜杠", `C:/Windows/System32/WeatherScr.scr`, scrActionDelete},

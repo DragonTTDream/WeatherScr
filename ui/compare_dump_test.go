@@ -3,9 +3,7 @@
 // P7 效果图出件（交付物 1/3 的原料）：满密度态（800 步）逐类固定帧出图。
 // 复用 pixeldump_test.go 里现成的 dumpScenario / dumpSample / 出图链，
 // 只换场景表与目录环境变量 ⇒ 零重复声明。
-//
 //	WS_COMPARE_DIR=/dir go test -tags=novulkan -count=1 -run TestCompareDumpP7 ./ui
-//
 // 目录未设 ⇒ 跳过，常规闸门不受影响。
 
 package ui

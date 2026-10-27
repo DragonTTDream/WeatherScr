@@ -1,19 +1,16 @@
 package main
 
-// geodiag = 地理选点的带外诊断（批次 b-alert-v2 第 8 步）。
-//
+// geodiag = 地理选点的带外诊断。
 // 用法：`geodiag <地名> <lang>`（lang = zh / en，只影响反查的 accept-language）
 // 打印形状照 cmd/alertdiag/main.go（只打印、不渲染）：
-//
 //	FULLPATH=<国/省/市/区 完整行政路径，缺级自动跳过>
 //	ISO=<ISO3166-2-lvl4>
 //	LATLON=<lat,lon 4 位小数>
 //	MISMATCH=<true/false>
 //	NMC=<CN ⇒ province=… count=… top=…/…；非 CN ⇒ skipped>
-//
-// 口径（spec/alert-latency-and-logic.md §12 铁律）：坐标是唯一真相，
+// 口径（铁律）：坐标是唯一真相，
 // 行政区一律从坐标反查 ⇒ FULLPATH/ISO 都来自**搜索命中坐标的反查结果**。
-// 非 CN ⇒ **不发官方请求**（spec/b-alert-v2.md 目标 1）⇒ 打 `NMC=skipped`。
+// 非 CN ⇒ **不发官方请求**（目标 1）⇒ 打 `NMC=skipped`。
 import (
 	"context"
 	"fmt"

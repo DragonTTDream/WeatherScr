@@ -1,9 +1,9 @@
 package main
 
-// 职责（卡9-app/scr）：main()+args 派发（/s /c /p|/l /a --help/-h/? 与无法识别静默退出）
+// 职责（app/scr）：main+args 派发（/s /c /p|/l /a --help/-h/? 与无法识别静默退出）
 // 搬移来源：cmd/scr/main.go:192-252,254-259,261-281,341-370,635-643,1476-1541（逐字，含注释）
-// 规格：plans/active.md:214 —— app/scr = 屏保生命周期；本卡零行为变化。
-// 闸门 gate-b2:108/114-117 逐字 grep cmd/scr/main.go 的取数日志锚点（WXURL / SCR_FETCH_OK / SCR_FETCH_FAIL / ALERTDIAG_SLOTS / OnRequest）：worker 不得改闸门 ⇒ 锚点所在函数 refresher 留在 main.go（未决点见 out/notes-R5-scr-split9.md）。
+// 口径：app/scr = 屏保生命周期；本次搬移零行为变化。
+// 闸门逐字 grep cmd/scr/main.go 的取数日志锚点（WXURL / SCR_FETCH_OK / SCR_FETCH_FAIL / ALERTDIAG_SLOTS / OnRequest）⇒ 锚点所在函数 refresher 必须留在 main.go。
 
 import (
 	"errors"
@@ -69,8 +69,7 @@ func main() {
 
 	case scrargs.ActionUnknown:
 		// 规范：无法识别 → 立即退出，不弹窗不打印（协议表）。
-		//
-		// 带外取证例外（2026-10-22 实机取证）：这条路径此前是**完全无声**的，
+		// 带外取证例外（实机取证）：这条路径此前是**完全无声**的，
 		// 于是"进程不见了 + 零日志"与"启动失败 / argv 畸形 / 秒退"三种情况
 		// 在现场完全分不开（实测：tasklist 20 次全空、三处日志全零行）。
 		// 这里只往**标记文件开启的日志**里写一行：不弹窗、不打印 stdout、
@@ -90,7 +89,6 @@ func first(a []string) string {
 }
 
 // logf 带时间戳的一行日志。
-//
 // 理由：排查中"日志停在 219 字节"无法与"程序真的没打印"区分开
 // （coverWatcher 的 COVER= 行没进日志）。每行前缀
 // HH:MM:SS.mmm 后可以直接看出程序在哪一刻停止输出。
@@ -164,8 +162,8 @@ func refresher(cfg config.Config, st *weatherState) {
 	if interval < time.Minute {
 		interval = time.Minute
 	}
-	// 批次 A1 S2：连续失败计数（成功即复位）。**不在本周期内重试**
-	// （用户令「请求超时就下次再请求」保持），只把下一周期拉长：
+	// 连续失败计数（成功即复位）。**不在本周期内重试**
+	// （口径：请求超时就下一周期再请求，本周期内不重试），只把下一周期拉长：
 	// 阶梯 = weather.NextRefreshInterval，上游给了 Retry-After 时取两者较大值。
 	failCount := 0
 	for {
@@ -190,7 +188,7 @@ func refresher(cfg config.Config, st *weatherState) {
 				wait = pe.RetryAfter
 			}
 			// 走文件日志：GUI 子系统下 fmt.Printf 的 stdout 是空的
-			// （bench/AGENTS.md 第 4 条；2026-10-22 W14 实机就因此看不见失败）。
+			// （； W14 实机就因此看不见失败）。
 			logf("SCR_FETCH_FAIL=%v base=%q", err, cfg.WeatherBaseURL)
 			if g := lastGood(weather.NormalizeLocationKey(cfg.Location)); g != nil {
 				st.set(g)
@@ -207,9 +205,9 @@ func refresher(cfg config.Config, st *weatherState) {
 			}
 			st.set(s)
 			logf("SCR_FETCH_OK=%s %.1f°C code=%d", s.Condition, deref(s.Temperature), s.WeatherCode)
-			// b-alert-v1 第 4 步：数据闸门带外日志（逐字格式，走 logf 才进文件）。
+			// 数据闸门带外日志（逐字格式，走 logf 才进文件）。
 			// PROB_N < 12（灾害层官方配对里最长的窗口，weather.officialMaxWindowHours）
-			// ⇒ 判据置「数据不可用」态（见 weather.Evaluate）。
+			// ⇒ 判据置'数据不可用'态（见 weather.Evaluate）。
 			logf("ALERTDIAG_SLOTS HOURLY=%d PROB_N=%d MM_N=%d MIN15_N=%d",
 				len(s.HourlyTime), s.ProbN, s.MMN, s.Min15N)
 			// 判据 + 滞回：一个采样周期 = 这一次取数。

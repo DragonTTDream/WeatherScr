@@ -1,16 +1,13 @@
 package metrics
 
-// R5 迁移（逐字搬移，plans/active.md:213 ui/metrics 卡）——来源与处置：
-//
-//	Layer                 ← ui/effects.go:4718-4725（type driftLayer；导出名 Layer，ui 侧留类型别名 driftLayer）
-//	WrapPeriod            ← ui/effects.go:4727-4737（wrapPeriod）
-//	DriftLayersStats      ← ui/effects.go:4790-4854（driftLayersStats）
+// 迁移（逐字搬移，ui/metrics 卡）——来源与处置：
+//	Layer ← ui/effects.go:4718-4725（type driftLayer；导出名 Layer，ui 侧留类型别名 driftLayer）
+//	WrapPeriod ← ui/effects.go:4727-4737（wrapPeriod）
+//	DriftLayersStats ← ui/effects.go:4790-4854（driftLayersStats）
 //	DriftDualParticlePairs← ui/effects.go:4856-4948（driftDualParticlePairs；"同道"带宽 airBandN 由调用方注入 bandN）
-//	DriftArcOverlap       ← ui/effects.go:4982-5000（driftArcOverlap）
-//
+//	DriftArcOverlap ← ui/effects.go:4982-5000（driftArcOverlap）
 // 字段可见性：type 搬到导出包后字段必须导出，字段名 start/width/pi/cy → Start/Width/Pi/Cy
 // （只改名，字段类型/顺序/语义/默认值一字未改）。
-//
 // 算式、常量、分支一字未改。唯一的签名变化 = DriftDualParticlePairs 多收一个 bandN
 // （ui 侧私有常量 airBandN=0.12 不在本包复制，由调用点注入；注释里的 airBandN 字样按原文保留）。
 
@@ -41,7 +38,6 @@ func WrapPeriod(v, span float64) float64 {
 }
 
 // DriftLayersStats 由区间序列导出 (Σ宽 ÷ span, 一个周期内被 ≥2 层覆盖的长度占比%)。
-//
 // 与探针的 DualPctOf（ui/overlap_probe.go）同一口径，唯一区别 = 区间起点来自真实落位：
 // 把每层折进 [0, span)（宽 ≥ span 的层记 full，铺满整周期），
 // 绕回段拆成 [Start, span) 与 [0, end−span)，事件按 x 排序后扫重数，
@@ -109,12 +105,11 @@ func DriftLayersStats(ls []Layer, span float64) (float64, float64) {
 // DriftDualParticlePairs P6 设计第 6 条的"含粒子"双层算式（dualIncl）：
 // **同带**粒子云/雾团对（Pi ≥ 0，|Δcy| ≤ airBandN，与 driftWorstPair 的"同道"同一判据）
 // 在一个 span 周期内的重叠并集长度占比%。
-//
-// 口径说明（数值推导，不是调参；同一口径写进 out/notes-p6.md）：
+// 口径说明（数值推导，不是调参；同一口径写进）：
 // P6 设计下带 = 97.4% 覆盖的单层"幕"（带间间隙 span/N − T = 26.7 px）。若把带∩云
 // 计入"双层占比"，等于把"粒子云压在云带上"这一**视觉设计本身**记成拥挤：
 // Σ粒子宽 ≥ 2×768 = 1536 px ⇒ dual 下界 (3000+1536−3080)/3080 = 48.6%（Overcast），
-// "含粒子云/雾团 ≤10%"在全层口径下几何不可能 ⇒ spec 判据线只在"粒子对"口径（=
+// "含粒子云/雾团 ≤10%"在全层口径下几何不可能 ⇒ 判据线只在"粒子对"口径（=
 // driftWorstPair 处置用的同一口径）下自洽。layers（Σ宽÷span）口径不变，仍含全部层。
 func DriftDualParticlePairs(ls []Layer, span, bandN float64) float64 {
 	if span <= 0 {

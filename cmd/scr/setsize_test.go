@@ -1,6 +1,6 @@
 package main
 
-// b11-setrect §1.3 钉死表（spec 逐字）+ 全表 w>h 断言。
+// 钉死表+ 全表 w>h 断言。
 // 表 = settingsSizeFor(land, workW, workH) → (w, h, minW, minH)。
 
 import "testing"

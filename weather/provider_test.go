@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// TestGolden："天气 schema"判据 —— 用低性能 x86 小主机实况的 cache/weather.json 当 golden
-// fixture，逐字段比对。fixture 原文来自低性能 x86 小主机上上游程序（SRPSS）自己写的
+// TestGolden："天气 schema"判据 —— 用低性能 x86 实机实况的 cache/weather.json 当 golden
+// fixture，逐字段比对。fixture 原文来自低性能 x86 实机上上游程序（SRPSS）自己写的
 // 天气缓存 `<上游数据目录>\cache\weather.json`（取证）。
 func TestGolden(t *testing.T) {
 	raw, err := os.ReadFile("testdata/weather.json")
@@ -114,7 +114,7 @@ func TestRequestShape(t *testing.T) {
 	v := RequestParams(29.34, 104.77)
 
 	wantKeys := []string{
-		// b-alert-v1 第 1 步：forecast_hours 去掉（证据 E-P1：它把 hourly 截成 1 条）；
+		// forecast_hours 去掉（证据 E-P1：它把 hourly 截成 1 条）；
 		// 第 3 步：加 minutely_15（15 分钟层）。
 		"current", "daily", "forecast_days",
 		"hourly", "latitude", "longitude", "minutely_15", "models", "timezone",
@@ -140,10 +140,10 @@ func TestRequestShape(t *testing.T) {
 		"current": "temperature_2m,weather_code,wind_speed_10m,is_day,relative_humidity_2m,precipitation,rain,cloud_cover,precipitation_probability",
 		// hourly + **precipitation**（mm）：预警改"未来 N 小时滚动窗口"要逐小时毫米数求和
 		// （实测接受，units % 与 mm，需求 1）。
-		// + **cloud_cover**（规格 1.6）：与 models= 配对，实测响应给出逐模型键
+		// + **cloud_cover**：与 models= 配对，实测响应给出逐模型键
 		// cloud_cover_gfs_seamless / cloud_cover_icon_seamless / cloud_cover_ecmwf_ifs025。
 		"hourly": "precipitation_probability,precipitation,cloud_cover",
-		// models（规格 1.6）：三家模型逐字，多模型云量的开关。
+		// models：三家模型逐字，多模型云量的开关。
 		"models": "gfs_seamless,icon_seamless,ecmwf_ifs025",
 		// daily 与上游逐字 + **precipitation_probability_max / precipitation_sum / moon_phase**：
 		// 降雨提醒的数据源+ 今日月相。
@@ -151,7 +151,7 @@ func TestRequestShape(t *testing.T) {
 		// （open_meteo_provider.py:332）⇒ 这些偏离与上面的 cloud_cover 同类，是**已采纳的**。
 		"daily":         "temperature_2m_max,temperature_2m_min,weathercode,precipitation_probability_max,precipitation_sum,moon_phase",
 		"forecast_days": "6",
-		// b-alert-v1 第 3 步：15 分钟层两字段（实测接受，条数 = 逐小时条数 × 4）
+		// 15 分钟层两字段（实测接受，条数 = 逐小时条数 × 4）
 		"minutely_15": "precipitation,precipitation_probability",
 		"timezone":    "auto",
 	}

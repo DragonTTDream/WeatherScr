@@ -1,6 +1,6 @@
 package main
 
-// 卸载停进程/轮询/ARP 幂等纯逻辑的单元测试（Linux 侧跑，spec publish-uninstall-stopscr §5）。
+// 卸载停进程/轮询/ARP 幂等纯逻辑的单元测试（Linux 侧跑）。
 
 import (
 	"syscall"
@@ -69,7 +69,7 @@ func TestStopPollBudget(t *testing.T) {
 	}
 }
 
-// T5 安装侧「目标可写」判据（spec publish-install-verify §5，逐字五档）
+// T5 安装侧'目标可写'判据
 func TestWritableVerdict(t *testing.T) {
 	type C struct {
 		in    error
@@ -92,7 +92,7 @@ func TestWritableVerdict(t *testing.T) {
 	}
 }
 
-// T6 SHA256 比对（spec publish-install-verify §5，逐字四档）
+// T6 SHA256 比对
 func TestShaMatches(t *testing.T) {
 	if !shaMatches("ABCD", "abcd") {
 		t.Errorf(`shaMatches("ABCD","abcd") 应为 true（大小写无关）`)

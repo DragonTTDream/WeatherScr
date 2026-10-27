@@ -18,21 +18,17 @@ import (
 var scrDbgFlag bool
 
 // 窗口显示与铺满。
-//
 // 根因（实测）：`ShowWindow` 向**创建该窗口的线程**
 // 同步发送 `WM_SHOWWINDOW`；gioui 在 `app/os_windows.go:100-130` 用
 // `runtime.LockOSThread()` 的专用线程建窗并跑消息循环，本实现的帧循环在另一个
 // goroutine ⇒ 从帧循环或任何 goroutine 直接调 `ShowWindow` 都跨线程 ⇒ 永久阻塞。
-//
 // 正道：`app.Window.Run(f)` —— `app/window.go:321-326` 原文
 // "Run f in the same thread as the native window event loop, and wait for f to
 // return. If the window has not yet been created, Run calls f directly."
 // 本文件里的 showAndCover / ensureCover **只允许在 w.Run 内部调用**（main.go 负责）。
-//
 // 目标样式（社区 wischik + 上游 SRPSS 同口径）：
-//
-//	GWL_STYLE   := WS_POPUP | WS_VISIBLE
-//	GWL_EXSTYLE := WS_EX_TOPMOST | WS_EX_TOOLWINDOW   // 必须清掉 WS_EX_APPWINDOW
+//	GWL_STYLE := WS_POPUP | WS_VISIBLE
+//	GWL_EXSTYLE := WS_EX_TOPMOST | WS_EX_TOOLWINDOW // 必须清掉 WS_EX_APPWINDOW
 //	SetWindowPos(hwnd, HWND_TOPMOST, rcMonitor, SWP_NOACTIVATE|SWP_FRAMECHANGED)
 //	ShowWindow(hwnd, SW_SHOW)
 
@@ -189,7 +185,6 @@ func saverRect(hwnd uintptr, dbg bool) (x, y, w, h int32, ok bool) {
 }
 
 // saverStyle 目标样式位与 z-order 插入点。
-//
 // DEBUG 下**不加 WS_EX_TOPMOST**，z-order 用 HWND_TOP。
 func saverStyle(dbg bool) (style, exstyle, insertAfter uintptr) {
 	style = wsPopup | wsVisible
@@ -215,15 +210,14 @@ var (
 //	SetWindowPos(insertAfter, rcMonitor, SWP_NOACTIVATE|SWP_FRAMECHANGED|SWP_SHOWWINDOW) →
 //	ShowWindow(SW_SHOW) → SetForegroundWindow → SetFocus
 //
-// 理由（2026-10-22 实机取证，b-cover-v1）：
-//   - WS_EX_TOPMOST 必须经 SetWindowPos(HWND_TOPMOST) 才生效；
-//     SWP_FRAMECHANGED 让样式变更立即重算非客户区。
-//   - gioui 的 Fullscreen 模式用 `SW_SHOWMAXIMIZED`（app/os_windows.go:921-923），
-//     Win32 的**最大化显示态**把窗口钳到工作区（实测帧日志 size=1080x1880、
-//     截图底部 y=1880–1919 共 40 px 纯白 = 任务栏）。⇒ 铺满前必须先
-//     `SW_SHOWNORMAL` 清掉最大化显示态，`SetWindowPos` 才能落到整块 rcMonitor。
-//   - 样式位 WS_POPUP 必须是真的 0x80000000（旧值 0 让窗口带边框并服从工作区）。
-//
+// 理由（实机取证）：
+// - WS_EX_TOPMOST 必须经 SetWindowPos(HWND_TOPMOST) 才生效；
+// SWP_FRAMECHANGED 让样式变更立即重算非客户区。
+// - gioui 的 Fullscreen 模式用 `SW_SHOWMAXIMIZED`（app/os_windows.go:921-923），
+// Win32 的**最大化显示态**把窗口钳到工作区（实测帧日志 size=1080x1880、
+// 截图底部 y=1880–1919 共 40 px 纯白 = 任务栏）。⇒ 铺满前必须先
+// `SW_SHOWNORMAL` 清掉最大化显示态，`SetWindowPos` 才能落到整块 rcMonitor。
+// - 样式位 WS_POPUP 必须是真的 0x80000000（旧值 0 让窗口带边框并服从工作区）。
 // **必须在窗口自己的线程上调用**（经 w.Run）。
 func applySaverStyle(hwnd uintptr, dbg bool) {
 	style, exstyle, insert := saverStyle(dbg)
@@ -353,17 +347,14 @@ func raiseWindow(hwnd uintptr) {
 }
 
 // findOwnWindow 用 gioui 注册窗口类时用的类名（= app.ID）找到自己的窗口。
-//
-// 2026-10-16 实测改道：`FindWindowW(类名, NULL)` 在低性能 x86 小主机上**找不到**自己的窗口
-// （低性能 x86 小主机上 60 秒轮询一条 COVER= 都没打出来），而自建探针 `cmd/winlist` 用
+// 2026-10-16 实测改道：`FindWindowW(类名, NULL)` 在低性能 x86 实机上**找不到**自己的窗口
+// （低性能 x86 实机上 60 秒轮询一条 COVER= 都没打出来），而自建探针 `cmd/winlist` 用
 // `EnumWindows` + `GetClassNameW` 能枚举到 `class="WeatherScrSaver"` 的窗口
 // （`WIN#21 ... pid=2956`）。原因：按类名查找走的是**进程局部原子**解析，
 // 跨进程语义与同进程不一致；`GetClassNameW` 拿的是**类名字符串**，不受此影响。
-//
 // 所以主路径改为 EnumWindows 遍历顶层窗口，按"**属于本进程** 且 类名相等"匹配
 // —— PID 相等这一条把误配的可能性彻底排除（探针已证明该窗口 pid 就是本进程）。
 // FindWindowW 保留为兜底。
-//
 // EnumWindows 从任意线程调用都安全（不向窗口线程发消息）。
 func findOwnWindow(className string) uintptr {
 	mine := uintptr(0)
@@ -401,8 +392,7 @@ func findOwnWindow(className string) uintptr {
 }
 
 // showAndCover 显示 + 铺满。
-//
-// **只允许在 `w.Run(func(){...})` 内部调用**：
+// **只允许在 `w.Run(func{...})` 内部调用**：
 // ShowWindow/SetWindowPos/SetWindowLong 必须跑在创建该窗口的线程上，
 // 跨线程调用会永久阻塞在 `procShowWindow.Call` 里
 // `COVER=found hwnd=17079a after_polls=5` 之后没有任何后续行。
@@ -425,10 +415,8 @@ func showAndCover(hwnd uintptr, dbg bool) {
 }
 
 // coverWatcher 轮询等窗口出现，出现后**只记录句柄**。
-//
 // 轮询上限 600 次 × 100 ms = 60 秒（需求 3：10 秒上限会在窗口
 // 出现晚于 10 秒时永久放弃。
-//
 // 实测结论：这里**一律不得调用 ShowWindow / coverFullMonitor /
 // hideTaskbar** —— 跨线程 ShowWindow 会阻塞（实测）。
 func coverWatcher(className string) uintptr {
@@ -446,20 +434,18 @@ func coverWatcher(className string) uintptr {
 }
 
 // coverLoop 常驻 goroutine：**只找窗口并记录 ownHwnd**。
-//
 // 实测结论：本 goroutine 内**不准** ShowWindow / coverFullMonitor /
 // hideTaskbar。显示与铺满一律由帧循环经 `w.Run` 在窗口线程上执行。
-//
 // 保留常驻轮询的意义：窗口尚未建立时（gioui 建窗晚于 10 秒）由它补上句柄，
 // 帧循环的 ensureCover 因此不会因 ownHwnd==0 而空转。
 func coverLoop() {
 	// 铺满与样式**不能**在 gioui 的 w.Run 回调里做：实测 panic
 	// `runtime error: index out of range [0] with length 0`
-	// io/input.(*keyQueue).BoundsFor  key.go:247
-	// io/input.(*Router).RevealFocus  router.go:638
-	// app.(*Window).Run.func1         window.go:334
-	// app.(*eventLoop).deliverEvent   os.go:320
-	// app.windowProc                  os_windows.go:407
+	// io/input.(*keyQueue).BoundsFor key.go:247
+	// io/input.(*Router).RevealFocus router.go:638
+	// app.(*Window).Run.func1 window.go:334
+	// app.(*eventLoop).deliverEvent os.go:320
+	// app.windowProc os_windows.go:407
 	// 退出码 2。机制：在 Run 回调里调 SetWindowPos/ShowWindow 会同步给
 	// 同一窗口发 WM_WINDOWPOSCHANGING / WM_NCCALCSIZE / WM_SIZE ⇒ 重入
 	// windowProc → update → draw → ProcessEvent → RevealFocus，而此时
@@ -490,19 +476,18 @@ func coverLoop() {
 			}
 		}
 		// 直接在本线程做样式 + 铺满 + 显示（不经 w.Run ⇒ 不重入 gioui 窗口过程）
-		//
 		// 实测修正：注释口径是"样式全量重申 500 ms 一次"，
 		// 但代码原先在 100 ms 循环里**每轮都调** applySaverStyle
 		// （= setWindowLong×2 + SetWindowPos + ShowWindow，40 次/秒），
 		// 每次窗口调用都会让 gioui 渲染线程收 WM_WINDOWPOSCHANGED 等消息重做工作。
 		// 现按注释口径：样式全量重申 500 ms 一次，topmost 单独 100 ms 一次。
-		// A3（C4 保层循环节流，spec/a3-coverloop.md 要求 1/2/3/5）：两条重申都改
+		// 两条重申都改
 		// **检测式** —— 先读当前 style / exstyle，**只在漂移时才调 API**；稳态一轮
 		// 两条分支都不调 ⇒ 也不更新 tick ⇒ COVER= 系列日志只随真发生的 API 动作出。
 		// 节拍与阈值逐字不动：500 ms / 100 ms 阈值、!scrDbgFlag 门、Sleep 100 ms。
 		styleWant, exstyleWant, _ := saverStyle(scrDbgFlag) // 纯位运算，不调 API
 		if time.Since(styleTick) >= 500*time.Millisecond {
-			// 首轮零值语义保留（:481 注释口径）：styleTick 零值 ⇒ 首轮立即做一次全量
+			// 首轮零值语义保留（481 注释口径）：styleTick 零值 ⇒ 首轮立即做一次全量
 			// 样式重申。走 IsZero() 短路 ⇒ **StyleDrift 判为 false 时绝不进这个调用**。
 			if styleTick.IsZero() || StyleDrift(
 				getWindowLong(ownHwnd, gwlStyle), styleWant,
@@ -513,7 +498,7 @@ func coverLoop() {
 		}
 		if time.Since(topmostTick) >= 100*time.Millisecond && !scrDbgFlag {
 			// 阈值与门语义不变（零值 ⇒ 首轮立即判定；诊断态整条自动停 = 实机 A/B 开关）。
-			// 动作改检测式：**只在 WS_EX_TOPMOST 位缺失时**才 SetWindowPos（spec 要求 1），
+			// 动作改检测式：**只在 WS_EX_TOPMOST 位缺失时**才 SetWindowPos，
 			// 漂移动作真发生后才更新 topmostTick。
 			if ExStyleDrift(getWindowLong(ownHwnd, gwlExstyle), coverExTopmost) {
 				procSetWindowPos.Call(ownHwnd, hwndTopmost, 0, 0, 0, 0,
@@ -537,8 +522,7 @@ func ensureCover(dbg bool) bool {
 	return true
 }
 
-// ---- 设置窗口（/c）的风格夺回 ----
-//
+// ---- 设置窗口的风格夺回 ----
 // 为什么 `.scr` 启动路径需要显式夺回风格：
 //
 //	`.scr` 由系统的屏保加载路径启动，STARTUPINFO 里带的是**整块屏幕**的
@@ -551,9 +535,8 @@ func ensureCover(dbg bool) bool {
 //	不碰样式位，夺不回来。
 //
 // 因此设置窗口路径必须显式把风格、扩展样式与尺寸定位一并夺回。
-// 屏保窗口（/s）的风格不在本函数职责内：它按本文件头部记录的
+// 屏保窗口的风格不在本函数职责内：它按本文件头部记录的
 // 目标样式走 applySaverStyle，两者互不影响。
-//
 // 线程规则（同文件头）：本函数内部是 SetWindowLong/SetWindowPos/ShowWindow，
 // **只允许在 `app.Window.Run` 回调里调用**（app/window.go:321-326：
 // "Run f in the same thread as the native window event loop"）；
@@ -582,24 +565,24 @@ const (
 	// 屏保路径沿用不改，设置窗口用本值。
 	swpNoZorderReal = 0x0004
 
-	// 设置窗口竖屏档的下限尺寸，与 app.MinSize(720, 420) 同口径（b11-setrect §1.1
+	// 设置窗口竖屏档的下限尺寸，与 app.MinSize(720, 420) 同口径（
 	// 竖屏钳制口径：minW=min(720,sizeW)、minH=min(420,sizeH) 的基准下限；工作区
 	// 更窄/更矮时 settingsSizeFor 再按工作区收紧，normalizeDialog 的工作区夹取兜底）。
-	// 旧竖档 320×480 随竖长条形态一起退役（用户 2026-10-27「设置页改横向矩形」）。
+	// 旧竖档 320×480 随竖长条形态一起退役（需求：设置窗强制横向矩形）。
 	// 96 DPI（缩放 100%）下 gioui 的 dp 与物理像素 1:1。
 	// TODO(未取证)：高 DPI 缩放下 dp→px 的换算口径未取证，本函数按 px 处理。
 	dialogMinWpx = 720
 	dialogMinHpx = 420
 
-	// 横屏档下限（spec/b5-settings-landscape.md 判据 3「横屏请求 1920,1080
-	// （MinSize 900,540）」）：双栏每栏要 ≈ 900/2 = 450 px 宽才放得下右栏的
+	// 横屏档下限（判据 3'横屏请求 1920,1080
+	// （MinSize 900,540）'）：双栏每栏要 ≈ 900/2 = 450 px 宽才放得下右栏的
 	// 长标签行，所以横屏的下限比竖屏高一档，与 main.go 的 app.MinSize(900, 540)
 	// 同口径。normalizeDialog 的工作区夹取按朝向取这一对值。
 	dialogMinWpxLand = 900
 	dialogMinHpxLand = 540
 )
 
-// dialogMinPx 按朝向给出设置窗口的下限尺寸（b11-setrect 二值口径：横屏 900×540 / 竖屏 720×420）。
+// dialogMinPx 按朝向给出设置窗口的下限尺寸（二值口径：横屏 900×540 / 竖屏 720×420）。
 func dialogMinPx(landscape bool) (int, int) {
 	if landscape {
 		return dialogMinWpxLand, dialogMinHpxLand
@@ -607,9 +590,8 @@ func dialogMinPx(landscape bool) (int, int) {
 	return dialogMinWpx, dialogMinHpx
 }
 
-// workAreaIsLandscape 主显示器工作区是否横屏（spec/b5-settings-landscape.md
-// 判据 3 点位「foreground_windows.go 已有的 SPI_GETWORKAREA 同款查询」）。
-//
+// workAreaIsLandscape 主显示器工作区是否横屏（
+// 判据 3 点位'foreground_windows.go 已有的 SPI_GETWORKAREA 同款查询'）。
 // 判定本体复用面板的 ui.PanelIsLandscape（宽>高 且 宽≥900，b11 阈值）⇒ 窗口朝向与
 // 面板版式同一条判据，不会窗口要 1920×1080 而面板排单列。
 // 查询失败（SPI_GETWORKAREA 返回 0）按竖屏处理：竖屏 = 现行行为，最保守。
@@ -633,7 +615,7 @@ func workAreaRect() (x, y, w, h int32, ok bool) {
 }
 
 // workAreaSizePx 主显示器工作区尺寸（px），与 workAreaIsLandscape 同源（同一条
-// SPI_GETWORKAREA 查询）：b11-setrect §1.1 设置窗尺寸的工作区钳制入参。
+// SPI_GETWORKAREA 查询）： 设置窗尺寸的工作区钳制入参。
 // 查询失败返回 ok=false ⇒ 调用方按不钳制口径处理（请求值直出）。
 func workAreaSizePx() (int, int, bool) {
 	_, _, w, h, ok := workAreaRect()
@@ -645,30 +627,26 @@ func workAreaSizePx() (int, int, bool) {
 
 // normalizeDialog 把设置窗口恢复成带标题栏的普通对话框，并按主显示器
 // 工作区居中定位。**只允许在 `w.Run` 回调里调用**（见上方线程规则）。
-//
 // 执行顺序（固定）：
-//
-//  1. GetWindowLong(GWL_STYLE) 读原值（与改后值一起写进 CFG_STYLE 行）
-//  2. 样式置 WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|WS_MINIMIZEBOX|
-//     WS_MAXIMIZEBOX|WS_VISIBLE，清 WS_POPUP
-//  3. 扩展样式清 WS_EX_TOOLWINDOW、置 WS_EX_APPWINDOW（进任务栏）
-//     并置 WS_EX_TOPMOST(0x00000008)
-//  4. 尺寸 = wpx×hpx（调用方按 settingsSizeFor 钳制值传入：横屏 1920×1080 / 竖屏 1100×640 钳制）；
-//     位置 = 主显示器工作区居中；工作区小于目标尺寸时夹到不小于**该朝向的
-//     MinSize**（dialogMinPx(landscape)）且不小于工作区可用尺寸
-//  5. SetWindowPos(HWND_TOPMOST, x, y, wpx, hpx, SWP_FRAMECHANGED)
-//     —— 不带 SWP_NOZORDER：本步必须改 z 序
-//  6. ShowWindow(SW_RESTORE)
-//  7. SetWindowPos(HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE)
-//     —— 置顶落定（SW_RESTORE 会把窗口插回非置顶带，故补这一步）
-//
+// 1. GetWindowLong(GWL_STYLE) 读原值（与改后值一起写进 CFG_STYLE 行）
+// 2. 样式置 WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|WS_MINIMIZEBOX|
+// WS_MAXIMIZEBOX|WS_VISIBLE，清 WS_POPUP
+// 3. 扩展样式清 WS_EX_TOOLWINDOW、置 WS_EX_APPWINDOW（进任务栏）
+// 并置 WS_EX_TOPMOST(0x00000008)
+// 4. 尺寸 = wpx×hpx（调用方按 settingsSizeFor 钳制值传入：横屏 1920×1080 / 竖屏 1100×640 钳制）；
+// 位置 = 主显示器工作区居中；工作区小于目标尺寸时夹到不小于**该朝向的
+// MinSize**（dialogMinPx(landscape)）且不小于工作区可用尺寸
+// 5. SetWindowPos(HWND_TOPMOST, x, y, wpx, hpx, SWP_FRAMECHANGED)
+// —— 不带 SWP_NOZORDER：本步必须改 z 序
+// 6. ShowWindow(SW_RESTORE)
+// 7. SetWindowPos(HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE)
+// —— 置顶落定（SW_RESTORE 会把窗口插回非置顶带，故补这一步）
 // 置顶的取证依据（36.16.1 之 1）：设置窗口 EX=00040100 无 WS_EX_TOPMOST，
 // 同帧运行中的全屏屏保在它上面 ⇒ 设置窗口被盖住。
 // WS_EX_TOPMOST 必须经 SetWindowPos(HWND_TOPMOST=-1) 才生效（同屏保路径口径，
 // 见本文件上方"目标样式"注释与 gioui windows.go:211-213）。
 // 本函数只作用于设置窗口（调用点在 main.go runSettings 的 styleDone 守卫内）；
 // 屏保窗口不走本函数，样式与 z 序由 coverLoop 那条路管。
-//
 // 样式位用"置位 + 清位"的写法：置上面列出的六个位、清 WS_POPUP，
 // 其余位保留（gioui 建窗时加的 WS_CLIPSIBLINGS|WS_CLIPCHILDREN，
 // app/os_windows.go:193，清掉会影响渲染裁剪）。
@@ -689,7 +667,7 @@ func normalizeDialog(hwnd uintptr, wpx, hpx int, landscape bool) {
 	// 不小于 MinSize 且不小于工作区可用尺寸的取值。
 	w, h := wpx, hpx
 	x, y := 0, 0
-	minW, minH := dialogMinPx(landscape) // 下限按朝向取（b11-setrect：横屏 900×540 / 竖屏 720×420）
+	minW, minH := dialogMinPx(landscape) // 下限按朝向取（横屏 900×540 / 竖屏 720×420）
 	wx, wy, aw, ah, ok := workAreaRect()
 	if ok {
 		awa, ahh := int(aw), int(ah)

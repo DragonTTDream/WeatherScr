@@ -9,7 +9,6 @@ import (
 // TestDisplayLanguageIndependent 锁死 2026-10-16 两次指定的铁律：
 // **选了中文地名 ≠ 显示语言变中文**。display_language 默认 "en" = 当前样式不改，
 // 显示语言与"选了哪个地名"必须互相独立。
-//
 // 犯过的形：部署时把 display_language 写成 zh，理由是"选中文区名就该显示中文"
 // —— 需求：显示语言默认英文，结果串按 display_language 输出，不随所选地名变。
 func TestDisplayLanguageIndependent(t *testing.T) {

@@ -2,18 +2,16 @@
 
 package main
 
-// MoveFileExW 的 syscall 侧实现（B12 重命名交换，简报 spec/publish-rename-swap-brief.md §2）。
+// MoveFileExW 的 syscall 侧实现（B12 重命名交换，设计口径）。
 // 纯逻辑与名字生成在 renameswap.go（Linux 侧可测），非 Windows 侧桩在 renameswap_other.go。
-//
-// 机制出处（逐字引用，spec/publish-rename-swap.md §2）：
-//   unprotect.it/technique/process-ghosting —「Once a file is mapped into an image section,
-//   attempts to open it with FILE_WRITE_DATA will fail with ERROR_SHARING_VIOLATION …
-//   the delete-pending state also blocks external file-open attempts」
-//   stackoverflow.com/questions/799656（Renaming A Running Process' File Image On Windows）+
-//   comcomponent 博客 2026-07-24：running exe can be renamed ⇒ 改名让开、原名重建。
-//
+// 机制出处（逐字引用）：
+// unprotect.it/technique/process-ghosting —'Once a file is mapped into an image section,
+// attempts to open it with FILE_WRITE_DATA will fail with ERROR_SHARING_VIOLATION …
+// the delete-pending state also blocks external file-open attempts'
+// stackoverflow.com/questions/799656（Renaming A Running Process' File Image On Windows）+
+// comcomponent 博客 2026-07-24：running exe can be renamed ⇒ 改名让开、原名重建。
 // flags 只用 MOVEFILE_REPLACE_EXISTING(0x00000010)；**不用** MOVEFILE_DELAY_UNTIL_REBOOT(0x4)
-// （spec §6：全局副作用、要重启、静默失败）。
+// （全局副作用、要重启、静默失败）。
 
 import (
 	"errors"
@@ -43,7 +41,7 @@ func moveFileEx(src, dst string, flags uint32) error {
 	if r != 0 {
 		return nil
 	}
-	// B14：Call 的第三个返回值恒非 nil（成功时是 syscall.Errno(0)）⇒ 只能按 Errno 判，
+	// Call 的第三个返回值恒非 nil（成功时是 syscall.Errno(0)）⇒ 只能按 Errno 判，
 	// 不能用 `errno != nil` 判失败（那样失败分支永不进入、错误码被吞）。
 	if e, ok := errno.(syscall.Errno); ok && e != 0 {
 		return e

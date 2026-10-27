@@ -12,10 +12,8 @@ import (
 )
 
 // layoutAt 在给定像素上限下布局一个 widget，返回其**自然尺寸**。
-//
 // Min 必须置 0：layout.Exact 把 Min 抬到 Max，widget 会被撑满窗口，
 // 量到的尺寸就是窗口本身（实测 langRow 报 h=1100），不是内容。
-//
 // 1 dp = 1 px = 1 sp：与设置窗口在 1080×1920 竖屏上的口径一致
 // （cmd/setshot 的 density 注释：目标竖屏上 1 dp = 1 px）。
 func layoutAt(t *testing.T, w layout.Widget, width, height int) layout.Dimensions {
@@ -35,20 +33,19 @@ func layoutAt(t *testing.T, w layout.Widget, width, height int) layout.Dimension
 //	material.Body2(th, "英文 (en)") @ panelTextSp → h=22
 //	material.RadioButton(th, langSel, "en", "英文 (en)") → h=34（图标 26 dp 占高）
 //	langRow 竖排 → w=195 h=102 = 2*inset(4) + 22 + 2*(34 + gap 2)
-//	同一行在 120 px 宽度下 → h=120（标签被挤成多行，即 spec §0 的竖排症状）
+//	同一行在 120 px 宽度下 → h=120（标签被挤成多行，即 的竖排症状）
 const (
 	b2LabelLinePx = 22
 	b2RadioLinePx = 34
 )
 
-// TestPanelRadioRowsVerticalAt640 对应 spec §1.3 的"640 px 宽度下实测不截断"。
-//
+// TestPanelRadioRowsVerticalAt640 对应 的"640 px 宽度下实测不截断"。
 // 判据口径：
-//   - 宽度 ≤ 640：整行不溢出窗口；
-//   - 宽度 < 400：标签与 radio 文本都落在**一行**里（标签自然宽 187 px，
-//     被挤成逐字换行时自然宽会掉到几十字符宽、行高翻几倍）；
-//   - 行高 ≥ 3 个标签行：证明"标签 + 2 个 radio"是 3 行竖排；
-//   - 行高 ≤ 4 个 radio 行：证明没有任何一行被折成多行。
+// - 宽度 ≤ 640：整行不溢出窗口；
+// - 宽度 < 400：标签与 radio 文本都落在**一行**里（标签自然宽 187 px，
+// 被挤成逐字换行时自然宽会掉到几十字符宽、行高翻几倍）；
+// - 行高 ≥ 3 个标签行：证明"标签 + 2 个 radio"是 3 行竖排；
+// - 行高 ≤ 4 个 radio 行：证明没有任何一行被折成多行。
 func CheckPanelRadioRowsVerticalAt640(t *testing.T) {
 	th := NewPanelTheme()
 	p := NewPanel(sampleModel())
@@ -71,8 +68,8 @@ func CheckPanelRadioRowsVerticalAt640(t *testing.T) {
 			t.Errorf("%s 行高 %d px < %d px ⇒ 未竖排成 3 行", r.name, d.Size.Y, min)
 		}
 		if max := 5 * b2RadioLinePx; d.Size.Y > max {
-			// 上界从 4 个 radio 行放宽到 5 个：批次 b-alert-v1 第 10 步把
-			// 「窗口小时(3/6)」那组换成「视野小时(6/12/24)」⇒ 同一组多一个 radio
+			// 上界从 4 个 radio 行放宽到 5 个：把
+			// '窗口小时(3/6)'那组换成'视野小时(6/12/24)'⇒ 同一组多一个 radio
 			// （标签 1 行 + 3 个 radio 行 = 4 行，实测 138 px）。
 			// 本判据要挡的是"标签被挤成逐字换行"（行高翻几倍），不是 radio 个数。
 			t.Errorf("%s 行高 %d px > %d px ⇒ 有行被折成多行（逐字换行）", r.name, d.Size.Y, max)

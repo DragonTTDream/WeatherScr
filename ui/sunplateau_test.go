@@ -1,32 +1,28 @@
 package ui
 
-// 晴档饱和平顶消除（留头合成）的判据（规格 publish-sunplateau 第 3 条 T1..T4）。
-//
+// 晴档饱和平顶消除（留头合成）的判据。
 // 共同纪律（与 sunmoon_test.go 同一套）：每条都真的测量并打印数字，
 // 取样盒/取样点只由烘焙幅面与常量决定，不随天气类或云量缩放；
 // 样本不足/测不到东西时直接判红（不写恒真断言）。
-//
-//	T1 TestNoSaturatedPlateau        晴（云量 0）与多云见日（云量 45）帧内亮度 ≥250 的像素数 = 0
+//	T1 TestNoSaturatedPlateau 晴（云量 0）与多云见日（云量 45）帧内亮度 ≥250 的像素数 = 0
 //	T2 TestCenterBelowClipAndMonotone 盘心亮度 ≤245；八向 20px 剖面 上升处数 = 0、斜率变化峰 ≤2 级
-//	T3 TestSingleBrightPeak          18px 高斯平滑 + 120px 非极大值抑制取前 2 峰：
-//	                                 间距 ≤120 px 且次峰亮度 ≤ 主峰 −6
-//	T4 TestCornerLiftKept            云量 90 档四角净抬升 平均 ≥4 级、每角 >0
-//
+//	T3 TestSingleBrightPeak 18px 高斯平滑 + 120px 非极大值抑制取前 2 峰：
+//	 间距 ≤120 px 且次峰亮度 ≤ 主峰 −6
+//	T4 TestCornerLiftKept 云量 90 档四角净抬升 平均 ≥4 级、每角 >0
 // 取样口径（写明理由）：
-//
 //	幅面 = 540×960 = 现有太阳判据的探针幅面（sunProbeW/sunProbeH，与 skyCacheScale=2
-//	       的上线烘焙口径同源）；规格 §1 的 19611 个 / 182×182 是在 1080×1920 整帧上量的，
-//	       同一张烘焙按 skyCacheScale=2 缩小就是这里的 540×960 ⇒ 平顶的**有无**与 bbox
-//	       在同一幅面上量，绝对像素数按 1/4 面积折算（19611/4 ≈ 4900）。
+//	 的上线烘焙口径同源）；规格 的 19611 个 / 182×182 是在 1080×1920 整帧上量的，
+//	 同一张烘焙按 skyCacheScale=2 缩小就是这里的 540×960 ⇒ 平顶的**有无**与 bbox
+//	 在同一幅面上量，绝对像素数按 1/4 面积折算（19611/4 ≈ 4900）。
 //	剖面 = 净抬升（烘焙帧 − 同帧天空基色 skyBaseCPU），不是烘焙帧的原始亮度。
-//	       天空底是竖向渐变（实测 540×960 顶行 63 级、底行 166 级）+ 四角暗角，
-//	       原始亮度在向下射线上本来就一路升 ⇒ "上升处数 = 0"量的必须是铺光的抬升，
-//	       与 TestSunProfileMonotone 用同一条净抬升口径。
-//	       渐变对"斜率变化"的贡献是常数（线性项的二阶差分为 0）⇒ 换净抬升口径
-//	       不会把真台阶洗掉，只把底色自己的梯度摘掉。
+//	 天空底是竖向渐变（实测 540×960 顶行 63 级、底行 166 级）+ 四角暗角，
+//	 原始亮度在向下射线上本来就一路升 ⇒ "上升处数 = 0"量的必须是铺光的抬升，
+//	 与 TestSunProfileMonotone 用同一条净抬升口径。
+//	 渐变对"斜率变化"的贡献是常数（线性项的二阶差分为 0）⇒ 换净抬升口径
+//	 不会把真台阶洗掉，只把底色自己的梯度摘掉。
 //	八向 = 盘心 (0.72w, 0.095h) 出发的 8 个方向，r = 20..400 逐 20 px。
-//	       向上射线离屏顶只有 0.095 倍屏高 = 91 px ⇒ 该向取到屏顶为止（4 个点），
-//	       样本数由幅面决定并打印；判据要求每条射线 ≥3 段（4 点）才不空转。
+//	 向上射线离屏顶只有 0.095 倍屏高 = 91 px ⇒ 该向取到屏顶为止（4 个点），
+//	 样本数由幅面决定并打印；判据要求每条射线 ≥3 段（4 点）才不空转。
 
 import (
 	"fmt"
@@ -81,9 +77,8 @@ func sunPlateauBrightRun(img *image.NRGBA, thr float64) (int, image.Rectangle) {
 	return n, image.Rect(minX, minY, maxX+1, maxY+1)
 }
 
-// T1 晴档与多云见日的烘焙帧内不许有亮度 ≥250 的像素（规格 3 T1）。
-//
-// 规格 §1 的实测基线：整帧 1080×1920 上 晴档 19611 个 / bbox (687,93)-(868,274) = 182×182，
+// T1 晴档与多云见日的烘焙帧内不许有亮度 ≥250 的像素。
+// 规格 的实测基线：整帧 1080×1920 上 晴档 19611 个 / bbox (687,93)-(868,274) = 182×182，
 // 多云见日 5574 个 / 113×116 ⇒ 判据 = 这两个数都归 0（在 1/2 分辨率的烘焙幅面上量）。
 func TestNoSaturatedPlateau(t *testing.T) {
 	w, h := sunProbeW, sunProbeH
@@ -98,7 +93,7 @@ func TestNoSaturatedPlateau(t *testing.T) {
 			tc.name, w, h, n, box, box.Dx(), box.Dy(), cx, cy, sunLum(baked, cx, cy),
 			sky.SunDiscVisibility(effect.Clear, tc.pct), sky.SunDimOf(tc.pct))
 		if n != 0 {
-			t.Errorf("%s 帧内亮度>=250 的像素 = %d 个（bbox %v，%dx%d）⇒ 饱和平顶还在（规格 §1 基线 19611 个/182x182）",
+			t.Errorf("%s 帧内亮度>=250 的像素 = %d 个（bbox %v，%dx%d）⇒ 饱和平顶还在（基线 19611 个/182x182）",
 				tc.name, n, box, box.Dx(), box.Dy())
 		}
 	}
@@ -143,17 +138,15 @@ func sunPlateauRayScanFrom(lift func(x, y int) float64, cx, cy int, ux, uy float
 	return
 }
 
-// T2 盘心不越过 245 级，且八向剖面没有上升、铺光段没有台阶（规格 3 T2）。
-//
-// 规格 §1 第 2 条的实测基线：水平向左逐 20px = 251,250,251,250,250,249,249,249,249,247,
+// T2 盘心不越过 245 级，且八向剖面没有上升、铺光段没有台阶。
+// 规格 第 2 条的实测基线：水平向左逐 20px = 251,250,251,250,250,249,249,249,249,247,
 // 241,235,222,214,207,203,199,195,191,187 ⇒ r≤180 平（饱和钳死），r=180→240 降 25 级。
 // 判据 = 盘心 ≤245（钳平区不存在）+ 八向上升处数 = 0 + 斜率变化峰 ≤2 级/20px（台阶不存在）。
-//
 // 斜率变化峰的测量窗口（写明理由，两条都打印）：
 //
-//	全窗 r=20..400（规格逐字的窗口）：八条射线都打印斜率变化峰。
+//	全窗 r=20..400：八条射线都打印斜率变化峰。
 //		这条窗口从盘心起，前 40 px 里坐着盘体（rc=24.3 px、盘体级 120、羽化带 2.9 px）
-//		与小亮核（Lc=32.4 px、70 级）—— 规格 §2 第 1 条明令"盘/提亮/泛光半径口径不动"，
+//		与小亮核（Lc=32.4 px、70 级）—— 规格 第 1 条明令"盘/提亮/泛光半径口径不动"，
 //		盘缘那一段的斜率是盘自己的形状（120 级在 2.9 px 宽的 cos² 羽化带上落地 =
 //		每像素 41 级），不是"台阶"。实测这一段在全窗里给出 16 级/20px 的变化峰。
 //	铺光窗 r=6rc..min(400, 射线长)（泛光外沿之外，6rc = 0.27 倍烘焙宽）：
@@ -174,7 +167,7 @@ func TestCenterBelowClipAndMonotone(t *testing.T) {
 		baked.Pix[baked.PixOffset(cx, cy)], baked.Pix[baked.PixOffset(cx, cy)+1], baked.Pix[baked.PixOffset(cx, cy)+2],
 		sunLum(base, cx, cy), lift(cx, cy))
 	if center > 245.0 {
-		t.Errorf("盘心亮度 %.1f > 245 ⇒ 盘心还在钳平区里（规格 §1 实测盘心 (254,251,237)）", center)
+		t.Errorf("盘心亮度 %.1f > 245 ⇒ 盘心还在钳平区里（实测盘心 (254,251,237)）", center)
 	}
 	// 盘组外沿 = 泛光外沿 6rc（与 TestSunProfileMonotone 的剖面起点同一条口径）
 	rc := sky.SunDiscRcFrac * (sky.SunRcDimMin + sky.SunRcDimSlope*sky.SunDimOf(0)) * float64(w)
@@ -224,7 +217,7 @@ func TestCenterBelowClipAndMonotone(t *testing.T) {
 			t.Errorf("%s向铺光窗出现 %d 处上升 ⇒ 铺光剖面不是单调不降", d.name, sRises)
 		}
 		if sChange > 2.0 {
-			t.Errorf("%s向铺光窗相邻 20px 斜率变化峰 %.2f 级 > 2 级 ⇒ 铺光剖面里有台阶（规格 §1 的 r=180→240 降 25 级就是这种台阶）",
+			t.Errorf("%s向铺光窗相邻 20px 斜率变化峰 %.2f 级 > 2 级 ⇒ 铺光剖面里有台阶（r=180→240 降 25 级就是这种台阶）",
 				d.name, sChange)
 		}
 	}
@@ -234,7 +227,7 @@ func TestCenterBelowClipAndMonotone(t *testing.T) {
 }
 
 // sunPlateauGaussLum 亮度场的可分离高斯平滑。核半径 18 px = 3σ ⇒ σ = 6 px
-// （规格 3 T3 写的"18px 高斯平滑"取核半径 18 px 这一条口径，3σ 覆盖核半径）。
+// 。
 // 边界取"钳位"（边缘像素外推成常值），不让平滑把屏外的黑拉进来假造暗边。
 func sunPlateauGaussLum(img *image.NRGBA, radius int) []float64 {
 	b := img.Bounds()
@@ -292,12 +285,11 @@ func sunPlateauGaussLum(img *image.NRGBA, radius int) []float64 {
 	return out
 }
 
-// T3 平滑 + 非极大值抑制后只许有一个亮核（规格 3 T3）。
-//
+// T3 平滑 + 非极大值抑制后只许有一个亮核。
 // 次峰口径（写明理由）：以主峰为圆心、半径 120 px 的抑制盘**之外**取最大，
 // 取样网格 = 半径从 120 px 起、逐 20 px，角度逐 15° ⇒ 一个单调衰减的亮核，
 // 次峰就落在 120 px 这条环上（间距 = 120，判据 ≤120 取等号）；
-// 若盘外另有一个离心的亮核（规格 §1 读成的"第二个太阳"），它会在更外的环上被取到
+// 若盘外另有一个离心的亮核，它会在更外的环上被取到
 // ⇒ 间距 >120 且亮度接近主峰 ⇒ 两条判据一起判红。
 func TestSingleBrightPeak(t *testing.T) {
 	w, h := sunProbeW, sunProbeH
@@ -347,8 +339,7 @@ func TestSingleBrightPeak(t *testing.T) {
 	}
 }
 
-// T4 云量 90 档的四角净抬升不许退化（规格 3 T4：铺到四角的口径不动）。
-//
+// T4 云量 90 档的四角净抬升不许退化。
 // 口径与 TestSunCornerLift 逐字同源：净抬升 = 烘焙帧角盒平均 − 同帧天空基色在同一角盒的平均。
 // 直接拿"最左 25% 整带"当底色参照会量到天空底自己的竖向渐变与四角暗角，不是铺光的抬升。
 func TestCornerLiftKept(t *testing.T) {

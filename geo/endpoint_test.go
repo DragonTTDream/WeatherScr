@@ -2,10 +2,9 @@ package geo
 
 import "testing"
 
-// TestBaseURLOnlyOverridesOpenMeteo 钉死端点覆盖口径（用户裁决 2026-10-21：
+// TestBaseURLOnlyOverridesOpenMeteo 钉死端点覆盖口径（定案：
 // 反查钉死官方域名，不随 weather_base_url 走）。
-//
-// 旧缺陷（实测口径）：`endpoint()` 把完整 URL 当 path 拼接，`weather_base_url` 设成
+// 旧缺陷（实测口径）：`endpoint` 把完整 URL 当 path 拼接，`weather_base_url` 设成
 // 自建代理后，Nominatim 请求被拼成 `http://代理/https://nominatim.openstreetmap.org/...`。
 func TestBaseURLOnlyOverridesOpenMeteo(t *testing.T) {
 	s := &Searcher{BaseURL: "https://proxy.example/v1/"}

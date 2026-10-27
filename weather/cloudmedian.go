@@ -7,20 +7,16 @@ import (
 	"github.com/DragonTTDream/WeatherScr/effect"
 )
 
-// 三模型云量仲裁（规格 1.6）。
-//
+// 三模型云量仲裁。
 // 实测形态（本机直连 Open-Meteo，12:45 本地时刻）：请求带
 // `&models=gfs_seamless,icon_seamless,ecmwf_ifs025` 时，hourly 里出现**逐模型键**
 // cloud_cover_gfs_seamless / cloud_cover_icon_seamless / cloud_cover_ecmwf_ifs025
 // （各自一条数组，与 time 对齐）；current 只返回一个合并对象，不能拿它做多模型。
-//
 // 实测数值（同一时刻、同一坐标）：
-//
-//	best_match  = 天气码 3 / 云量 100%
+//	best_match = 天气码 3 / 云量 100%
 //	gfs_seamless = 3 / 100%
 //	icon_seamless = 2 / 62%
-//	ecmwf_ifs025  = 2 / 56%
-//
+//	ecmwf_ifs025 = 2 / 56%
 // ⇒ 码映射没有错，是默认源取到了最阴的那个模型：单源口径下 100% 云量判成阴，
 // 而三家的中位数 62% 判成多云见日。本文件就是把档位从"单源"换成"三家中位数"。
 
@@ -35,7 +31,6 @@ const (
 )
 
 // MedianCloud 若干家云量的中位数。
-//
 // 口径：nil 的剔除（缺一个模型就用剩下两家），全缺 ⇒ nil（调用方退回天气码）。
 // 偶数个值取中间两个的平均 —— 与 ui 包 medianF 的口径一致。
 func MedianCloud(vals ...*int) *int {
@@ -60,7 +55,6 @@ func MedianCloud(vals ...*int) *int {
 }
 
 // MedianFromModels 从三条逐模型数组取当前下标处的三家云量，再取中位数。
-//
 // 下标越界 / 数组长度不齐 ⇒ 该家按缺失处理（不 panic、不猜）。
 func MedianFromModels(gfs, icon, ecmwf []int, idx int) *int {
 	pick := func(a []int) *int {
@@ -74,9 +68,8 @@ func MedianFromModels(gfs, icon, ecmwf []int, idx int) *int {
 }
 
 // CurrentHourIndex 在 hourly 的 time 数组里找"当前时刻"的下标。
-//
 // hourly.time 是 iso8601 **当地墙钟**（请求带 timezone=auto ⇒ 响应无时区标记），
-// 形如 "2026-10-20T12:00"。当前时刻 = UTC 现在 + utc_offset_seconds，
+// 形如 "T12:00"。当前时刻 = UTC 现在 + utc_offset_seconds，
 // 截到小时，再按同一格式比对。取不到 ⇒ -1（调用方按缺失处理）。
 func CurrentHourIndex(times []string, offsetSeconds int, now time.Time) int {
 	if len(times) == 0 {
@@ -92,18 +85,18 @@ func CurrentHourIndex(times []string, offsetSeconds int, now time.Time) int {
 	return -1
 }
 
-// ClassFromCloud 天空档位由**三家中位数云量**决定（规格 1.6）：
+// ClassFromCloud 天空档位由**三家中位数云量**决定：
 //
-//	<30  → Clear
+//	<30 → Clear
 //	30–70 → PartlyCloudy
-//	>70  → Overcast
+//	>70 → Overcast
 //
 // 两条不许越界：
 //
 //	1 降水类（雨/雪/雷/雾/尘）仍由天气码决定，云量不得覆盖它
-//	  （95% 的云量不改变"在下雨"这件事）；
+//	 （95% 的云量不改变"在下雨"这件事）；
 //	2 中位数缺失（三家都没返回 / 下标取不到）⇒ 退回现有天气码判定，
-//	  不 panic、不让画面变空白。
+//	 不 panic、不让画面变空白。
 func ClassFromCloud(code int, median *int) (effect.Class, effect.Intensity) {
 	c, i := effect.Classify(code)
 	switch c {

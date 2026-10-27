@@ -14,24 +14,23 @@ import (
 	"gioui.org/op/paint"
 )
 
-// ---- 闪光叠加与闪电本体（逐字迁自 ui/effects.go：常量 :1894-1895 / :3263-3310，
-// 掩膜 :3327-3336，绘制矩形 :3352-3357，高斯核 :3359-3376，形状掩膜 :3378-3534，
-// 提亮层 :3536-3580，闪电本体 :3187-3226）----
+// ---- 闪光叠加与闪电本体（逐字迁自 ui/effects.go：常量 /，
+// 掩膜，绘制矩形，高斯核，形状掩膜，
+// 提亮层，闪电本体）----
 // ---- D3 闪光局域化 ----
-//
 // 旧口径 = 整屏白洗（PushOpacity(flash) + paint.Fill 满屏 alpha）：
 // 屏幕上每个像素一起变白，云与天空同涨同落，读成"整块屏幕闪一下"。
 // 现口径 = 以闪电锚点为中心的局部提亮：
 //
 //	锚点 = 本次闪电的落点 (boltX, boltY)（闪现开始时抽好、闪现期间不动）；
-//	       锚点没抽过时取云带顶部的随机 x、y = 0.12 屏高
+//	 锚点没抽过时取云带顶部的随机 x、y = 0.12 屏高
 //	形状 = 闪电本体（BoltGlowMask：当前那张闪电贴图高斯模糊烘出的形状掩膜），
-//	       不再是圆（旧圆罩见下面 boltGlow 的口径说明）
+//	 不再是圆（旧圆罩见下面 boltGlow 的口径说明）
 //	幅度 = 中心 0.30 上限（预览基准：0.30 档 = 非背景像素 44.8% 的观感）
 //	时长 = 单次 0.15–0.30 s 不动（走 boltEnvelope，见 stepBolt）
 //	对象 = 提亮范围内的天空与云：云 alpha 在粒子循环里按 flashMaskAt
-//	       （0.35 屏宽的 cos² 圆）抬升（云变实），
-//	       体色由提亮层抬（提亮层画在云与粒子之后，落在云像素上）
+//	 （0.35 屏宽的 cos² 圆）抬升（云变实），
+//	 体色由提亮层抬（提亮层画在云与粒子之后，落在云像素上）
 //
 // dev 开关 FX_FLASH 的语义 = 强制一次局域闪光（见 SetFlash）。
 const (
@@ -42,11 +41,9 @@ const (
 )
 
 // ---- 闪电形状光罩 boltGlow ----
-//
 // 需求原话：闪电的光线是圆的，而发光体就是闪电本身。
 // 实测根因：提亮掩膜 = 圆罩贴图（Kenney Light Masks circle_a 的角向平均剖面，
 // 宽 0.70 倍屏宽）⇒ 提亮形状是一个圆，与闪电本体的走向没有任何关系。
-//
 // 现口径 = 把本次闪现用的那张闪电贴图（bolt1..3 之一）的 alpha 做高斯模糊
 // （σ = BoltGlowSigmaFrac × 屏宽 = 0.03 倍屏宽）烘成形状掩膜 boltGlow：
 //
@@ -56,7 +53,7 @@ const (
 //	幅度 = flash × FlashAmpMax（0.30 上限不动）；
 //	云 alpha 抬升（flashMaskAt 的 0.35 屏宽 cos² 圆 + 系数 0.60）不动。
 //
-// 圆罩贴图退役：embed 目录里的文件保留，代码里不再引用（见 out/notes 的说明）。
+// 圆罩贴图退役：embed 目录里的文件保留，代码里不再引用。
 const (
 	BoltGlowSigmaFrac = 0.03 // 高斯模糊 σ = 0.03 倍屏宽（屏幕像素）
 	BoltGlowMaskN     = 192  // 掩膜栅格边长（像素）
@@ -73,7 +70,6 @@ const (
 
 // FlashMaskAt 局域提亮在归一化坐标 (x,y) 处的掩膜 0..1。
 // 距离按**屏宽**归一（半径是 0.35 倍屏宽，纵向同分母 ⇒ 各向同性的圆）。
-//
 // 锚点 = 本次闪现的落点（旧实现里读 boltX/boltY ⇒ 迁出后由调用方注入，值口径不动）。
 func FlashMaskAt(boltX, boltY, x, y float64) float64 {
 	d := math.Hypot(x-boltX, y-boltY) / FlashRadiusFrac
@@ -132,17 +128,14 @@ var boltGlowCache struct {
 }
 
 // BoltGlowMask 把第 idx 张闪电贴图（bolt1..3）的 alpha 高斯模糊烘成形状掩膜。
-//
 // 步骤（全部在屏幕像素口径下做，与屏幕上看到的一致）：
-//  1. 在 BoltGlowMaskN 的栅格上双线性采出闪电本体的 alpha（栅格铺满闪电的绘制矩形）；
-//  2. separable 高斯模糊，σ = BoltGlowSigmaFrac × 屏宽 换算到栅格像素；
-//  3. 按最大值归一 ⇒ 最亮处 = 闪电本体，掩膜峰值对应提亮幅度 FlashAmpMax；
-//  4. RGB 写固定的冷白（与太阳泛光/宽光同一条口径：源图 RGB 一个字节都不写进屏幕），
-//     alpha = 掩膜值。
-//
+// 1. 在 BoltGlowMaskN 的栅格上双线性采出闪电本体的 alpha（栅格铺满闪电的绘制矩形）；
+// 2. separable 高斯模糊，σ = BoltGlowSigmaFrac × 屏宽 换算到栅格像素；
+// 3. 按最大值归一 ⇒ 最亮处 = 闪电本体，掩膜峰值对应提亮幅度 FlashAmpMax；
+// 4. RGB 写固定的冷白（与太阳泛光/宽光同一条口径：源图 RGB 一个字节都不写进屏幕），
+// alpha = 掩膜值。
 // 缓存 = (贴图下标, 屏宽, 屏高)，逐帧零生成成本；一次烘的成本 = 栅格² × 核长 × 2。
 // 贴图没落地 ⇒ Ok=false（调用方不画提亮层，退回"只见闪电本体"）。
-//
 // 贴图查询口以回调注入（旧实现里 = spriteImg("bolt"+itoa(idx+1)+".png")，
 // 内嵌贴图与 itoa 归 ui 的资产口径 ⇒ 缓存键与烘焙过程一行不动）。
 func BoltGlowMask(idx, w, h int, load func(idx int) *image.NRGBA) *GlowEntry {
@@ -275,10 +268,8 @@ func BoltGlowMask(idx, w, h int, load func(idx int) *image.NRGBA) *GlowEntry {
 // DrawFlash 画局域提亮层：以闪电落点 (boltX, boltY) 为中心、
 // 铺在闪电本体那块矩形上（长轴 0.28 屏高、短轴按贴图宽高比）的**形状**提亮，
 // 峰值幅度 = flash × 0.30（flash 是闪现包络 0..1）。
-//
 // 掩膜 = BoltGlowMask（当前那张闪电贴图高斯模糊烘出的形状掩膜）⇒ 提亮沿闪电走向，
 // 不再是圆罩（需求：发光体就是闪电）。锚点口径不动。
-//
 // 绘制链与云精灵同构（Scale → Offset，Push/Pop 成对）；
 // 掩膜是 straight alpha 的 NRGBA，gioui 上传时预乘 ⇒ src-over 叠加 = 向白色抬。
 func DrawFlash(gtx layout.Context, w, h int, flash, boltX, boltY float64, idx int, load func(idx int) *image.NRGBA, probeCount bool, draws *int) {
@@ -319,23 +310,22 @@ func DrawFlash(gtx layout.Context, w, h int, flash, boltX, boltY float64, idx in
 	ts.Pop()
 }
 
-// DrawBolt 画一道闪电（规格 1.5：贴图 bolt1..3），亮度跟随闪现包络。
-//
+// DrawBolt 画一道闪电，亮度跟随闪现包络。
 // 三条口径：
 //
 //	1 贴图 = embed/bolt1..3（Kenney spark_01..03 的白热闪电枝），
-//	   逐次闪现换一张（boltIdx 在闪现开始时抽好，闪现期间不变 ⇒ 不逐帧跳）；
-//	   贴图组缺失时退到 genBolt 的程序折线（退路，出厂路径走不到）；
+//	 逐次闪现换一张（boltIdx 在闪现开始时抽好，闪现期间不变 ⇒ 不逐帧跳）；
+//	 贴图组缺失时退到 genBolt 的程序折线（退路，出厂路径走不到）；
 //	2 落位 = 闪现开始时抽好的随机点（boltX/boltY，见常量注释），
-//	   长轴 = 0.28 屏高，短轴按贴图宽高比等比；
+//	 长轴 = 0.28 屏高，短轴按贴图宽高比等比；
 //	3 峰值 alpha ≤ 0.75（BoltAlphaMax）：透明度 = 0.75 × 包络，包络峰值 1。
 //
-// 迁移处置（R5 卡 4，纯搬移）：
+// 迁移处置（纯搬移）：
 //
 //	计次 boltDrawn++ = Field 的自检计数 ⇒ 留在调用方（旧实现里它就是函数体第一行，
-//	    在贴图/幅度判据之前，无条件加一 ⇒ 调用方在调用之前加，逐字同序）；
+//	 在贴图/幅度判据之前，无条件加一 ⇒ 调用方在调用之前加，逐字同序）；
 //	选图（f.sp.bolt / boltOps + f.boltSpriteIndex()）= Field 的贴图装配与闪现状态 ⇒ 留在调用方，
-//	    本函数收**已选好的** img/sz；
+//	 本函数收**已选好的** img/sz；
 //	探针计数 draws = P1 探针的 Field 计数器 ⇒ 以指针注入，累加位置一行不动。
 func DrawBolt(gtx layout.Context, w, h int, flash, boltX, boltY float64, img paint.ImageOp, sz image.Point, probeCount bool, draws *int) {
 	if sz.X <= 0 || sz.Y <= 0 {

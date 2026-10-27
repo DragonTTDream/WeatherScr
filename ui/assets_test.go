@@ -11,10 +11,9 @@ import (
 // TestUnpremultiplyDecodesPremultipliedPNG 对应要求：
 // 构造一张 2×2 预乘图（如 (128,128,128,128)），断言反预乘后 RGB 为 255、alpha 不变；
 // a==0 的像素 RGB 为 0。
-//
 // 构造口径：Go 的 image.RGBA 就是**预乘口径**（color.RGBA 的文档明说 premultiplied），
 // png.Encode 把这些字节原样写进 PNG，png.Decode 又按**非预乘**口径解成 NRGBA
-// —— 这正是 glow.png / fog1.png 在低性能 x86 小主机上的遭遇（实测根因）。
+// —— 这正是 glow.png / fog1.png 在低性能 x86 实机上的遭遇（实测根因）。
 func TestUnpremultiplyDecodesPremultipliedPNG(t *testing.T) {
 	src := image.NewRGBA(image.Rect(0, 0, 2, 2))
 	// (0,0) 半透明灰：预乘值 (128,128,128,128) ⇒ 反预乘后 RGB 应为 255
@@ -58,7 +57,6 @@ func TestUnpremultiplyDecodesPremultipliedPNG(t *testing.T) {
 // TestReadPNGUnpremultipliesGlow 用给的样本数据直接实测：
 // glow.png 水平中线的 (81,81,81,50) (94,94,94,62) (112,112,112,77)
 // (124,124,124,90) (136,136,136,101) —— 反预乘后 RGB 应恒为 255。
-//
 // 样本给的是 RGB 与 alpha **同步衰减**的五个点，没给 x 坐标，
 // 故按 alpha 序列定位：中线上的半透明 alpha 序列必须出现 50/62/77/90/101
 // （= 样本的 alpha），且这些像素反预乘后 RGB 全为 255。

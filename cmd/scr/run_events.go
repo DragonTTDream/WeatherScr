@@ -1,8 +1,8 @@
 package main
 
-// 职责（卡9-app/scr）：事件分发：本帧输入事件收干与退出判定、热键层转接、点击回填（左键/位移/滚轮/键盘）
+// 职责（app/scr）：事件分发：本帧输入事件收干与退出判定、热键层转接、点击回填（左键/位移/滚轮/键盘）
 // 搬移来源：cmd/scr/main.go:957-1094（逐字，含注释）
-// 规格：plans/active.md:214 —— app/scr = 屏保生命周期；本卡零行为变化。
+// 规格：—— app/scr = 屏保生命周期；本卡零行为变化。
 // 设置面板侧的点击回填（SaveClicked/CancelClicked/UndoClicked/LockClicked/LocSearchClicked）在 run_lifecycle.go:runSettings 体内，函数体逐字未动 ⇒ 未拆。
 
 import (
@@ -22,21 +22,20 @@ type inputState struct {
 	// debug = SCR_DEBUG=1：
 	// 鼠标移动/按键一律不退出，退出只保留 Esc（与 Ctrl+C 进程级）。
 	debug bool
-	// 初始鼠标位置：上游 :462-464 `if self._initial_mouse_pos is None:
+	// 初始鼠标位置：上游 `if self._initial_mouse_pos is None:
 	// self._initial_mouse_pos = current_pos`。
 	haveInitial bool
 	initialX    float32
 	initialY    float32
 	// dist = hypot(当前 - 初始)：**相对初始位置的位移，不是累积移动量**
-	// （上游 :465-466 delta = current_pos - self._initial_mouse_pos）。
+	// （上游 delta = current_pos - self._initial_mouse_pos）。
 	dist float64
 }
 
 // drainInput 收干本帧的输入事件。返回 true = 该退出屏保。
-//
 // 判据逐条对应上游 rendering/runtime_input.py：
 // - 鼠标位移：:462-467 `hypot(current - initial) > MOUSE_EXIT_THRESHOLD(10)`
-// - 左键按下：:424-429 左键 → _request_exit（交互模式/Ctrl 下 :425-426 不退出）
+// - 左键按下：:424-429 左键 → _request_exit（交互模式/Ctrl 下 不退出）
 // - 滚轮：:254-268 handle_wheel 不请求退出 → 本复刻也不退出
 // - 键盘：:371-378 Esc/Q 退出；热键层被消费不退出；其余任意键退出
 func drainInput(gtx layout.Context, st *inputState, nPointer, nKey *int) bool {
@@ -60,7 +59,7 @@ func drainInput(gtx layout.Context, st *inputState, nPointer, nKey *int) bool {
 				return true
 			}
 		case pointer.Scroll:
-			// 上游 handle_wheel（:254-268）不请求退出 → 不退出
+			// 上游 handle_wheel（254-268）不请求退出 → 不退出
 		case pointer.Move:
 			if st.moveExit(pe.Position.X, pe.Position.Y) {
 				return true
@@ -77,7 +76,7 @@ func drainInput(gtx layout.Context, st *inputState, nPointer, nKey *int) bool {
 		if !isK || ke.State != key.Press {
 			continue
 		}
-		// Esc / Q → 退出（上游 :371-373）
+		// Esc / Q → 退出（上游）
 		if ke.Name == key.NameEscape || ke.Name == "Q" {
 			// 实测：DEBUG 下退出只保留 Esc（Ctrl+C 是进程级，天然可用）
 			if ke.Name == key.NameEscape || !st.debug {
@@ -94,7 +93,7 @@ func drainInput(gtx layout.Context, st *inputState, nPointer, nKey *int) bool {
 			logf("SCR_KEY=%s 无对应功能\n", ke.Name)
 			continue
 		}
-		// 其余任意键一律退出（上游 :378-379）；DEBUG 下不退出
+		// 其余任意键一律退出（上游）；DEBUG 下不退出
 		if st.debug {
 			logf("SCR_KEY=%s DEBUG 下不退出(其余键)\n", ke.Name)
 			continue
@@ -115,9 +114,9 @@ func drainInput(gtx layout.Context, st *inputState, nPointer, nKey *int) bool {
 	return false
 }
 
-// moveExit 处理一次鼠标移动：首帧记录**初始位置**（上游 :462-464），
+// moveExit 处理一次鼠标移动：首帧记录**初始位置**（上游），
 // 之后每帧算 hypot(当前 - 初始)，> MOUSE_EXIT_THRESHOLD(10) 即退出
-// （上游 :465-466）。**不是累积位移**。交互模式下不退出（上游 :454-458）。
+// （上游）。**不是累积位移**。交互模式下不退出（上游）。
 // DEBUG 模式下不退出。
 func (st *inputState) moveExit(x, y float32) bool {
 	if !st.haveInitial {
@@ -131,7 +130,7 @@ func (st *inputState) moveExit(x, y float32) bool {
 	return !st.interaction && !st.debug && st.dist > mouseExitThresholdPx
 }
 
-// pressExit 左键点击 → 退出（上游 :424-429）；交互模式不退出（上游 :425-426）；
+// pressExit 左键点击 → 退出（上游）；交互模式不退出（上游）；
 // DEBUG 模式不退出。
 func (st *inputState) pressExit(buttons pointer.Buttons) bool {
 	return buttons&pointer.ButtonPrimary != 0 && !st.interaction && !st.debug

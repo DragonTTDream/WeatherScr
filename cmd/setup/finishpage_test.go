@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// D5 判据（spec §2）：installOK=false 时完成页标题常量 = 「安装失败（已回滚）」；
-// 正文三态：ok=true（现文案）/ ok=false 且 why 非空 / ok=false 且 why 为空（回落「未记录」）。
+// D5 判据：installOK=false 时完成页标题常量 = '安装失败（已回滚）'；
+// 正文三态：ok=true（现文案）/ ok=false 且 why 非空 / ok=false 且 why 为空（回落'未记录'）。
 // 纯函数断言，不依赖窗口（finishpage.go 无 build tag ⇒ Linux 侧 go test 跑得到）。
 
 func TestFinishTitleByInstallResult(t *testing.T) {
@@ -56,7 +56,7 @@ func TestFinishBodyByInstallResult(t *testing.T) {
 				"· 关闭屏保后重新运行本安装器",
 		},
 		{
-			"ok=false 且 why 为空 ⇒ 原因回落「未记录」",
+			"ok=false 且 why 为空 ⇒ 原因回落'未记录'",
 			false, "",
 			"安装未完成，注册表与快捷方式已回滚。\r\n\r\n原因：未记录\r\n\r\n" +
 				"· 常见原因：屏保正在运行占用文件，或 UAC 被取消\r\n" +
@@ -72,7 +72,7 @@ func TestFinishBodyByInstallResult(t *testing.T) {
 	}
 }
 
-// R13 判据（spec b1-r13-finish §1 + 测试节）：卸载态文案常量逐字钉死，
+// 判据：卸载态文案常量逐字钉死，
 // finishTitleFor / finishBodyFor 两态取值正确，且安装侧旧壳（finishTitle/finishBody）逐字不变。
 // 纯函数断言，无 build tag ⇒ Linux 侧 go test -run TestFinish 跑得到。
 func TestFinishUninstallTexts(t *testing.T) {
@@ -117,16 +117,16 @@ func TestFinishUninstallTexts(t *testing.T) {
 
 	// ③ 正文取值：卸载成功 / 卸载失败（why 空 ⇒ 未记录）/ 卸载失败（why 非空 ⇒ 原样带出）
 	if got := finishBodyFor(opUninstall, true, ""); !strings.Contains(got, "屏保已从") {
-		t.Errorf("finishBodyFor(opUninstall,true) = %q，期望含「屏保已从」", got)
+		t.Errorf("finishBodyFor(opUninstall,true) = %q，期望含'屏保已从'", got)
 	}
 	if got := finishBodyFor(opUninstall, true, ""); got != finishBodyUninstallOK {
 		t.Errorf("finishBodyFor(opUninstall,true) = %q，期望逐字等于 finishBodyUninstallOK", got)
 	}
 	if got := finishBodyFor(opUninstall, false, ""); !strings.Contains(got, "未记录") || !strings.Contains(got, "未被删除") {
-		t.Errorf("finishBodyFor(opUninstall,false,\"\") = %q，期望含「未记录」与「未被删除」", got)
+		t.Errorf("finishBodyFor(opUninstall,false,\"\") = %q，期望含'未记录'与'未被删除'", got)
 	}
 	if got := finishBodyFor(opUninstall, false, "占用"); !strings.Contains(got, "占用") {
-		t.Errorf("finishBodyFor(opUninstall,false,\"占用\") = %q，期望含「占用」", got)
+		t.Errorf("finishBodyFor(opUninstall,false,\"占用\") = %q，期望含'占用'", got)
 	}
 
 	// ④ 安装侧回归：旧壳签名与返回逐字不变
@@ -137,11 +137,11 @@ func TestFinishUninstallTexts(t *testing.T) {
 		t.Errorf("finishTitle(false) = %q，期望 %q", got, finishTitleFail)
 	}
 	if got := finishBodyFor(opInstall, false, "占用"); !strings.Contains(got, "占用") || !strings.Contains(got, "已回滚") {
-		t.Errorf("finishBodyFor(opInstall,false,\"占用\") = %q，期望含「占用」与「已回滚」", got)
+		t.Errorf("finishBodyFor(opInstall,false,\"占用\") = %q，期望含'占用'与'已回滚'", got)
 	}
 }
 
-// R16-C 判据（spec r16-wizard §2.2）：安装成功正文含自验行「SHA256 与构建件一致」子串；
+// 判据：安装成功正文含自验行'SHA256 与构建件一致'子串；
 // lastVerify 为空 ⇒ 正文与 finishBodyOK 逐字相等（旧断言不破）；卸载成功正文不含自验行。
 func TestFinishBodyHashLine(t *testing.T) {
 	old := lastVerify

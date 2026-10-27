@@ -3,12 +3,10 @@ package main
 import "strings"
 
 // 卸载回滚值的自指判定（纯函数，无 build tag ⇒ 可在非 windows 平台跑测试）。
-//
-// 证据 E5（spec §0.5）：实机卸载后 SCRNSAVE.EXE = C:\Windows\System32\WeatherScr.scr，
+// 证据 E5：实机卸载后 SCRNSAVE.EXE = C:\Windows\System32\WeatherScr.scr，
 // 而该文件已被本次卸载删除（SYS32 MISSING）⇒ 当"安装前记录的值"就是本程序自己的安装路径时，
-// 恢复它等于把屏保设置指向一个不存在的文件。此时按"安装前没有屏保"处理（走 deleteScrSave()）。
-//
-// 比较口径（spec §1.5）：**大小写不敏感**、**去引号**后比较。
+// 恢复它等于把屏保设置指向一个不存在的文件。此时按"安装前没有屏保"处理（走 deleteScrSave）。
+// 比较口径：**大小写不敏感**、**去引号**后比较。
 
 // normalizeScrPath 规范化屏保路径：去首尾空白、去包裹的双引号、正斜杠归一成反斜杠、转小写。
 // 注册表里的值可能带引号（例如从 .scr 关联命令行抄来的 "C:\...\x.scr"），大小写也可能不同。

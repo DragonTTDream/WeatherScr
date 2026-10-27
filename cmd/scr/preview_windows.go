@@ -1,20 +1,17 @@
 //go:build windows && !novulkan
 
 // /p <hwnd> 预览模式。
-//
 // 规范要求：在给定 HWND 下建**同尺寸子窗口**，
 // 在预览面板里显示。gioui 不能把它的顶层窗口改父成 WS_CHILD
 // （`app/os_windows.go:190` 的 CreateWindowEx 是顶层窗口），
 // 所以走已验证的离屏渲染路径（cmd/fxshot 跑通的同一条生产路径：
-// ui.New() + Screen.Layout → headless.Window.Frame → Screenshot：
-//
+// ui.New + Screen.Layout → headless.Window.Frame → Screenshot：
 // 1. CreateWindowEx(WS_CHILD|WS_VISIBLE) 在父 HWND 下建子窗口，
 // 尺寸 = 父窗口客户区（GetClientRect）；
 // 2. gioui.org/gpu/headless 在本进程内离屏渲染；
 // 3. 每帧把 RGBA 经 SetDIBitsToDevice 贴到子窗口；
 // 4. 父窗口销毁 ⇒ 子窗口 WM_DESTROY / IsWindow(parent)=false ⇒ 立即退出；
 // 5. 不置顶、不隐藏任务栏、不因输入退出。
-//
 // novulkan 构建下本文件不参与编译，由 preview_novulkan_windows.go 打
 // PREVIEW_UNSUPPORTED 并退出 0。
 package main
@@ -45,9 +42,9 @@ var (
 	pvUser32 = windows.NewLazySystemDLL("user32.dll")
 	pvGdi32  = windows.NewLazySystemDLL("gdi32.dll")
 	// GetModuleHandleW 在 **kernel32.dll**，不在 user32.dll。
-	// 此前挂在 pvUser32 上，低性能 x86 小主机 panic：
+	// 此前挂在 pvUser32 上，低性能 x86 实机 panic：
 	// `Failed to find GetModuleHandleW procedure in user32.dll:
-	// The specified procedure could not be found.`（本文件 :163 调用点）
+	// The specified procedure could not be found.`（本文件调用点）
 	pvKernel32 = windows.NewLazySystemDLL("kernel32.dll")
 
 	pGetDC            = pvUser32.NewProc("GetDC")
@@ -140,7 +137,6 @@ type bitmapInfo struct {
 }
 
 // previewWndProc 是预览子窗口的窗口过程。
-//
 // 实测：父窗口被销毁 ⇒ 子窗口收到 WM_DESTROY ⇒ 立即退出
 // （规范：预览窗口销毁时 saver 必须终止）。
 //
@@ -208,7 +204,6 @@ func windowAlive(hwnd uintptr) bool {
 
 // blitRGBA 把 image.RGBA（R,G,B,A）转成 32bpp BI_RGB 的 B,G,R,0 并用
 // SetDIBitsToDevice 贴到子窗口客户区。
-//
 // biHeight 取负 = 自顶向下扫描，与 image.RGBA 的行序一致，无需翻转。
 // 离屏尺寸已按子窗口客户区建立，故这里 1:1 贴，不缩放。
 func blitRGBA(img *image.RGBA, dst uintptr, w, h int32) bool {
@@ -310,7 +305,7 @@ func drawPreview(parent uintptr) {
 	screen := ui.New()
 	snap := previewSnapshot()
 	field := ui.NewField(snap.Class, snap.IsDay, time.Now().UnixNano())
-	// 闪现间隔按码分级（D4）：预览路径同样把码传进粒子场
+	// 闪现间隔按码分级：预览路径同样把码传进粒子场
 	if snap.Sample != nil {
 		field.SetWeatherCode(snap.Sample.WeatherCode)
 	}

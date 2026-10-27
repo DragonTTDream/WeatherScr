@@ -1,6 +1,5 @@
 // Package embed 内嵌 ui/embed 目录的全部贴图 PNG。
-//
-// R5 卡 6（贴图装配迁入 ui/assets）：//go:embed 不能跨目录向上引用，
+// （贴图装配迁入 ui/assets）：//go:embed 不能跨目录向上引用，
 // 装配代码搬到 ui/assets 后需要新的内嵌口 ⇒ 在贴图所在目录原地加本桥文件。
 // 纪律：ui/embed/*.png 文件位置与字节逐字不动（37 个文件原样），
 // 本文件只新增内嵌口，不改任何找图逻辑；ui/assets 侧调用点的

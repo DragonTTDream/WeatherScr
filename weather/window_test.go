@@ -8,8 +8,7 @@ import (
 	"time"
 )
 
-// 预警判据 fixture（批次 b-alert-v1 重写 weather/window.go 之后）。
-//
+// 预警判据 fixture（重写 weather/window.go 之后）。
 // 逐小时 fixture 沿用批次"需求 1/2"的实测序列（2026-10-16，坐标 30.2495,120.1583，
 // 每 3 小时抽样：00:00 16%/0.0 · 03:00 56%/0.5 · 06:00 62%/0.2 · 09:00 57%/0.1
 // · 12:00 79%/0.1 · 15:00 77%/0.1 · 18:00 28%/0.0 · 21:00 0%/0.0）；
@@ -68,8 +67,8 @@ func localAt(y, mo, d, hh, mi int) time.Time {
 	return time.Date(y, time.Month(mo), d, hh, mi, 0, 0, time.UTC)
 }
 
-// ---- 钉死：官方四级阈值常量（spec/b-alert-v1-brief.md §2；
-// 官方逐字口径见 spec/alert-latency-and-logic.md §9 引北京市丰台区政府科普页）----
+// ---- 钉死：官方四级阈值常量（；
+// 官方逐字口径见 引北京市丰台区政府科普页）----
 
 func TestPinnedOfficialTierConstants(t *testing.T) {
 	if tierRedMM != 100 {
@@ -104,11 +103,10 @@ func TestPinnedOfficialTierConstants(t *testing.T) {
 	}
 }
 
-// ---- 钉死：逐模型键名（spec/b-alert-v1-brief.md §2 逐字）----
-//
-// 规格钉死 p_probability_<model>；本机 2026-10-21 直连实测到的是
+// ---- 钉死：逐模型键名----
+// 钉死 p_probability_<model>；本机 直连实测到的是
 // precipitation_probability_<model>（`hourly=p_probability` 被 API 拒 400）
-// ⇒ 两套键名在解析端并存，两套都钉（差异记 out/notes-alert-v1.md）。
+// ⇒ 两套键名在解析端并存，两套都钉（差异记）。
 
 func TestPinnedPerModelKeyNames(t *testing.T) {
 	tag := func(path ...string) string {
@@ -125,14 +123,14 @@ func TestPinnedPerModelKeyNames(t *testing.T) {
 		return f.Tag.Get("json")
 	}
 	want := map[string]string{
-		// 规格钉死的三套（逐字）
+		// 钉死的三套
 		"Hourly.ProbGFS":  "p_probability_gfs_seamless",
 		"Hourly.ProbIcon": "p_probability_icon_seamless",
 		"Hourly.ProbECM":  "p_probability_ecmwf_ifs025",
 		"Hourly.MMGFS":    "precipitation_gfs_seamless",
 		"Hourly.MMIcon":   "precipitation_icon_seamless",
 		"Hourly.MMECM":    "precipitation_ecmwf_ifs025",
-		// 云量（规格 1.6 既有，逐字不动）
+		// 云量
 		"Hourly.CloudCoverGFS": "cloud_cover_gfs_seamless",
 		// 15 分钟层同规则（第 3 步）
 		"Minutely15.ProbGFS": "p_probability_gfs_seamless",
@@ -328,11 +326,11 @@ func TestEvaluateDataGate(t *testing.T) {
 	}
 }
 
-// ---- 批次 b-alert-v1b 第 6 步：钉死视野常量（旋钮已拆，值来自 fixture 标定）----
+// ---- ：钉死视野常量（旋钮已拆，值来自 fixture 标定）----
 
 func TestUmbrellaViewConstants(t *testing.T) {
 	if umbrellaViewHours != 2 {
-		t.Errorf("umbrellaViewHours = %d，期望 2（spec/b-alert-v1b.md 标定表：门槛 0.05 下 "+
+		t.Errorf("umbrellaViewHours = %d，期望 2（标定表：门槛 0.05 下 "+
 			"ON_RATIO=0.1397、COVERAGE=1.00、LEAD 105–345 min）", umbrellaViewHours)
 	}
 	if officialMaxWindowHours != 12 {
@@ -343,7 +341,7 @@ func TestUmbrellaViewConstants(t *testing.T) {
 	s := min15Sample(localAt(2026, 10, 16, 0, 0), 96, 0.15, 45)
 	s.ProbN = officialMaxWindowHours - 1
 	if e := Evaluate(s, localAt(2026, 10, 16, 0, 0), 0.05, &Hysteresis{}); e.Available {
-		t.Errorf("ProbN=%d < 12 ⇒ 应判「数据不可用」", s.ProbN)
+		t.Errorf("ProbN=%d < 12 ⇒ 应判'数据不可用'", s.ProbN)
 	}
 	s.ProbN = officialMaxWindowHours
 	if e := Evaluate(s, localAt(2026, 10, 16, 0, 0), 0.05, &Hysteresis{}); !e.Available {
@@ -369,7 +367,7 @@ func TestUmbrellaViewConstants(t *testing.T) {
 }
 
 func TestEvaluateDisasterBeatsDaily(t *testing.T) {
-	// 规格「待定点」第 2 条本批定案：灾害层优先，同一行。
+	// 规格'待定点'第 2 条本批定案：灾害层优先，同一行。
 	s := min15Sample(localAt(2026, 10, 16, 0, 0), 96, 25, 45)
 	e := Evaluate(s, localAt(2026, 10, 16, 0, 0), 0.05, &Hysteresis{})
 	if !e.Disaster || !e.On {
@@ -387,7 +385,7 @@ func TestEvaluateDailyBlue(t *testing.T) {
 		t.Fatalf("应命中日常层且亮，实得 %+v", e)
 	}
 	if e.Tier != TierBlue {
-		t.Errorf("日常层档位 = %d，期望 蓝(1)（§11 态③ 蓝色小色块）", e.Tier)
+		t.Errorf("日常层档位 = %d，期望 蓝(1)（态③ 蓝色小色块）", e.Tier)
 	}
 }
 

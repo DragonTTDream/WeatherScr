@@ -1,6 +1,6 @@
 package settings
 
-// R5 卡 8（ui/settings 拆包）：夹具 sampleModel 随判据一起迁进本包，
+// （ui/settings 拆包）：夹具 sampleModel 随判据一起迁进本包，
 // 从"判据文件内的函数"改成**非测试文件里的函数**（本体 = 旧 ui/settings_ui_test.go:12-49，
 // 字段值与注释逐字未动）——因为闸门判据本体在 check_landscape.go / check_b2.go
 // 这类非测试文件里（ui 侧闸门薄壳要能调用，见 shells_test.go 头注），夹具必须同样在非测试侧。

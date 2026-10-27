@@ -1,15 +1,13 @@
 package ui
 
 // 白天太阳常驻 + 云量调可见度 + 闪光局域化 + 闪电频率分级 的判据。
-//
 // 共同纪律：**每条都真的测量并打印数字**，盒子/取样点是固定口径，
 // 不随天气类或云量缩放；样本不足/测不到东西时直接判红（不写恒真断言）。
-//
-//	TestSunAlwaysDay     白天 9 档固定太阳盒内亮像素 >0；夜间 9 档 = 0
-//	TestSunDimMonotonic  云量 0/30/60/85/100 五档，盘心亮度单调不增，且 100 档 > 0
-//	TestNoSunLiftRing    盘缘外 4rc 与 6rc 两点的"圈边剩余"≤3 级（提亮圈归零）
-//	TestFlashLocalized   闪光峰值帧，锚点亮度增量 ≥ 距锚点 0.5w 处的 8 倍
-//	TestBoltRateByCode   码 95/96/99 各跑 300 s 模拟，闪次落在分级区间
+//	TestSunAlwaysDay 白天 9 档固定太阳盒内亮像素 >0；夜间 9 档 = 0
+//	TestSunDimMonotonic 云量 0/30/60/85/100 五档，盘心亮度单调不增，且 100 档 > 0
+//	TestNoSunLiftRing 盘缘外 4rc 与 6rc 两点的"圈边剩余"≤3 级（提亮圈归零）
+//	TestFlashLocalized 闪光峰值帧，锚点亮度增量 ≥ 距锚点 0.5w 处的 8 倍
+//	TestBoltRateByCode 码 95/96/99 各跑 300 s 模拟，闪次落在分级区间
 
 import (
 	"image"
@@ -40,7 +38,6 @@ func sundimClasses() []effect.Class {
 }
 
 // celestialLayerCPU 只把天体层烘到一张全透明图上（隔离星星/月亮/云带）。
-//
 // 为什么要隔离：夜间的天空纹理里有 150 颗星（renderSkyCPU 的 bakeStars），
 // 直接量"整张烘焙 - 基色"时，落进太阳盒的星星会被数成亮像素 ⇒
 // "夜间 9 档 = 0"这条判据测的是天体层，必须把星星隔出去。
@@ -52,7 +49,6 @@ func celestialLayerCPU(w, h int, cls effect.Class, isDay bool, cloudPct int) *im
 }
 
 // TestSunAlwaysDay 白天 9 档逐档量固定太阳盒内的亮像素 >0；夜间 9 档 = 0。
-//
 // 盒子 = 中心 (0.72w, 0.095h)、半边长 3rc、rc = 0.045w（固定口径，不随类/云量缩放）。
 // 亮像素 = 天体层里被写过且 RGB 亮度 >0 的像素（blendPix 落笔即 alpha=0xff）。
 // 白天取云量 0（满亮盘）与 100（灰蒙宽光）两个输入：灰蒙档也必须 >0（不许全黑）。
@@ -151,7 +147,6 @@ func TestSunAlwaysDay(t *testing.T) {
 }
 
 // TestSunDimMonotonic 云量 0/30/60/85/100 五档的盘心亮度：单调不增，且 100 档 > 0。
-//
 // 同一档天空（Clear）+ 同一取样点（盘心），只变云量 ⇒ 变的就是 dim。
 // 两个量都打印：盘心绝对亮度、盘心净抬升（烘焙 - 同位置天空基色）。
 // 100 档的净抬升 >0 = "灰蒙档留亮斑"（不许全黑）。
@@ -204,12 +199,10 @@ func TestSunDimMonotonic(t *testing.T) {
 }
 
 // sunBakePredictedLum 按烘焙用的解析式预测一个盘外点的亮度（天空基色 + 单一连续剖面 + 盘 + 泛光 + cos² 窗）。
-//
 // 用途：量"圈边剩余"。烘焙里的剖面/盘/泛光/窗四条都是既有解析项，
 // 把它们逐像素重算一遍就得到"没有提亮圈时该有多亮"，实测值减掉它就是圈边剩余。
 // 基色取 skyBaseCPU（屏幕上真实存在的那张），不复制渐变公式。
-//
-// 口径同步（规格 2.1 单一连续剖面 + 晴档平顶那批的留头合成）：
+// 口径同步：
 // 剖面 = A·exp(−r/L) + Acore·exp(−r/Lc) + U，写入 = 逐因子逐通道留头合成
 // out = base + add·(1 − base/255)（screen 型，见 bakeSunAnalytic 与 screenKeep）。
 // 星芒贴图与宽光贴图在屏内的加性贡献已停用 ⇒ 预测器里也不再叠星芒那一条。
@@ -277,7 +270,6 @@ func sunBakePredictedLum(base *image.NRGBA, x, y int, cx, cy, rc, dim float64, w
 }
 
 // TestNoSunLiftRing 盘缘外 4rc 与 6rc 两点的圈边剩余 ≤3 级（提亮圈归零）。
-//
 // 口径说明（与规格字面的差别写在这里）：
 // 盘外亮度本身在 4rc→6rc 之间必然差几十级 —— Lorentz 光斑 A/(1+(r/L)²) 就是
 // 一条单调衰减的铺光（铺光半径 L=0.18 倍烘焙宽），这不是"圈"。
@@ -383,7 +375,7 @@ func flashProbeFrame(t *testing.T, win *headless.Window, f *Field, flash float64
 // 取样步长 3 px（矩形 550×540 ⇒ 约 3.4 万格），峰值落在枝干上。
 // 盒子 = 以落点为中心的 bolt 绘制矩形（口径见 drawBolt / boltRectPx），不随类缩放。
 func flashPeakDelta(on, off *image.RGBA, ax, ay int) (float64, [2]int) {
-	// R5 卡 4：形状掩膜本体逐字迁到 ui/overlay.BoltGlowMask（贴图查询口 = ui 侧注入），
+	// 形状掩膜本体逐字迁到 ui/overlay.BoltGlowMask（贴图查询口 = ui 侧注入），
 	// 取数口径不变（同一张 bolt1、同一幅面 ⇒ 同一块矩形）。
 	e := overlay.BoltGlowMask(0, PortraitW, PortraitH, boltSpriteImg)
 	halfW, halfH := 300.0, 300.0
@@ -406,7 +398,6 @@ func flashPeakDelta(on, off *image.RGBA, ax, ay int) (float64, [2]int) {
 }
 
 // TestFlashLocalized 闪光峰值帧：提亮层的峰值增量 ≥ 距锚点 0.5 屏宽处的 8 倍。
-//
 // 口径：同一个场连渲两帧，中间只把 f.flash 从峰值改成 0 ⇒ 两帧的逐像素差
 // 就是闪光层的贡献（粒子、云带、文字在两帧里逐字相同）。
 // 取样点 = 提亮层在闪电本体矩形里的峰值点（锚点增量一并打印做参照）
@@ -473,7 +464,6 @@ func TestFlashLocalized(t *testing.T) {
 		dFar = -dFar
 	}
 	// 提亮层的峰值增量（在闪电本体那块矩形里逐格取最大差）。
-	//
 	// 口径变更（写明理由，不是放宽）：提亮形状从圆罩换成闪电本体烘出的形状掩膜后，
 	// 掩膜的最亮处 = 闪电本体的枝干，而锚点 = 贴图中心（= 落点）在闪电贴图里
 	// 常常是空的（实测 bolt3 的贴图中心 21×21 邻域里 alpha>128 的像素 = 0）。
@@ -545,15 +535,14 @@ func TestSkyCacheCloudKey(t *testing.T) {
 }
 
 // TestBoltRateByCode 闪电频率按码分级：码 95/96/99 各跑 300 s 模拟，闪次落进分级区间。
-//
-// 判据区间（规格逐字）：95 ⇒ 300/40–300/15 = 7.5–20 次；96 ⇒ 12–30 次；99 ⇒ 20–50 次。
+// 判据区间：95 ⇒ 300/40–300/15 = 7.5–20 次；96 ⇒ 12–30 次；99 ⇒ 20–50 次。
 // 每个码跑 3 个种子（逐种子打印闪次与平均间隔），逐种子都要落进区间。
 // 随机源 = 场自己的确定性种子（NewField 的 rand.New(rand.NewSource(seed))），
 // 判据可复现。
 func TestBoltRateByCode(t *testing.T) {
 	const secs = 300
 	step := time.Second / 15
-	// 批次 A2 / C1：一帧 1/15 s 的 dt 只推进追赶上限 3 步 = 0.05 s 动画时间
+	// / C1：一帧 1/15 s 的 dt 只推进追赶上限 3 步 = 0.05 s 动画时间
 	// （旧口径一帧 = dt 本身）。"300 秒模拟"量的是动画秒数 ⇒ 帧数按
 	// 300 s ÷ (3×fixedStep) = 6000 帧换算，判据区间（按秒分级）逐字不变。
 	framesPerSec := int(1.0 / (float64(fixedStepCatchup) * fixedStep.Seconds()))

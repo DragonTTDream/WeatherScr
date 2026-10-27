@@ -17,33 +17,27 @@ import (
 )
 
 // 背景特效素材（ui/embed，内嵌即默认路径）：
-//
-//	cloud1..9.png  OpenGameArt "Clouds with Transparency"（WickedInsignia, CC0）
-//	               体积云，448 宽（高 310–474）
-//	fog1..4.png    OpenGameArt "Thick Fog"（lfa, CC0），896×448，
-//	               alpha 通道 ×0.60（浓淡对比图选定的那一档）
-//	moon.png       NASA SVS CGI Moon Kit（公有领域，LRO 数据），384×384，alpha 全 255
-//	rain.png       本项目自绘（MIT），192×192
-//	glow.png       Kenney "Particle Pack" light_01（CC0）
-//	detail_*.png   上游详情行图标，来源见 embed/ATTRIBUTION.md
-//
+//	cloud1..9.png OpenGameArt "Clouds with Transparency"（WickedInsignia, CC0）
+//	 体积云，448 宽（高 310–474）
+//	fog1..4.png OpenGameArt "Thick Fog"（lfa, CC0），896×448，
+//	 alpha 通道 ×0.60（浓淡对比图选定的那一档）
+//	moon.png NASA SVS CGI Moon Kit（公有领域，LRO 数据），384×384，alpha 全 255
+//	rain.png 本项目自绘（MIT），192×192
+//	glow.png Kenney "Particle Pack" light_01（CC0）
+//	detail_*.png 上游详情行图标，来源见 embed/ATTRIBUTION.md
 // 阳光形态三张（Kenney CC0，包清单与缩放口径见 assets/LICENSE-kenney.txt）：
-//
-//	sunrays.png    Kenney "Smoke Particles" flash05.png，缩到 512 宽（512×521，LANCZOS，alpha 保留）
-//	               = 晴 / 多云见日档在太阳位置加性绘制的星芒（ui/render.go 的 bakeSunRays）
-//	sunglow.png    Kenney "Light Masks" circle_a.png，缩到 1024 宽（1024×1024）
-//	               = 灰蒙档（云量 ≥85）的宽光软形状底（ui/render.go 的 bakeSunGlow，
-//	                 绘制宽 1.6 倍烘焙宽，rim 在屏外；屏内加性光量走解析两项）
-//	flashglow.png  Kenney "Light Masks" circle_a.png，512 宽（512×512，源图原尺寸）
-//	               = 退役：闪电提亮改走闪电本体烘出的形状掩膜（ui/effects.go 的
-//	                 boltGlowMask），圆罩不再被任何代码引用；文件保留在 embed 目录
-//
+//	sunrays.png Kenney "Smoke Particles" flash05.png，缩到 512 宽（512×521，LANCZOS，alpha 保留）
+//	 = 晴 / 多云见日档在太阳位置加性绘制的星芒（ui/render.go 的 bakeSunRays）
+//	sunglow.png Kenney "Light Masks" circle_a.png，缩到 1024 宽（1024×1024）
+//	 = 灰蒙档（云量 ≥85）的宽光软形状底（ui/render.go 的 bakeSunGlow，
+//	 绘制宽 1.6 倍烘焙宽，rim 在屏外；屏内加性光量走解析两项）
+//	flashglow.png Kenney "Light Masks" circle_a.png，512 宽（512×512，源图原尺寸）
+//	 = 退役：闪电提亮改走闪电本体烘出的形状掩膜（ui/effects.go 的
+//	 boltGlowMask），圆罩不再被任何代码引用；文件保留在 embed 目录
 // 三张都走覆盖目录工装口径：WS_ASSET_DIR 里有同名文件时优先用它（ReadPNG / assetImageAny）。
 // 出厂二进制不读任何工装变量（闸门逐字证明）。
-//
 // 许可与来源逐条记录：NOTICE 的第三方表 + assets/LICENSE-ogazoo.txt +
 // assets/LICENSE-kenney.txt + ui/embed/ATTRIBUTION.md。
-//
 // 为什么用现成素材而不是继续程序生成：需求是从社区取现成的精美素材，
 // 不用程序生成（需求 4）。程序生成的软边团块经视觉判读
 // 判定为"像高斯模糊的白噪点、像均匀蒙版、有贴图感"——这是算法生成形状
@@ -51,8 +45,7 @@ import (
 // 边缘平滑、有前后层次，直接解决该问题。
 
 // LoadEmbedded 把嵌入的 PNG 读成贴图集合。
-//
-// 云/雾精灵加载时做 alpha 羽化（FeatherAlpha）：低性能 x86 小主机反馈"云的锯齿状边缘
+// 云/雾精灵加载时做 alpha 羽化（FeatherAlpha）：低性能 x86 实机反馈"云的锯齿状边缘
 // 十分明显"，而 v0.10.3 的滤镜只有 Linear/Nearest（默认已是 Linear），
 // ⇒ 锯齿来自精灵自身硬 alpha 边缘被放大 2.2 倍后的台阶，只能在加载时压成斜坡。
 func LoadEmbedded() (clouds []paint.ImageOp, cloudSz []image.Point, fogs []paint.ImageOp, fogSz []image.Point, glow paint.ImageOp, glowSz image.Point) {
@@ -100,19 +93,16 @@ func ToNRGBA(img image.Image) *image.NRGBA {
 }
 
 // ReadPNG 是全部嵌入精灵的**唯一解码口**：解码后就地反预乘。
-//
 // 实测根因：ui/embed/glow.png、ui/embed/fog1.png 的 RGB/alpha 比值均值
 // 1.31 / 1.35（最小 1.08，最大 1.72） ⇒ 这些 PNG 是**预乘编码**；
 // Go 的 image/png 解成 NRGBA（非预乘口径） ⇒ 每个半透明像素被 α/255 压暗
 // ⇒ 光晕外圈出现"低 alpha 的黑环"（实测反馈：
 // "夜晚的外围的光晕出现明显的边界"。
-//
 // 样本（glow.png 水平中线）：
 //
 //	(81,81,81,50) (94,94,94,62) (112,112,112,77) (124,124,124,90) (136,136,136,101)
 //
 // RGB 与 alpha 同步衰减，反预乘后 RGB 应恒为 255。
-//
 // 只在**加载时**做一次（本函数是加载路径，不在每帧路径里），使全部精灵
 // （cloud1..9 / fog1..4 / glow / star / flake / drop / mote / sun 以及本批新增的
 // detail_* / cond_*统一受益。
@@ -121,7 +111,7 @@ func ToNRGBA(img image.Image) *image.NRGBA {
 // 反预乘口径两条路径完全相同（ToNRGBA → Unpremultiply），
 // 负缓存语义不变（LoadSprite 对加载失败的负缓存照旧）。
 // 未启用覆盖目录时 assetLookupPath 恒 false ⇒ 本函数与改动前逐字节等价。
-// 依据：素材预览工装规格 1.1 节；实现见 ui/assetdir.go。
+// 依据：素材预览工装节；实现见 ui/assetdir.go。
 func ReadPNG(name string) (image.Image, bool) {
 	if p, ok := overrideLookup(name); ok {
 		f, err := os.Open(p)
@@ -149,7 +139,6 @@ func ReadPNG(name string) (image.Image, bool) {
 // Unpremultiply 把预乘编码的像素还原成非预乘（straight alpha）：
 // a==0 时 RGB 置 0；a>0 时 R = clamp(R*255/a)，G/B 同理。
 // 就地修改（调用方给的是刚解码出来的图，没有共享所有权）。
-//
 // 根因与样本数据见 ReadPNG 的注释。
 func Unpremultiply(n *image.NRGBA) *image.NRGBA {
 	if n == nil {
@@ -219,8 +208,7 @@ func GlowRaw() *image.NRGBA {
 }
 
 // FeatherAlpha 只对**边缘像素**做 (2r+1)^2 盒均值，只改 alpha 不动 RGB。
-//
-// 两轮低性能 x86 小主机反馈定出的口径：
+// 两轮低性能 x86 实机反馈定出的口径：
 //
 //	反馈 A：云的锯齿状边缘十分明显 ⇒ 需要压掉放大 2.2 倍后的台阶；
 //	反馈 B：很夸张、很糊，某些边缘是平的（像圆弧强行被拉平）
@@ -306,23 +294,21 @@ func FeatherAlpha(src *image.NRGBA, r int) *image.NRGBA {
 }
 
 // SpriteSupersample 精灵超采样倍率 = **1**（B 版素材落地后）。
-//
 // 历史口径（2）：Kenney 云精灵顶边 alpha 剖面 = [127, 255, 255, 255, …]，
 // 边缘只有 1 px 的半透明斜坡，其余是硬实心（TestEdgeProfileIsRamp 实测）。
 // GPU 侧 v0.10.3 只有 FilterLinear，把 177–266 px 的原生小图放大 2.2 倍后
 // 每个源像素变成 2.2 px 的软方块 ⇒ 沿曲线边界就是肉眼可读的台阶。
 // 加载时先按三次核（Catmull-Rom）高质量放大 2 倍，绘制时把 scale 除以同一系数
 // ⇒ GPU 近似 1:1 贴图，台阶在 CPU 的高质量重采样阶段就被消掉。
-//
 // 现在取 1 的依据（内存口径，逐张实测）：
 //
 //	B 版源图 = 云 448 宽（高 310–474）、雾 896×448。
 //	屏上云宽 88–133 px ⇒ 源图已是它的 3.4–5.1 倍，GPU 走的是**缩小**采样，
 //	"放大源像素成软方块"这个台阶机制本身不存在了，超采样换不来任何东西。
 //	解码像素（RGBA 4 B/px）：
-//	  新素材 + supersample=2 = 30.68 Mpx = **122.8 MB**（云 24.26 + 雾 6.42）
-//	  新素材 + supersample=1 =  3.12 Mpx = **12.5 MB**
-//	  旧素材（Kenney）+ supersample=2 = 2.03 Mpx = 8.1 MB（对照）
+//	 新素材 + supersample=2 = 30.68 Mpx = **122.8 MB**（云 24.26 + 雾 6.42）
+//	 新素材 + supersample=1 = 3.12 Mpx = **12.5 MB**
+//	 旧素材（Kenney）+ supersample=2 = 2.03 Mpx = 8.1 MB（对照）
 //	122.8 MB 单是云/雾贴图就顶穿 120 MB 的稳态 RSS 预算
 //	（180 s 窗口实测 RSS 104.7 → 114.0 MB，取证 34.14），
 //	⇒ 口径"保证视觉效果然后降低尺寸"= 视觉口径不动、把 ×4 的解码放大砍掉。
@@ -333,19 +319,18 @@ func FeatherAlpha(src *image.NRGBA, r int) *image.NRGBA {
 const SpriteSupersample = 1
 
 // 净绘制倍率（相对**源图像素尺寸**）。
-//
 // 旧口径把这些尺寸公式统一写成 "除以 SpriteSupersample"，在 supersample=2 时
 // 净尺寸 = 0.5×原生。supersample 降到 1 后若照旧除以它，星/雪/尘/光晕
 // （它们从未被超采样，除以 2 就是它们的既有口径）会整体放大 2 倍，
 // 云/雾也会从 112 px 涨到 224 px ⇒ 画面口径全变。
 // ⇒ 把"除以 2"从超采样倍率里拆出来固定成常量，屏上尺寸逐处保持现状：
 //
-//	云  448 px 宽 × CloudNetScale 0.25 = 112 px  —— 既有口径 88–133 px 之内
-//	雾  896 px 宽 × FogNetScale   0.143 = 128 px  —— 旧净宽 = Kenney 256 原生 × 0.5
-//	带  448 px 宽 × (1.5+0.8·frac)/BandNetDiv 4 = 168–258 px —— 旧净宽 142–306 px
+//	云 448 px 宽 × CloudNetScale 0.25 = 112 px —— 既有口径 88–133 px 之内
+//	雾 896 px 宽 × FogNetScale 0.143 = 128 px —— 旧净宽 = Kenney 256 原生 × 0.5
+//	带 448 px 宽 × (1.5+0.8·frac)/BandNetDiv 4 = 168–258 px —— 旧净宽 142–306 px
 //	其余精灵（星/雪/尘/光晕/雨丝）沿用 ÷SpriteNetDiv = ÷2 的既有口径
 //
-// **口径改判（2026-10-20）：屏上尺寸回到选定效果图那一份，内存不跟着涨。**
+// **口径改判：屏上尺寸回到选定效果图那一份，内存不跟着涨。**
 // 上面这组常量把新素材"逐档对齐"到旧 Kenney 尺寸（注释里的"不因换素材变大"），
 // 结果出厂画面与选定的那张效果图不是同一个东西：效果图是 supersample=2（源图 2× 放大）
 // 下出的，屏上尺寸 = 云 256 px、云带 768–1178 px、雾团 732–2867 px；
@@ -354,18 +339,17 @@ const SpriteSupersample = 1
 // 现按"效果图的屏上尺寸 ÷ 现在的源图尺寸"定净倍率，**supersample 保持 1**
 // （照效果图那份口径要 2× 放大贴图 = 精灵像素 4 倍 ≈ +42 MB，超内存预算）：
 //
-//	云  512 px 宽 × 0.50 = 256 px               （效果图 1024 × 0.25 = 256 px）
-//	带  512 px 宽 × (1.5+0.8·frac)/1.0 = 768–1178 px（效果图 1024 × /2 = 768–1178 px）
-//	雾  1024 px 宽 × sc·(0.55+0.45·depth)·scaleMul × 1.0（效果图 2048 × 同式 ÷2）
+//	云 512 px 宽 × 0.50 = 256 px （效果图 1024 × 0.25 = 256 px）
+//	带 512 px 宽 × (1.5+0.8·frac)/1.0 = 768–1178 px（效果图 1024 × /2 = 768–1178 px）
+//	雾 1024 px 宽 × sc·(0.55+0.45·depth)·scaleMul × 1.0（效果图 2048 × 同式 ÷2）
 //
 // 代价（如实记）：源图 512 画到 768–1178 px = 1.5–2.3× 放大 ⇒ 边缘比效果图软；
-// 云带填充面积 ×4.5 ⇒ CPU 上升（帧率自适应会压粒子数兜底，实测见规格 34.18）。
-//
-// **粒子云口径改判（2026-10-20，粒子云改大）**：粒子云的屏宽不再由
+// 云带填充面积 ×4.5 ⇒ CPU 上升（帧率自适应会压粒子数兜底，实测见）。
+// **粒子云口径改判（粒子云改大）**：粒子云的屏宽不再由
 // CloudNetScale 这个常量决定，改走与云带**同一个分母 BandNetDiv**：
 //
 //	粒子云 512 px 宽 × p.sc·scaleMul / BandNetDiv，p.sc ∈ [1.5, 2.3]
-//	   = 512 × [1.5, 2.3] = 768–1178 px（未乘 scaleMul 抖动时），与云带逐档相同
+//	 = 512 × [1.5, 2.3] = 768–1178 px（未乘 scaleMul 抖动时），与云带逐档相同
 //
 // 依据：稳态下粒子云 256 px、云带 768–1178 px，相差 3–4.6 倍 ⇒
 // 屏上同时有 8 朵 256 px 的圆团与 4 条 768–1178 px 的带，圆团读成"小坨"。
@@ -478,23 +462,22 @@ func UpscaleCatmull(src *image.NRGBA, f int) *image.NRGBA {
 }
 
 // ── 详情行图标与状况图标──────────────────
-//
 // 素材逐字节复制自上游 ui/assets/weather/source/presented/（含 detail/ 子目录），
 // 许可与来源记录见 ui/embed/ATTRIBUTION.md。
 // 上游的 detail/*.png 与 presented/*.png 全是 250×250（实测 2026-10-16）。
 
-// 上游低性能 x86 小主机数字（低性能 x86 小主机 settings_v2.json：font_size 40、detail_icon_size 16、
+// 上游低性能 x86 实机数字（低性能 x86 实机 settings_v2.json：font_size 40、detail_icon_size 16、
 // icon_size 192；实测：
 //
-//	detailFontSize = max(8, int(font_size*0.5)) = max(8, 20) = 20  （weather.py:850-851）
-//	detailIconSize = max(30, detail_icon_size) = max(30, 16) = 30  （weather.py:866-867）
+//	detailFontSize = max(8, int(font_size*0.5)) = max(8, 20) = 20 （weather.py:850-851）
+//	detailIconSize = max(30, detail_icon_size) = max(30, 16) = 30 （weather.py:866-867）
 const (
 	DetailFontPx = 30 // 需求：详情行文字要放大（上游公式值 20 太小）⇒ 取 30
 	DetailIconPx = 40 // 同上：图标随字号同步放大（上游 max(30, detail_icon_size)=30 是上游口径，非本实现的上线口径）
 	// DetailIconSrcPx 上游素材的源边长（缩放系数 = 30.0/250.0、192.0/250.0）。
 	DetailIconSrcPx = 250
 	// DetailGapPx 上游 WeatherPresentation.qml:443 `anchors.leftMargin: 1.0`
-	// 与 :419 `width: metricIcon.width + 1.0 + metricText.implicitWidth`。
+	// 与 `width: metricIcon.width + 1.0 + metricText.implicitWidth`。
 	DetailGapPx = 1
 )
 
@@ -567,7 +550,6 @@ func LoadSprite(name string) (paint.ImageOp, image.Point, bool) {
 }
 
 // LoadSpriteSet 按前缀加载一组粒子贴图（snow1..3 / rain1..7 / bolt1..3）。
-//
 // 解码口只有 LoadSprite 一个（= ReadPNG 的反预乘口径），本函数不新增解码路径。
 // 任意一张缺 ⇒ 整组返回 false：逐组退路，屏幕上不会出现"半套贴图"
 // （三张雪里两张是贴图、一张是程序晶形那种混合态）。
@@ -593,11 +575,10 @@ func LoadSpriteSet(prefix string, n int) ([]paint.ImageOp, []image.Point, []*ima
 }
 
 // SpriteImg 取缓存精灵的**反预乘原始像素**（不复制、只读）。
-//
 // 用途：云/雾体色的运行时着色需要贴图本体（gioui v0.10.3 的 paint.ImageOp
 // 没有颜色乘子：ImageOp 的字段是 Filter/uniform/color/src，MulColor 是 v0.11 才加的），
 // 所以"按天气类提白/压暗"只能在内存里做贴图副本 ⇒ 需要本体像素。
-// **素材文件逐字节不动**（规格 5：ui/embed/*.png 不许重采样/烘 alpha）。
+// **素材文件逐字节不动**。
 func SpriteImg(name string) *image.NRGBA {
 	SpriteCache.mu.Lock()
 	defer SpriteCache.mu.Unlock()
@@ -644,19 +625,17 @@ var DetailIconFiles = map[string]string{
 }
 
 // ── 月相──────────────────────────────
-//
 // 8 张月相素材（moon_*.png，250×250）已删除：月亮由独立层解析绘制
 // （ui/render.go 的 bakeMoonAt / moonLayerGet），素材在运行时没有调用者。
 // 相位到 8 等分序号的区间口径保留在下面 IsMoonNew 里（新月不画月面的判据）。
 
 // IsMoonNew 相位是否落在 new 区间（新月无可见月面 ⇒ bakeMoon 不画月亮）。
-//
 // 8 等分每格宽 0.125，中心对齐 8 个标准相位 ⇒ 区间 = [中心−0.0625, 中心+0.0625：
 //
-//	[0.9375,1∪[0,0.0625)→new  [0.0625,0.1875)→waxing-crescent
-//	[0.1875,0.3125→first-quarter  [0.3125,0.4375)→waxing-gibbous
-//	[0.4375,0.5625→full  [0.5625,0.6875)→waning-gibbous
-//	[0.6875,0.8125→waning-crescent  [0.8125,0.9375)→last-quarter
+//	[0.9375,1∪[0,0.0625)→new [0.0625,0.1875)→waxing-crescent
+//	[0.1875,0.3125→first-quarter [0.3125,0.4375)→waxing-gibbous
+//	[0.4375,0.5625→full [0.5625,0.6875)→waning-gibbous
+//	[0.6875,0.8125→waning-crescent [0.8125,0.9375)→last-quarter
 //
 // 序号 = floor((p+0.0625)/0.125) mod 8（new 跨 0 界用 mod 收口），new = 序号 0。
 func IsMoonNew(p float64) bool {
@@ -673,7 +652,6 @@ func IsMoonNew(p float64) bool {
 }
 
 // MoonIllumination 照度 = (1 − cos(2π·phase)) / 2。
-//
 // 为什么自己算：实测 daily=moon_illumination / lunar_illumination / lunar_phase /
 // illumination / moon_altitude / moon_azimuth **全部拒绝**，/v1/astronomy 端点
 // 404 不存在 ⇒ 照度只能从 moon_phase 派生。
@@ -683,8 +661,7 @@ func MoonIllumination(phase float64) float64 {
 	return (1.0 - math.Cos(2.0*math.Pi*phase)) / 2.0
 }
 
-// ── R5 卡 6 迁移桥（内嵌口 + WS_ASSET_DIR 覆盖目录注入）──────────────────
-//
+// ── 迁移桥（内嵌口 + WS_ASSET_DIR 覆盖目录注入）──────────────────
 // 内嵌口：//go:embed 指令不能向上跨目录引用 ⇒ 装配代码迁入 ui/assets 后，
 // 内嵌改在贴图所在目录原地进行（ui/embed/embedfs.go，png 文件位置与字节逐字不动）。
 // 内嵌键 = 裸文件名；调用点的 "embed/<name>" 路径字符串逐字保留，由下面
@@ -721,9 +698,8 @@ type PrefixedFS struct{}
 func (PrefixedFS) ReadFile(p string) ([]byte, error) { return embedRead(p) }
 
 // OverrideLookup = WS_ASSET_DIR 覆盖目录查询的注入口。
-//
 // 实现体 = ui/assetdir.go 的 assetLookupPath，由 ui 包 init 注入
-// （ui import 本包 ⇒ 本包不得 import ui；注入口先例 = R5 卡 2 的 ui/sky
+// （ui import 本包 ⇒ 本包不得 import ui；注入口先例 = ui/sky
 // 贴图查询口，见 ui/sky/sky.go:24 注）。
 // nil = 未注入（出厂路径：WS_ASSET_DIR 未设时 assetLookupPath 恒 false ⇒ 逐字等价）。
 var OverrideLookup func(name string) (string, bool)

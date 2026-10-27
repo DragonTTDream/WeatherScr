@@ -1,11 +1,9 @@
 package settings
 
-// B5/R11 设置页横屏矩形单测（spec/b5-settings-landscape.md 判据 1/2/3）。
-//
+// B5/ 设置页横屏矩形单测（判据 1/2/3）。
 // 口径照 ui/landscape_layout_test.go:32-36 的 landW=1920 / landH=1080 /
-// landTol=1（取证照片 troubleshooting/横屏适配缺陷.md 的 flipSCR.png 几何），
+// landTol=1（取证照片 flipSCR.png 几何），
 // 1 dp = 1 px = 1 sp 同 ui/panel_theme_b2_test.go:24-30（本机 CI 字体口径）。
-//
 // 竖屏零迁移由 ui/panel_theme_b2_test.go 三条 + ui/settings_ui_test.go 钉死，
 // 本文件只钉横屏侧；三条判据相互独立，任一红了都能单独定位。
 
@@ -23,7 +21,7 @@ import (
 )
 
 const (
-	panelLandW   = 1920 // 横屏请求几何（spec 判据 3：横屏请求 1920,1080）
+	panelLandW   = 1920 // 横屏请求几何
 	panelLandH   = 1080
 	panelLandTol = 1 // px，与 landscape_layout_test.go 的 landTol 同口径
 	// Flex{Horizontal} + 两个等权 Flexed(1) ⇒ 每栏宽 = 1920/2 = 960 px
@@ -31,7 +29,6 @@ const (
 )
 
 // b5ProbeWidths 行指纹的采样宽度（多宽度复合指纹）。
-//
 // 为什么不是单一宽度：row2 的两格是 layout.Flexed ⇒ 任何宽度下整行都填满，
 // 六个 row2 组的 (宽,高) 在宽约束下彼此相同；窄约束下各格按标签长度折行，
 // 折行行数不同 ⇒ 用 4000/500/260/200/150/360/120 七档采样拼成一支指纹，
@@ -147,12 +144,12 @@ func b5Count(names []string) map[string]int {
 	return m
 }
 
-// b5LandPlaces 两条候选地名（判据 2「候选列表插左栏组后」用；字段口径见
+// b5LandPlaces 两条候选地名（判据 2'候选列表插左栏组后'用；字段口径见
 // geo/search.go:40-61，候选行的显示串走 PathOrLabel）。
 func b5LandPlaces() []geo.Place {
 	return []geo.Place{
-		{Lat: 25.55, Lon: 113.38, Name: "自流井区", Admin1: "四川省", Country: "China",
-			FullPath: "China/Sichuan/Zigong/Ziliujing", CountryCode: "CN"},
+		{Lat: 25.55, Lon: 113.38, Name: "西湖区", Admin1: "浙江省", Country: "China",
+			FullPath: "China/Zhejiang/Hangzhou/Xihu", CountryCode: "CN"},
 		{Lat: 31.87, Lon: 117.23, Name: "包河区", Admin1: "安徽省", Country: "China",
 			FullPath: "China/Anhui/Hefei/Baohe", CountryCode: "CN"},
 	}
@@ -171,7 +168,7 @@ func CheckPanelLandscapeRect(t *testing.T) {
 		d.Size.X, d.Size.Y, len(left), len(right), p.RowCount())
 
 	// ① 宽高不越出请求几何（normalizeDialog 只会将窗口夹到工作区以内 ⇒
-	//    面板必须落进 1920×1080 本身，落在更小的窗口里由竖屏那条不溢出判据管）。
+	// 面板必须落进 1920×1080 本身，落在更小的窗口里由竖屏那条不溢出判据管）。
 	if d.Size.X > panelLandW {
 		t.Errorf("面板宽 %d > %d ⇒ 横屏几何溢出", d.Size.X, panelLandW)
 	}
@@ -183,8 +180,8 @@ func CheckPanelLandscapeRect(t *testing.T) {
 		t.Errorf("面板宽 %d < %d±%d ⇒ 两栏没有并排铺满（外层不是 Flex{Horizontal}）",
 			d.Size.X, panelLandW, panelLandTol)
 	}
-	// ③ 行数守恒：双栏 = 单栏全行集。spec 判据 1 注明"注释 26/27 失真以实测为准"
-	//    ⇒ 基线实测 = 27 行（b-alert-v1b 拆掉视野小时组后的口径）。
+	// ③ 行数守恒：双栏 = 单栏全行集。判据 1 注明"注释 26/27 失真以实测为准"
+	// ⇒ 基线实测 = 27 行（拆掉视野小时组后的口径）。
 	if got, want := len(left)+len(right), p.RowCount(); got != want {
 		t.Errorf("双栏 %d+%d=%d 行 ≠ 单栏 %d 行 ⇒ 行集没有守恒", len(left), len(right), got, want)
 	}
@@ -208,7 +205,6 @@ func CheckPanelLandscapeRect(t *testing.T) {
 
 // TestPanelLandscapeDualColumn 判据 2：左栏 = 地区与预报组（LocSearch/单位/更新），
 // 右栏 = 显示开关组（全部 checkRow）+ 按钮行；候选插左栏组后；两栏主轴 Vertical。
-//
 // 点名口径 = 自然宽高指纹 + 一条输入框探针（见 b5ProbeText 注释）：
 // 测试用同款构造函数复现参考行，指纹相同即同一行；每个点名行必须**恰好出现
 // 一次** ⇒ 参考行与面板行撞车会立刻暴露，不会静默认错。
@@ -244,7 +240,7 @@ func CheckPanelLandscapeDualColumn(t *testing.T) {
 			continue
 		}
 		if cnt != 1 {
-			t.Errorf("点名行「%s」在双栏里出现 %d 次（要求恰好 1 次）", name, cnt)
+			t.Errorf("点名行'%s'在双栏里出现 %d 次（要求恰好 1 次）", name, cnt)
 		}
 	}
 	if got, want := all[b5Unnamed], p.RowCount()-len(fp); got != want {
@@ -271,12 +267,12 @@ func CheckPanelLandscapeDualColumn(t *testing.T) {
 	// 串栏 = 分栏表被改坏：开关/按钮行不许进左栏，地区/单位/更新行不许进右栏。
 	for _, n := range lNames {
 		if n == "buttons" || strings.HasPrefix(n, "check:") {
-			t.Errorf("开关/按钮行「%s」落进了左栏", n)
+			t.Errorf("开关/按钮行'%s'落进了左栏", n)
 		}
 	}
 	for _, n := range rNames {
 		if n == "locSearch" || n == "units" || n == "refresh" {
-			t.Errorf("地区/单位/更新行「%s」落进了右栏", n)
+			t.Errorf("地区/单位/更新行'%s'落进了右栏", n)
 		}
 	}
 	// 两栏主轴 = layout.Vertical（判据 2 逐字）；外层 Flex{Horizontal} 由
@@ -285,7 +281,7 @@ func CheckPanelLandscapeDualColumn(t *testing.T) {
 		t.Errorf("两栏主轴 = %v/%v，要求都是 layout.Vertical", p.list.Axis, p.listRight.Axis)
 	}
 
-	// 候选列表插在左栏「地名组」（标题/状态/location/搜索行/搜索状态行 = 5 行）之后。
+	// 候选列表插在左栏'地名组'（标题/状态/location/搜索行/搜索状态行 = 5 行）之后。
 	p.SetLocationResults(b5LandPlaces(), "2 个候选")
 	l2, _ := p.rowsSplit(th)
 	cand := b5Fingerprints(t, p.locCandidateRows(th))
@@ -304,7 +300,6 @@ func CheckPanelLandscapeDualColumn(t *testing.T) {
 }
 
 // TestPanelLandscapeFontReadable 判据 3：横屏字号 ≥17sp、行高 ≤40 px。
-//
 // "行高"口径 = 构成面板行的**单行控件**高度，与 ui/panel_theme_b2_test.go:33-39
 // 的 b2LabelLinePx=22 / b2RadioLinePx=34 同一口径（那里量的就是单行控件，
 // 不是把竖排 3 行的 langRow 整体当一行）。
@@ -312,7 +307,7 @@ func CheckPanelLandscapeDualColumn(t *testing.T) {
 // 两行的 fieldRow（横屏实测 51 px）也算一行；本判据按单行控件口径钉，
 // 并对整行的开关行（radio 图标行 + 行距 = 40 px）逐行覆盖。
 func CheckPanelLandscapeFontReadable(t *testing.T) {
-	// ① 字号档位：横屏正文 ≥17sp（spec 判据 3），标题/说明同档递增。
+	// ① 字号档位：横屏正文 ≥17sp，标题/说明同档递增。
 	if float32(panelTextSpLand) < 17 {
 		t.Errorf("横屏正文 %v sp < 17 ⇒ 判据 3", float32(panelTextSpLand))
 	}
@@ -329,7 +324,7 @@ func CheckPanelLandscapeFontReadable(t *testing.T) {
 		t.Errorf("竖屏档被改动：%v/%v/%v，要求 %v/%v/%v",
 			v.text, v.title, v.caption, panelTextSp, panelTitleSp, panelCaptionSp)
 	}
-	// 朝向传参保真（点位「NewPanelTheme 按参数选档」）。
+	// 朝向传参保真（点位'NewPanelTheme 按参数选档'）。
 	if got := NewPanelTheme(true).TextSize; got != panelTextSpLand {
 		t.Errorf("NewPanelTheme(true).TextSize = %v，要求 %v", float32(got), float32(panelTextSpLand))
 	}
@@ -381,7 +376,7 @@ func CheckPanelLandscapeFontReadable(t *testing.T) {
 	}
 
 	// ③ 开关行整行（radio 图标行 + 行距）在栏宽内 ≤40 px，且 960 px 栏宽内不折行
-	//    （折行 = 单行控件被挤成多行，即 b2 取证的"逐字竖排"症状）。
+	// （折行 = 单行控件被挤成多行，即 b2 取证的"逐字竖排"症状）。
 	for _, w := range []layout.Widget{
 		p.checkRow(th, "show_condition_icon 天气图标", &p.cbConditionIcon),
 		p.checkRow(th, "show_five_day_forecast 五日预报", &p.cbFiveDay),
@@ -405,17 +400,15 @@ func CheckPanelLandscapeFontReadable(t *testing.T) {
 // ---------------------------------------------------------------------------
 // TestPanelLandscapeLabels（B5.1 返工判据）：横屏 1920×1080 下 panel 全部行的
 // 标签必须出字。
-//
 // 三条腿，彼此独立：
-//  ① 点名对位：逐行点名的行（标签逐字取自 ui/settings_ui.go 的 rowSpecs 字面量）
-//     与 rowSpecs / rowsSplit 的行指纹逐位相等 ⇒ 行集与行序对得上，标签清单不漏行；
-//  ② 标签 span（ui/panel_theme_b2_test.go 的测量探针口径 layoutAt + 量宽高）：
-//     每个标签在"行内实际可用宽度"下 span 宽>0 且高>0，且高 ≤ 4 行（挡"被挤成
-//     逐字竖排"）；row2 家族按格宽量、每单元恰好 2 个标签；locSearch 行标签在场；
-//  ③ 取色可辨（出字的机械代理）：横屏档标签色与面板底色逐通道差 ≥96；
-//     竖屏档标签色仍 == Palette.ContrastFg（判据 4 零迁移，钉值连同竖屏行高）。
-//
-// 根因口径（见 out/notes-b5-labels.md 的探针输出）：浅色模式下
+// ① 点名对位：逐行点名的行（标签逐字取自 ui/settings_ui.go 的 rowSpecs 字面量）
+// 与 rowSpecs / rowsSplit 的行指纹逐位相等 ⇒ 行集与行序对得上，标签清单不漏行；
+// ② 标签 span（ui/panel_theme_b2_test.go 的测量探针口径 layoutAt + 量宽高）：
+// 每个标签在"行内实际可用宽度"下 span 宽>0 且高>0，且高 ≤ 4 行（挡"被挤成
+// 逐字竖排"）；row2 家族按格宽量、每单元恰好 2 个标签；locSearch 行标签在场；
+// ③ 取色可辨（出字的机械代理）：横屏档标签色与面板底色逐通道差 ≥96；
+// 竖屏档标签色仍 == Palette.ContrastFg（判据 4 零迁移，钉值连同竖屏行高）。
+// 根因口径（探针输出）：浅色模式下
 // Palette.ContrastFg == Palette.Bg == 纯白，而面板每帧用 Bg 铺底 ⇒ 取 ContrastFg
 // 的标签"排版有尺寸、像素全白"。所以 ② 单独不够（span 非 0 也可能全白），
 // ③ 才是"出字"的那一条；② 挡的是"标签被挤成 0 宽/挤成逐字竖排"这一类排版症状。
@@ -630,8 +623,8 @@ func CheckPanelLandscapeLabels(t *testing.T) {
 	}
 
 	// ②b row2 家族整行：横屏档必须是"两个竖排单元并排"⇒ 整行高 = 标签行 + 编辑器行
-	//     （标签在上、编辑器在下都在），且两格并排填满栏宽。
-	//     标签若在排版里塌成 0，整行高会掉回单行编辑器高度 ⇒ 这里立刻红。
+	// （标签在上、编辑器在下都在），且两格并排填满栏宽。
+	// 标签若在排版里塌成 0，整行高会掉回单行编辑器高度 ⇒ 这里立刻红。
 	for _, r := range inv {
 		if !r.cell {
 			continue

@@ -1,22 +1,21 @@
 package weather
 
-// 官方信号层的钉死单测（批次 b-alert-v2 第 9 步）。
-//
-// 钉死对象逐字来自 spec/alert-latency-and-logic.md §15.3（462 条全量解析，
-// 原始回显 out/nmc-pic-code.txt）：
-//   - `pic` 文件名 = `p` + 4 位类型码 + 3 位等级码
-//   - 等级码实测 3 条：002=橙 003=黄 004=蓝（红色码未实测 ⇒ 不入闭表）
-//   - 类型码实测 13 类
-//   - 标题正则 `发布(.+?)(蓝色|黄色|橙色|红色)预警信号`
-//   - URL 逐字 `pageNo=1&pageSize=20&signaltype=&signallevel=&province=<官方全称>`
-//     （§15.2 实测中文类型/等级值恒 0 ⇒ 两参数必须留空）
+// 官方信号层的钉死单测。
+// 钉死对象逐字来自 （462 条全量解析，
+// 原始回显）：
+// - `pic` 文件名 = `p` + 4 位类型码 + 3 位等级码
+// - 等级码实测 3 条：002=橙 003=黄 004=蓝（红色码未实测 ⇒ 不入闭表）
+// - 类型码实测 13 类
+// - 标题正则 `发布(.+?)(蓝色|黄色|橙色|红色)预警信号`
+// - URL 逐字 `pageNo=1&pageSize=20&signaltype=&signallevel=&province=<官方全称>`
+// （实测中文类型/等级值恒 0 ⇒ 两参数必须留空）
 
 import (
 	"strings"
 	"testing"
 )
 
-// TestPinnedNMCTypeCodes 钉死 §15.3 的 13 条类型码（逐字抄 out/nmc-pic-code.txt）。
+// TestPinnedNMCTypeCodes 钉死 的 13 条类型码（逐字抄）。
 func TestPinnedNMCTypeCodes(t *testing.T) {
 	want := map[string]string{
 		"0000": "海上雷雨大风",
@@ -44,7 +43,7 @@ func TestPinnedNMCTypeCodes(t *testing.T) {
 	}
 }
 
-// TestPinnedNMCLevelCodes 钉死 §15.3 的 3 条等级码：002=橙 003=黄 004=蓝。
+// TestPinnedNMCLevelCodes 钉死 的 3 条等级码：002=橙 003=黄 004=蓝。
 // 红色码未实测（现网 462 条无红色）⇒ 闭表里**不得**有红色档。
 func TestPinnedNMCLevelCodes(t *testing.T) {
 	want := map[string]int{
@@ -67,7 +66,7 @@ func TestPinnedNMCLevelCodes(t *testing.T) {
 }
 
 // TestNMCParsePic 钉死 `pic` 文件名形状：p + 4 位类型码 + 3 位等级码。
-// 样本逐字取自 out/nmc-pic-code.txt：p0002003.png = 暴雨/黄色。
+// 样本逐字取自 ：p0002003.png = 暴雨/黄色。
 func TestNMCParsePic(t *testing.T) {
 	cases := []struct {
 		pic          string
@@ -100,7 +99,7 @@ func TestNMCParsePic(t *testing.T) {
 	}
 }
 
-// TestNMCParseTitle 钉死标题正则（逐字样本来自 out/nmc-pic-code.txt 的「例:」列）。
+// TestNMCParseTitle 钉死标题正则（逐字样本来自 的'例:'列）。
 func TestNMCParseTitle(t *testing.T) {
 	cases := []struct {
 		title      string
@@ -111,7 +110,7 @@ func TestNMCParseTitle(t *testing.T) {
 		{"海南省气象台发布海上雷雨大风黄色预警信号", "海上雷雨大风", "黄色", true},
 		{"新疆维吾尔自治区哈密市伊州区气象台发布大风橙色预警信号", "大风", "橙色", true},
 		{"广东省茂名市高州市气象台发布森林火险橙色预警信号", "森林火险", "橙色", true},
-		// §15.3：462 条中 3 条不匹配（样本未取证）⇒ 不匹配必须走降级，不得静默丢弃
+		// 462 条中 3 条不匹配（样本未取证）⇒ 不匹配必须走降级，不得静默丢弃
 		{"某省气象台发布预警信号", "", "", false},
 		{"某省气象台发布大风蓝色预警", "", "", false},
 	}
@@ -130,7 +129,7 @@ func TestNMCTitleRegexLiteral(t *testing.T) {
 	}
 }
 
-// TestNMCFindAlarmURLShape 钉死 URL 参数形状：中文类型/等级值禁传（§15.2 实测恒 0）。
+// TestNMCFindAlarmURLShape 钉死 URL 参数形状：中文类型/等级值禁传（实测恒 0）。
 func TestNMCFindAlarmURLShape(t *testing.T) {
 	u := NMCFindAlarmURL("四川省")
 	wantPrefix := "https://www.nmc.cn/rest/findAlarm?pageNo=1&pageSize=20&signaltype=&signallevel=&province="
@@ -138,21 +137,21 @@ func TestNMCFindAlarmURLShape(t *testing.T) {
 		t.Fatalf("URL = %q 期望前缀 %q", u, wantPrefix)
 	}
 	if strings.Contains(u, "signaltype=%E6%9A%B4") || strings.Contains(u, "signallevel=%E6%9A%B4") {
-		t.Fatalf("中文类型/等级值被传进接口（§15.2 实测恒 0 ⇒ 禁传）：%s", u)
+		t.Fatalf("中文类型/等级值被传进接口（实测恒 0 ⇒ 禁传）：%s", u)
 	}
 	if !strings.Contains(u, "%E5%9B%9B%E5%B7%9D%E7%9C%81") {
 		t.Fatalf("province 参数未 urlencode 官方全称：%s", u)
 	}
 }
 
-// TestNMCDecodeCrossCheck 钉死两路交叉校验与降级口径（spec 第 1 步）。
+// TestNMCDecodeCrossCheck 钉死两路交叉校验与降级口径。
 func TestNMCDecodeCrossCheck(t *testing.T) {
 	// 两路吻合
 	a := nmcDecode(nmcItem{
-		AlertID:   "51323341600000_20261021191835",
-		IssueTime: "2026-10-21 19:18",
+		AlertID:   "51323341600000_20240521191835",
+		IssueTime: "2024-05-21 19:18",
 		Title:     "四川省阿坝藏族羌族自治州红原县气象台发布雷电黄色预警信号",
-		URL:       "/publish/alarm/51323341600000_20261021191835.html",
+		URL:       "/publish/alarm/51323341600000_20240521191835.html",
 		Pic:       "https://image.nmc.cn/assets/img/alarm/p0012003.png",
 	})
 	if !a.CrossOK {
@@ -161,14 +160,14 @@ func TestNMCDecodeCrossCheck(t *testing.T) {
 	if a.TypeZh != "雷电" || a.TitleLevel != 2 {
 		t.Fatalf("解出 = %q/level %d，期望 雷电/2", a.TypeZh, a.TitleLevel)
 	}
-	if a.Issued.Format("2006-01-02 15:04") != "2026-10-21 19:18" {
+	if a.Issued.Format("2006-01-02 15:04") != "2024-05-21 19:18" {
 		t.Fatalf("issuetime 解析 = %s", a.Issued.Format("2006-01-02 15:04"))
 	}
 
 	// pic 与标题不一致 ⇒ 降级为"仅标题"（显示取标题路）
 	b := nmcDecode(nmcItem{
 		AlertID:   "x",
-		IssueTime: "2026-10-21 19:18",
+		IssueTime: "2024-05-21 19:18",
 		Title:     "云南省普洱市思茅区气象台发布暴雨橙色预警信号",
 		Pic:       "https://image.nmc.cn/assets/img/alarm/p0007004.png", // 大风/蓝
 	})
@@ -180,7 +179,7 @@ func TestNMCDecodeCrossCheck(t *testing.T) {
 	}
 
 	// 标题解不出 ⇒ 降级标记
-	c := nmcDecode(nmcItem{AlertID: "y", IssueTime: "2026-10-21 19:18", Title: "某省气象台发布预警信号", Pic: "p0002003.png"})
+	c := nmcDecode(nmcItem{AlertID: "y", IssueTime: "2024-05-21 19:18", Title: "某省气象台发布预警信号", Pic: "p0002003.png"})
 	if c.CrossOK {
 		t.Fatalf("标题解不出必须 CrossOK=false（降级，不静默丢弃）")
 	}
@@ -190,9 +189,9 @@ func TestNMCDecodeCrossCheck(t *testing.T) {
 // （暴雨/台风 > 暴雪/寒潮 > 雷电/大风 > 其他），再同级取最新。
 func TestNMCTopPriority(t *testing.T) {
 	page, err := NMCDecodePage("四川省", []byte(`{"msg":"success","code":0,"data":{"page":{"count":3,"list":[
-		{"alertid":"a","issuetime":"2026-10-21 10:00","title":"甲县气象台发布大风橙色预警信号","pic":"https://image.nmc.cn/assets/img/alarm/p0007002.png"},
-		{"alertid":"b","issuetime":"2026-10-21 09:00","title":"乙县气象台发布暴雪橙色预警信号","pic":"https://image.nmc.cn/assets/img/alarm/p0006002.png"},
-		{"alertid":"c","issuetime":"2026-10-21 08:00","title":"丙县气象台发布雷电红色预警信号","pic":"https://image.nmc.cn/assets/img/alarm/p0012001.png"}
+		{"alertid":"a","issuetime":"2024-05-21 10:00","title":"甲县气象台发布大风橙色预警信号","pic":"https://image.nmc.cn/assets/img/alarm/p0007002.png"},
+		{"alertid":"b","issuetime":"2024-05-21 09:00","title":"乙县气象台发布暴雪橙色预警信号","pic":"https://image.nmc.cn/assets/img/alarm/p0006002.png"},
+		{"alertid":"c","issuetime":"2024-05-21 08:00","title":"丙县气象台发布雷电红色预警信号","pic":"https://image.nmc.cn/assets/img/alarm/p0012001.png"}
 	]}}}`))
 	if err != nil {
 		t.Fatalf("解析失败 %v", err)
@@ -204,8 +203,8 @@ func TestNMCTopPriority(t *testing.T) {
 
 	// 同级：暴雪 > 雷电
 	page2, _ := NMCDecodePage("四川省", []byte(`{"msg":"success","code":0,"data":{"page":{"count":2,"list":[
-		{"alertid":"a","issuetime":"2026-10-21 10:00","title":"甲县气象台发布雷电黄色预警信号","pic":"https://image.nmc.cn/assets/img/alarm/p0012003.png"},
-		{"alertid":"b","issuetime":"2026-10-21 09:00","title":"乙县气象台发布暴雪黄色预警信号","pic":"https://image.nmc.cn/assets/img/alarm/p0006003.png"}
+		{"alertid":"a","issuetime":"2024-05-21 10:00","title":"甲县气象台发布雷电黄色预警信号","pic":"https://image.nmc.cn/assets/img/alarm/p0012003.png"},
+		{"alertid":"b","issuetime":"2024-05-21 09:00","title":"乙县气象台发布暴雪黄色预警信号","pic":"https://image.nmc.cn/assets/img/alarm/p0006003.png"}
 	]}}}`))
 	top2, _ := NMCTop(page2)
 	if top2.TypeZh != "暴雪" {
@@ -214,8 +213,8 @@ func TestNMCTopPriority(t *testing.T) {
 
 	// 同级同类型：取最新
 	page3, _ := NMCDecodePage("四川省", []byte(`{"msg":"success","code":0,"data":{"page":{"count":2,"list":[
-		{"alertid":"a","issuetime":"2026-10-21 09:00","title":"甲县气象台发布雷电黄色预警信号","pic":"https://image.nmc.cn/assets/img/alarm/p0012003.png"},
-		{"alertid":"b","issuetime":"2026-10-21 10:00","title":"乙县气象台发布雷电黄色预警信号","pic":"https://image.nmc.cn/assets/img/alarm/p0012003.png"}
+		{"alertid":"a","issuetime":"2024-05-21 09:00","title":"甲县气象台发布雷电黄色预警信号","pic":"https://image.nmc.cn/assets/img/alarm/p0012003.png"},
+		{"alertid":"b","issuetime":"2024-05-21 10:00","title":"乙县气象台发布雷电黄色预警信号","pic":"https://image.nmc.cn/assets/img/alarm/p0012003.png"}
 	]}}}`))
 	top3, _ := NMCTop(page3)
 	if top3.AlertID != "b" {
@@ -223,7 +222,7 @@ func TestNMCTopPriority(t *testing.T) {
 	}
 }
 
-// TestNMCCount0Note 钉死 §15.1 的判据缺陷口径：count=0 ⇒ NOTE=count0-unknown，
+// TestNMCCount0Note 钉死 的判据缺陷口径：count=0 ⇒ NOTE=count0-unknown，
 // 且输出里**不得**出现"无预警"这种断言。
 func TestNMCCount0Note(t *testing.T) {
 	page, err := NMCDecodePage("北京市", []byte(`{"msg":"success","code":0,"data":{"page":{"count":0,"list":[]}}}`))
@@ -234,19 +233,19 @@ func TestNMCCount0Note(t *testing.T) {
 		t.Fatalf("NOTE = %q 期望 %q", page.Note, NMCCount0Unknown)
 	}
 	if strings.Contains(page.Note, "无预警") {
-		t.Fatalf("count=0 不得当「该省无预警」上报：%q", page.Note)
+		t.Fatalf("count=0 不得当'该省无预警'上报：%q", page.Note)
 	}
 	if NMCCount0Unknown != "count0-unknown" {
 		t.Fatalf("NOTE 常量逐字应为 count0-unknown，得 %q", NMCCount0Unknown)
 	}
 }
 
-// TestNMCDecodePageFields 钉死字段名逐字（§15.3：alertid/issuetime/title/url/pic）。
+// TestNMCDecodePageFields 钉死字段名逐字（alertid/issuetime/title/url/pic）。
 func TestNMCDecodePageFields(t *testing.T) {
 	body := []byte(`{"msg":"success","code":0,"data":{"page":{"count":1,"list":[
-		{"alertid":"53252841600000_20261021224620","issuetime":"2026-10-21 22:44",
+		{"alertid":"53252841600000_20240521224620","issuetime":"2024-05-21 22:44",
 		 "title":"云南省红河哈尼族彝族自治州元阳县气象台发布暴雨黄色预警信号",
-		 "url":"/publish/alarm/53252841600000_20261021224620.html",
+		 "url":"/publish/alarm/53252841600000_20240521224620.html",
 		 "pic":"https://image.nmc.cn/assets/img/alarm/p0002003.png"}
 	]}}}`)
 	page, err := NMCDecodePage("云南省", body)
@@ -257,8 +256,8 @@ func TestNMCDecodePageFields(t *testing.T) {
 		t.Fatalf("count=%d items=%d 期望 1/1", page.Count, len(page.Items))
 	}
 	it := page.Items[0]
-	if it.AlertID != "53252841600000_20261021224620" || it.IssueTime != "2026-10-21 22:44" ||
-		it.URL != "/publish/alarm/53252841600000_20261021224620.html" ||
+	if it.AlertID != "53252841600000_20240521224620" || it.IssueTime != "2024-05-21 22:44" ||
+		it.URL != "/publish/alarm/53252841600000_20240521224620.html" ||
 		it.Pic != "https://image.nmc.cn/assets/img/alarm/p0002003.png" {
 		t.Fatalf("字段解析不符：%+v", it)
 	}

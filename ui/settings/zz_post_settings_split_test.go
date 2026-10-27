@@ -1,12 +1,10 @@
 package settings
 
-// R5 卡 8（ui/settings 拆包）取数件 B：**内部面**取数（rowsSplit 点名表 + 双栏宽高）。
-//
-// 迁移前在 ui 跑（旧实现）⇒ /tmp/settings.pre.txt；迁移后同一件搬进
-// ui/settings（只改包名行与被迁类型的构造前缀）复跑 ⇒ /tmp/settings.post.txt。
+// （ui/settings 拆包）取数件 B：**内部面**取数（rowsSplit 点名表 + 双栏宽高）。
+// 迁移前在 ui 跑（旧实现）⇒ ；迁移后同一件搬进
+// ui/settings（只改包名行与被迁类型的构造前缀）复跑 ⇒ 。
 // 两件数字逐字对拍；TestSettingsParity（ui/settings/parity_test.go）把这里的
 // 数字写死成断言。
-//
 // 指纹与点名口径照 ui/panel_landscape_test.go:32-56 / :83-124（同一支七档宽度指纹），
 // 本件自带副本，避免与判据文件的迁移互相牵制。
 
@@ -111,8 +109,8 @@ func zzCol(rows []layout.Widget) layout.Widget {
 
 func zzPlaces() []geo.Place {
 	return []geo.Place{
-		{Lat: 25.55, Lon: 113.38, Name: "自流井区", Admin1: "四川省", Country: "China",
-			FullPath: "China/Sichuan/Zigong/Ziliujing", CountryCode: "CN"},
+		{Lat: 25.55, Lon: 113.38, Name: "西湖区", Admin1: "浙江省", Country: "China",
+			FullPath: "China/Zhejiang/Hangzhou/Xihu", CountryCode: "CN"},
 		{Lat: 31.87, Lon: 117.23, Name: "包河区", Admin1: "安徽省", Country: "China",
 			FullPath: "China/Anhui/Hefei/Baohe", CountryCode: "CN"},
 	}

@@ -49,7 +49,6 @@ func RowText(th *material.Theme, txt string, sp unit.Sp, mod func(*material.Labe
 
 // RowCondition 条件行：温度(0.81×) " - " + 条件
 // rendering/quick/widgets/weather.py:758-772 的 0.81 口径。
-//
 // baseSp = 条件行字号（调用方传 ui 侧的 WeatherFontSize 档，逐字同旧实现）。
 func RowCondition(th *material.Theme, temp, cond string, baseSp unit.Sp) RowFn {
 	return func(col color.NRGBA) layout.Widget {
@@ -85,10 +84,8 @@ func Italic(l *material.LabelStyle) { l.Font.Style = font.Italic }
 // (0, +偏移) 画一份 alpha 0x96 的暗色副本（上游 z:0），再以主字色画在 (0,0)
 // （上游 z:1）。**无模糊、无 MultiEffect、无 layer capture**（该文件注释明说）。
 // row 是"按给定颜色画这一行"工厂，整行（含内联多段文字）一起复制两份。
-//
 // 偏移 = ShadowOffsetForPx(gtx.Sp(sp))，随字号走
 // （旧版固定 2 px 在 144 pt 大字上实测不可见 = 缺陷 2）。
-//
 // shadowOn = 调用方算好的"这一行要不要阴影"（旧实现 = st.Shadow 且图层掩码开着
 // LayerShadow；图层掩码是 ui 帧调度侧的量，故由 ui 传入布尔，判据逐字不变）。
 func Shadowed(st Style, sp unit.Sp, row RowFn, shadowOn bool) layout.Widget {

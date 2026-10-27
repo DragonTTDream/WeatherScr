@@ -1,8 +1,8 @@
 package panel
 
-// TestPanelParity（R5 卡 7 钉死件）：期望数字 = **迁移前**在旧实现上跑出来的那一批
-// （取数件 ui/zz_pre_panel_test.go 存档 /tmp/panel.pre.txt；迁移后同一件复跑存档
-// /tmp/panel.post.txt ⇒ 两份 diff 逐字一致）。本件的期望值全部写死，不许改判据。
+// TestPanelParity（钉死件）：期望数字 = **迁移前**在旧实现上跑出来的那一批
+// （取数件 ui/zz_pre_panel_test.go 存档 ；迁移后同一件复跑存档
+// ⇒ 两份 diff 逐字一致）。本件的期望值全部写死，不许改判据。
 
 import (
 	"image"

@@ -11,11 +11,9 @@ import (
 	"time"
 )
 
-// 云量接入（D1）的两条判据：
-//
-//	TestCloudCoverParse   含 cloud_cover 的 fixture 解析出 60；缺字段 ⇒ 回落表命中并打印
-//	TestCloudCoverInterp  逐时 [50,80] 在 12:00 与 13:00 之间 30 分钟处插值 = 65（±1）
-//
+// 云量接入的两条判据：
+//	TestCloudCoverParse 含 cloud_cover 的 fixture 解析出 60；缺字段 ⇒ 回落表命中并打印
+//	TestCloudCoverInterp 逐时 [50,80] 在 12:00 与 13:00 之间 30 分钟处插值 = 65（±1）
 // 两条都真的取值：fixture 走 Fetch 的完整解析链（httptest 本地端点，零外网依赖），
 // 插值走 InterpCloudPct 本体，打印的都是实测数字。
 
@@ -47,12 +45,12 @@ func TestCloudCoverParse(t *testing.T) {
 	  "current": {"temperature_2m":18.3,"weather_code":1,"wind_speed_10m":4.2,"is_day":1,
 	    "relative_humidity_2m":77,"precipitation":0.0,"rain":0.0,"cloud_cover":60},
 	  "hourly": {
-	    "time": ["2026-10-20T12:00","2026-10-20T13:00","2026-10-20T14:00"],
+	    "time": ["2024-05-20T12:00","2024-05-20T13:00","2024-05-20T14:00"],
 	    "precipitation_probability": [16,56,56],
 	    "precipitation": [0.0,0.5,0.5],
 	    "cloud_cover": [60,60,60]
 	  },
-	  "daily": {"time":["2026-10-20","2026-10-21"],"temperature_2m_max":[20.0,19.0],
+	  "daily": {"time":["2024-05-20","2024-05-21"],"temperature_2m_max":[20.0,19.0],
 	    "temperature_2m_min":[15.0,14.0],"weathercode":[1,3],
 	    "precipitation_probability_max":[88,70],"precipitation_sum":[2.3,1.1],
 	    "moon_phase":[0.174,0.205]}
@@ -87,11 +85,11 @@ func TestCloudCoverParse(t *testing.T) {
 	  "current": {"temperature_2m":18.3,"weather_code":%d,"wind_speed_10m":4.2,"is_day":1,
 	    "relative_humidity_2m":77,"precipitation":0.0,"rain":0.0},
 	  "hourly": {
-	    "time": ["2026-10-20T12:00","2026-10-20T13:00"],
+	    "time": ["2024-05-20T12:00","2024-05-20T13:00"],
 	    "precipitation_probability": [16,56],
 	    "precipitation": [0.0,0.5]
 	  },
-	  "daily": {"time":["2026-10-20"],"temperature_2m_max":[20.0],
+	  "daily": {"time":["2024-05-20"],"temperature_2m_max":[20.0],
 	    "temperature_2m_min":[15.0],"weathercode":[%d],
 	    "precipitation_probability_max":[88],"precipitation_sum":[2.3],
 	    "moon_phase":[0.174]}
@@ -106,10 +104,10 @@ func TestCloudCoverParse(t *testing.T) {
 
 // TestCloudCoverInterp 逐时 [50,80] 在 12:00 与 13:00 之间 30 分钟处 = 65（±1）。
 func TestCloudCoverInterp(t *testing.T) {
-	times := []string{"2026-10-20T12:00", "2026-10-20T13:00"}
+	times := []string{"2024-05-20T12:00", "2024-05-20T13:00"}
 	cloud := []int{50, 80}
 	off := 28800 // 当地 = UTC+8
-	nowUTC := time.Date(2026, 10, 20, 4, 30, 0, 0, time.UTC)
+	nowUTC := time.Date(2024, 5, 20, 4, 30, 0, 0, time.UTC)
 	got, ok := InterpCloudPct(times, cloud, off, nowUTC)
 	t.Logf("12:30 当地（UTC 04:30 + 28800 s）插值 = %d ok=%v，端点 [50,80]", got, ok)
 	if !ok {
@@ -128,7 +126,7 @@ func TestCloudCoverInterp(t *testing.T) {
 		{14, 0, 80, "末格之后 14:00"},
 		{12, 45, 73, "12:45 = 50+30*0.75"},
 	} {
-		n := time.Date(2026, 10, 20, tc.h-8, tc.m, 0, 0, time.UTC)
+		n := time.Date(2024, 5, 20, tc.h-8, tc.m, 0, 0, time.UTC)
 		v, ok := InterpCloudPct(times, cloud, off, n)
 		t.Logf("%s ⇒ %d ok=%v", tc.name, v, ok)
 		if !ok || v != tc.want {

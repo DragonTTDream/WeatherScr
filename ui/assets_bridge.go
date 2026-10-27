@@ -1,13 +1,12 @@
 package ui
 
-// R5 卡 6：ui/assets 模块迁移桥（纯别名，零行为）。
-//
+// ui/assets 模块迁移桥（纯别名，零行为）。
 // ui/assets.go 全量迁入 ui/assets 包（package assets，导出名），effects.go 的
-// 云贴图档表 + R3 白名单迁入 ui/assets/cloudtier.go。本文件只做两件事：
-//  1. 旧标识符 → 新包导出符号的别名（ui 包内全部调用点逐字不动，
-//     含 assetdir.go 与全部 _test.go）；
-//  2. WS_ASSET_DIR 覆盖目录查询注入口注入（实现在 assetdir.go，
-//     注入口先例 = ui/sky 的贴图查询口，见 ui/sky/sky.go:24 注）。
+// 云贴图档表 + 白名单迁入 ui/assets/cloudtier.go。本文件只做两件事：
+// 1. 旧标识符 → 新包导出符号的别名（ui 包内全部调用点逐字不动，
+// 含 assetdir.go 与全部 _test.go）；
+// 2. WS_ASSET_DIR 覆盖目录查询注入口注入（实现在 assetdir.go，
+// 注入口先例 = ui/sky 的贴图查询口，见 ui/sky/sky.go:24 注）。
 // 别名 = 同一函数体/同一数据，编译期钉死，不存在第二实现。
 
 import (
@@ -50,7 +49,7 @@ var (
 	detailIconFiles  = assets.DetailIconFiles
 	isMoonNew        = assets.IsMoonNew
 	moonIllumination = assets.MoonIllumination
-	// cloudIdxAllowed = R3 白名单本体（同一底层数组，非副本）。
+	// cloudIdxAllowed = 白名单本体（同一底层数组，非副本）。
 	cloudIdxAllowed = assets.CloudIdxAllowed
 	// embedFS = 内嵌口垫片：assetdir.go 的 embedFS.ReadFile("embed/"+name)
 	// 调用点逐字不动（"embed/" 前缀剥离在 assets 侧完成）。

@@ -10,8 +10,7 @@ import (
 	"github.com/DragonTTDream/WeatherScr/ui/metrics"
 )
 
-// P1 探针自检（spec/p1-probe.md 判据 3/4/5）。
-//
+// P1 探针自检（判据 3/4/5）。
 // 口径全部来自 ui/overlap_probe.go，且与绘制共用同一套几何
 // （bandPlace / spriteScale / CoverageProfile），测的就是屏幕上真画出来的东西。
 // 固定种子 = 与 cmd/overlapprobe 同一个（表格要能对外复现）。
@@ -30,14 +29,13 @@ func probeTestRow(t *testing.T, cls effect.Class, isDay bool) OverlapRow {
 
 func near(got, want, tol float64) bool { return math.Abs(got-want) <= tol }
 
-// 判据 3：复现主对话的算式（基线见 spec/p1-brief.md 的"现场基线"）。
-//
+// 判据 3：复现主对话的算式（基线见 的"现场基线"）。
 // 算式（主对话口径，基线源宽 512）：
 //
-//	带宽  dw_i = 512 × (1.5 + 0.8·frac) ÷ bandNetDiv(1.00)，frac = i/(n−1)
-//	周期  span = w + 2·平均dw（= bandSpan，ui/effects.go:2019），w = 1080
-//	层数  avgLayers = Σ dw ÷ span
-//	双层  dualPct = 等相位布局（中心 = span·i/n）下被 ≥2 层覆盖的长度占比
+//	带宽 dw_i = 512 × (1.5 + 0.8·frac) ÷ bandNetDiv(1.00)，frac = i/(n−1)
+//	周期 span = w + 2·平均dw（= bandSpan，ui/effects.go:2019），w = 1080
+//	层数 avgLayers = Σ dw ÷ span
+//	双层 dualPct = 等相位布局（中心 = span·i/n）下被 ≥2 层覆盖的长度占比
 //
 // 基线：n=4 ⇒ 1.29 层 / 29%；n=6 ⇒ 1.93 层 / 93%；n=2 ⇒ 0.64 层 / 0%。
 func TestProbeBandFormulaMatchesBrief(t *testing.T) {
@@ -99,7 +97,7 @@ func TestProbeRowClearDay(t *testing.T) {
 	}
 	// P3 判据 C（空影守卫）：Clear 白天本体没有一条云带 ⇒ 4 次带影不再投。
 	// 原断言 9（= 1 云影 + 4 带影 + 4 粒子本体）⇒ 5（= 1 云影 + 4 粒子本体）；
-	// B3/R4 云档封顶 2 朵 ⇒ 再降到 3（= 1 云影 + 1 云本体 + 1 光晕），实跑见 out/notes-b3-kinetics.md。
+	// B3/ 云档封顶 2 朵 ⇒ 再降到 3（= 1 云影 + 1 云本体 + 1 光晕），实跑见 。
 	if !near(float64(r.DrawsPerFrame), 3, 1) {
 		t.Errorf("drawsPerFrame=%d 期望 3（±1）= 1 云影 + 1 云本体 + 1 光晕（B3/R4 封顶 2 朵）", r.DrawsPerFrame)
 	}
@@ -117,7 +115,7 @@ func TestProbeRowCloudy(t *testing.T) {
 	// P3 判据 2 把 dualPct 口径换成**真实落位实测**；P6 设计第 6 条再拆两口径：
 	// dualPct = 含粒子（DriftOverlapIncl，同带粒子对），DualBandOnly = 带-only（设计上 0）。
 	// 旧钉值（实测 53.67 / 等相位 81.61，P3 几何：4 带 768–1178 px）按 P6 等宽几何重测：
-	// P7（用户判据"最多的时候也只能首尾相连，不能重叠"）：云宽表封顶到 3 朵 ×340 px ⇒
+	// 云宽表封顶到 3 朵 ×340 px ⇒
 	// Σ1020 px ≤ 1080 px ⇒ 含粒子占比也归 0（P6b 期的 22.53% 是 3×900 px 的算术必然）。
 	if !near(r.DualPct, 0.00, 2) {
 		t.Errorf("dualPct 含粒子=%.2f 期望 0.00（±2，P7 云宽封顶后落位，DriftOverlapIncl）", r.DualPct)
@@ -165,10 +163,9 @@ func TestProbeRowOvercast(t *testing.T) {
 }
 
 // 判据 4 之四：Fog（4 带 + 20 雾团 + 1 次 drawHaze 梯度）。
-//
 // 基线对照：主对话的"≈33 层当量"口径 = Σ雾团屏宽 ÷ **屏宽**（不含 span 的
 // 2·平均带宽项）。本行的 avgLayers 用规格指定的 span 口径（= bandSpan），
-// 两口径的差在 out/notes-p1-probe.md 逐式解释。
+// 两口径的差在 逐式解释。
 func TestProbeRowFog(t *testing.T) {
 	r := probeTestRow(t, effect.Fog, true)
 	// P3 判据 A/B 更新常量（Fog：带 4→2、20 粒子 → 2 粒子，其中 1 团雾幕 + 1 朵粒子云）：
@@ -182,7 +179,7 @@ func TestProbeRowFog(t *testing.T) {
 	if !near(float64(r.DrawsPerFrame), 8, 1) {
 		t.Errorf("drawsPerFrame=%d 期望 8（±1）= 2 带本体 + 2 带影 + 1 雾团 + 1 云本体 + 1 云影 + 1 drawHaze", r.DrawsPerFrame)
 	}
-	// P7：Fog 档雾团封顶 540 px（+云 500 px）⇒ 屏宽当量 = (540+500)/1080 × 净系数 = 0.87
+	// Fog 档雾团封顶 540 px（+云 500 px）⇒ 屏宽当量 = (540+500)/1080 × 净系数 = 0.87
 	// （封顶前 1.5 = 884 px 的雾团 + 1063 px 的云，两者相加 1947 px > 1080 px ⇒ 必叠）
 	if !near(r.FogEQ, 0.87, 0.2) {
 		t.Errorf("雾的屏宽当量=%.2f 期望 0.87（±0.2，P7 雾团封顶 540 px，DriftLayers 口径）", r.FogEQ)

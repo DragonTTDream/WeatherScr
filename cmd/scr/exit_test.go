@@ -9,11 +9,11 @@ import (
 
 // 退出条件对齐的判据测试。
 // 判据出处：上游 rendering/runtime_input.py
-// :111  MOUSE_EXIT_THRESHOLD = 10
-// :462-466 delta = current_pos - self._initial_mouse_pos; hypot(delta) > 阈值 → 退出
-// :424-429 左键按下 → 退出；:425-426 交互模式/Ctrl 下不退出
-// :371-379 Esc/Q 退出；热键层被消费；其余任意键退出
-// :254-268 handle_wheel 不请求退出
+// 111 MOUSE_EXIT_THRESHOLD = 10
+// 462-466 delta = current_pos - self._initial_mouse_pos; hypot(delta) > 阈值 → 退出
+// 424-429 左键按下 → 退出；:425-426 交互模式/Ctrl 下不退出
+// 371-379 Esc/Q 退出；热键层被消费；其余任意键退出
+// 254-268 handle_wheel 不请求退出
 
 func TestMouseExitIsRelativeNotCumulative(t *testing.T) {
 	st := &inputState{}

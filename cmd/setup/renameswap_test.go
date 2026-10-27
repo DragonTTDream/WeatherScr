@@ -1,12 +1,10 @@
 package main
 
 // B12 重命名交换的纯逻辑单测（Linux 侧 go test 跑得到；分层口径照 procname_test.go）。
-// 覆盖（简报 §6）：名字生成、.old/.del- 选择、sha256OfRetry 重试与 "?" 判定、重命名失败返回值。
-//
+// 覆盖：名字生成、.old/.del- 选择、sha256OfRetry 重试与 "?" 判定、重命名失败返回值。
 // 注入点：renameswap.go 的 renameFile / fileWritable（Windows 侧 = kernel32!MoveFileExW 与
 // procstop_windows.go:waitFileWritable；非 Windows 侧桩恒失败，见 renameswap_other.go）。
 // 单测里临时替换它们即可覆盖成功/失败两条分支；每个用例都 defer 还原。
-//
 // 机制出处（renameswap.go 顶部逐字引用）：unprotect.it/technique/process-ghosting、
 // stackoverflow.com/questions/799656、stackoverflow.com/questions/7198666。
 
@@ -107,7 +105,7 @@ func TestSwapInPicksOldSuffix(t *testing.T) {
 		t.Errorf("让开后的名字 = %q：安装侧不该用卸载侧的 .del- 后缀", attempted)
 	}
 	if s := joined(lines); !strings.Contains(s, "已让开被占用的旧文件（重命名）") {
-		t.Errorf("日志缺「已让开被占用的旧文件（重命名）」：%q", s)
+		t.Errorf("日志缺'已让开被占用的旧文件（重命名）'：%q", s)
 	}
 }
 
@@ -149,7 +147,7 @@ func TestSwapInSkipsWhenDstMissing(t *testing.T) {
 	}
 }
 
-// 重命名失败 ⇒ swapIn 返回 (false, 非 nil err)，日志出现「旧文件重命名失败」
+// 重命名失败 ⇒ swapIn 返回 (false, 非 nil err)，日志出现'旧文件重命名失败'
 // （调用方据此**不回滚**、照旧尝试写入：见 main.go 的 A1 接入点）。
 func TestSwapInRenameFailureReturns(t *testing.T) {
 	dst := touchFile(t)
@@ -168,7 +166,7 @@ func TestSwapInRenameFailureReturns(t *testing.T) {
 		t.Errorf("重命名失败时 err 应为非 nil")
 	}
 	if s := joined(lines); !strings.Contains(s, "旧文件重命名失败") {
-		t.Errorf("日志缺「旧文件重命名失败」：%q", s)
+		t.Errorf("日志缺'旧文件重命名失败'：%q", s)
 	}
 	if _, serr := os.Stat(dst); serr != nil {
 		t.Errorf("重命名失败后原名文件应原样存在：%v", serr)
@@ -204,10 +202,10 @@ func TestDeleteRenamedPicksDelSuffix(t *testing.T) {
 	}
 	s := joined(lines)
 	if !strings.Contains(s, "已让开被占用的旧文件（重命名）") {
-		t.Errorf("日志缺「已让开被占用的旧文件（重命名）」：%q", s)
+		t.Errorf("日志缺'已让开被占用的旧文件（重命名）'：%q", s)
 	}
 	if !strings.Contains(s, "已删除重命名后的文件") {
-		t.Errorf("日志缺「已删除重命名后的文件」：%q", s)
+		t.Errorf("日志缺'已删除重命名后的文件'：%q", s)
 	}
 }
 
@@ -226,20 +224,20 @@ func TestDeleteRenamedRenameFailureReturns(t *testing.T) {
 		t.Errorf("重命名失败后原名文件应原样存在：%v", err)
 	}
 	if s := joined(lines); !strings.Contains(s, "旧文件重命名失败") {
-		t.Errorf("日志缺「旧文件重命名失败」：%q", s)
+		t.Errorf("日志缺'旧文件重命名失败'：%q", s)
 	}
 }
 
 // 重命名成功但删不掉 ⇒ 返回 false、留着不报错（轮询 200 ms × 50 = 10 s 跑满，
 // 节奏常量 stopPollEveryMS/stopPollMax 在 procname.go，本批不改）。
-// 非 Windows 侧用「目录去掉写权限」造出删不掉的状态（uid≠0 时 os.Remove 报 EACCES）。
+// 非 Windows 侧用'目录去掉写权限'造出删不掉的状态（uid≠0 时 os.Remove 报 EACCES）。
 func TestDeleteRenamedKeepsUndeletableFile(t *testing.T) {
 	src := touchFile(t)
 	dir := filepath.Dir(src)
 	origRename := renameFile
 	defer func() {
 		renameFile = origRename
-		_ = os.Chmod(dir, 0o755) // 还原，让 t.TempDir() 的清理能删掉
+		_ = os.Chmod(dir, 0o755) // 还原，让 t.TempDir 的清理能删掉
 	}()
 
 	renameFile = func(s, d string, flags uint32) error {
@@ -258,7 +256,7 @@ func TestDeleteRenamedKeepsUndeletableFile(t *testing.T) {
 		t.Errorf("未跑满轮询预算：耗时 %v，应 ≥ %d ms", el, (stopPollMax-1)*stopPollEveryMS)
 	}
 	if s := joined(lines); !strings.Contains(s, "删不掉") {
-		t.Errorf("日志缺「删不掉」：%q", s)
+		t.Errorf("日志缺'删不掉'：%q", s)
 	}
 }
 
@@ -320,7 +318,7 @@ func TestSha256OfRetryZeroAttempts(t *testing.T) {
 	}
 }
 
-// ── .old 残留清理（spec §3.1「下次安装/卸载开头再清一次」）────
+// ── .old 残留清理（'下次安装/卸载开头再清一次'）────
 
 func TestCleanupAsideLeftoversOnlyTargetsSuffix(t *testing.T) {
 	dir := t.TempDir()

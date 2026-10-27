@@ -1,5 +1,4 @@
 // Package effect 把 WMO 码映射到背景特效类。
-//
 // 与上游实况表的对齐说明（防止"类数 vs 行数"打架）：
 //
 //	上游实况表是 9 行；类数 = 9（原 7 类 + 云量两档 PartlyCloudy/Overcast）。
@@ -9,7 +8,6 @@
 package effect
 
 // 9 个类（原 7 类 + 云量两档）。
-//
 // PartlyCloudy / Overcast 是把原 Cloudy 拆成两档得来的：
 // 现象是"有的天气是那种多云看不到太阳一整天，有的天气是多云但是太阳照的下来"
 // （取证 34.16.1），根因 = WMO 2 与 3 都映射成 Cloudy，视觉无差别（取证 34.16.2）。
@@ -41,7 +39,6 @@ const (
 
 // wmoTable：码 → 类 + 强度。基准 = 上游 WEATHER_CODES 的 28 码（0–99），
 // 加扩展码段 101–110 给 dust。
-//
 // 诚实说明：Open-Meteo 核心码段是 0–99，**不含风沙码**。
 // dust 只由扩展码 101–110 触发，核心码段下该类永不出现。
 // 不得为了"看起来有 7 类"把它硬塞进 0–99 的某个码。
@@ -138,12 +135,10 @@ func sortInts(a []int) {
 }
 
 // ClassifyByCloudCover 按**逐小时云量**分档（需求）。
-//
 // 依据：上游 weather_code 只喂图标与文字（rendering/quick/widgets/weather.py:152-172
 // _condition_icon_source，背景动画由设置里选场景；"背景随天气变"是本项目的产品需求。
 // 实测落差：杭州 Open-Meteo weather_code=1（WMO"主要晴"）
 // 而 hourly.cloud_cover=26%，国内天气应用同刻显示"多云" ⇒ 口径取按云量分档。
-//
 // 口径：
 // - 降水/雾类（雨/雷/雪/雾）**仍由 WMO 码决定**——下没下雨、有没有雾不是云量能表达的；
 // - 非降水区（码 0–3 那档，表里判 Clear 的）交给云量：

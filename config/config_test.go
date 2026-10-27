@@ -11,11 +11,11 @@ import (
 	"testing"
 )
 
-// 批次 b-alert-v1 第 8 步 + b-alert-v1b 第 2 步的判据：
-//   删 alert_window_hours；删视野小时旋钮（alert_horizon_hours 也拆掉，
-//   视野 = 常量 2 h，窗口由官方四级配对决定）；保留 alert_min_mm
-//   （默认 0.05，范围 0.02–0.5，越界回落默认并写日志）；
-//   旧键 alert_window_hours 读到时只写一行作废日志，不映射成任何视野值。
+// + 的判据：
+// 删 alert_window_hours；删视野小时旋钮（alert_horizon_hours 也拆掉，
+// 视野 = 常量 2 h，窗口由官方四级配对决定）；保留 alert_min_mm
+// （默认 0.05，范围 0.02–0.5，越界回落默认并写日志）；
+// 旧键 alert_window_hours 读到时只写一行作废日志，不映射成任何视野值。
 
 func writeCfg(t *testing.T, dir, body string) string {
 	t.Helper()
@@ -26,7 +26,7 @@ func writeCfg(t *testing.T, dir, body string) string {
 	return p
 }
 
-// TestNoAlertHorizonKnob 钉「视野旋钮已拆」（批次 b-alert-v1b 第 2/6 步）：
+// TestNoAlertHorizonKnob 钉'视野旋钮已拆'：
 //
 //	Config 里没有视野字段 ⇒ 写回的 JSON 不含视野键；旧键 alert_horizon_hours 读到时
 //	不改变任何行为（门槛/其它键照旧），也不写进 JSON。
@@ -84,8 +84,8 @@ func TestAlertMinMMKey(t *testing.T) {
 	}
 }
 
-// TestLegacyAlertWindowHoursLogsOnly 钉「旧键只写日志、不改变任何行为」
-// （批次 b-alert-v1b 第 2/6 步：窗口由官方量级配对决定，旧键作废且不映射成任何视野值）。
+// TestLegacyAlertWindowHoursLogsOnly 钉'旧键只写日志、不改变任何行为'
+// （窗口由官方量级配对决定，旧键作废且不映射成任何视野值）。
 func TestLegacyAlertWindowHoursLogsOnly(t *testing.T) {
 	dir := t.TempDir()
 	var buf bytes.Buffer
@@ -103,7 +103,7 @@ func TestLegacyAlertWindowHoursLogsOnly(t *testing.T) {
 			t.Errorf("旧键 %d 未写作废日志，实得 %q", v, line)
 		}
 		if !strings.Contains(line, "作废") || !strings.Contains(line, "官方") {
-			t.Errorf("旧键 %d 的日志未写明「窗口由官方量级配对决定、本键作废」，实得 %q", v, line)
+			t.Errorf("旧键 %d 的日志未写明'窗口由官方量级配对决定、本键作废'，实得 %q", v, line)
 		}
 		// ② 不改变任何行为：门槛照旧、视野键不进 Config
 		if got := c.AlertMinMM; got != 0.2 {

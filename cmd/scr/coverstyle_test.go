@@ -2,9 +2,8 @@ package main
 
 import "testing"
 
-// 批次 A3 钉死单测（spec/a3-coverloop.md「钉死单测」1..4 条，逐条对应下面的测试函数）。
+// 钉死单测（'钉死单测'1..4 条，逐条对应下面的测试函数）。
 // 数值全部逐字抄自 foreground_windows.go 现有定义与实机稳态样本，不许换算。
-//
 // 口径说明（写在这里以免读者按括注反推）：spec 第 24 行的钉死值是
 // `ExStyleDrift(0x00000088, 0x00000088)==false` / `ExStyleDrift(0x00000008, 0x00000088)==true`。
 // 后一条 cur=0x00000008 已含 WS_EX_TOPMOST，缺的是 WS_EX_TOOLWINDOW 位；
@@ -19,7 +18,7 @@ func a3WantNormal() (uintptr, uintptr) {
 }
 
 // 钉死 1：实机稳态 exstyle 不漂移；缺期望位的 exstyle 漂移。
-// 0x00000088 = evidence/perf-s1-20261022-run.log 的 `COVER=…EXSTYLE=00000088`。
+// 0x00000088 = 的 `COVER=…EXSTYLE=00000088`。
 func TestA3ExStyleDriftPinned(t *testing.T) {
 	if ExStyleDrift(0x00000088, 0x00000088) {
 		t.Errorf("ExStyleDrift(0x00000088, 0x00000088) = true，期望 false（实机稳态位必须判稳态）")

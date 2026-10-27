@@ -1,7 +1,6 @@
 package ui
 
-// 降水/闪电贴图的三条判据 + 闪电时间口径判据（规格 3 第 3/4/5/6 条）。
-//
+// 降水/闪电贴图的三条判据 + 闪电时间口径判据。
 // 共同纪律：判据必须自己会测量——每条都把实测数字打出来，
 // 并且带"测不到东西就判红"的守卫（样本数、下限、非零计数），
 // 不接受恒真断言。
@@ -19,15 +18,14 @@ import (
 	"github.com/DragonTTDream/WeatherScr/effect"
 )
 
-// TestSnowUsesSprite 雪必须来自 ui/embed 的贴图，不是程序化晶形（规格 3 第 3 条）。
-//
+// TestSnowUsesSprite 雪必须来自 ui/embed 的贴图，不是程序化晶形。
 // 四条实测：
 //
 //	1 贴图集长度 == 3（snow1..3）；
 //	2 每张的像素与 readPNG("embed/snowN.png") 的解码结果逐字节相同（= 走的是同一条解码口）；
-//	3 尺寸逐张 = 64/48/96（规格 1.1 的表）；
+//	3 尺寸逐张 = 64/48/96；
 //	4 与 genFlake 同尺寸的程序化晶形逐像素比对，差异像素必须 > 0
-//	   （差异为 0 才说明它真的是程序画的）。
+//	 （差异为 0 才说明它真的是程序画的）。
 func TestSnowUsesSprite(t *testing.T) {
 	sp := spritesOnce()
 	if n := len(sp.flake); n != 3 {
@@ -78,8 +76,7 @@ func TestSnowUsesSprite(t *testing.T) {
 	}
 }
 
-// TestSnowDrift 雪的水平速度分量必须明显小于下落速度（规格 3 第 4 条：|vx| < vy/3）。
-//
+// TestSnowDrift 雪的水平速度分量必须明显小于下落速度。
 // 非空守卫：全场雪片必须全部 vy>0，且 |vx|>0 的雪片数 > 0
 // （vx 恒 0 时 |vx| < vy/3 恒真，那种写法等于没测）。
 func TestSnowDrift(t *testing.T) {
@@ -125,13 +122,12 @@ func TestSnowDrift(t *testing.T) {
 		total, drifted, 100*float64(drifted)/float64(total), maxR, sum/float64(len(ratios)))
 }
 
-// TestRainSpriteLen 雨丝屏上长度分布落在 [40,160] px（规格 3 第 5 条）。
-//
+// TestRainSpriteLen 雨丝屏上长度分布落在 [40,160] px。
 // 口径与绘制逐字同式（drawPrecipSprite 的 useLen 分支）：
 //
 //	L = vy × 屏高 × 快门时间（下限 3 px）
 //
-// 雨/雷两档共用同一套雨丝（规格 1.3：雷暴 = 雨 + 闪电）。
+// 雨/雷两档共用同一套雨丝。
 // 非空守卫：样本数 ≥100，且近档/远档都必须有样本（长度分布不能塌成一个点）。
 func TestRainSpriteLen(t *testing.T) {
 	var lens []float64
@@ -183,10 +179,8 @@ func TestRainSpriteLen(t *testing.T) {
 }
 
 // TestBoltOnlyThunder 闪电只在雷暴类 + 码出现，且时间口径落在分级窗口内。
-//
 // 计数口径 = drawBolt 真正画出的次数（f.boltDrawn）与闪现事件数（f.boltCount），
 // 两者都在绘制/推进路径里自增，不是测试自己数公式。
-//
 // 口径变更（写明理由，不是放宽）：旧断言是"雷暴 120 秒内闪现 8–25 次（间隔 6–12 秒）"，
 // 间隔是写死的一档；现口径 = 间隔按码分级（95 ⇒ 15–40 s、96 ⇒ 10–25 s、97/99 ⇒ 6–15 s、
 // 其余码不闪），所以逐档各给一条**更紧**的区间，并补一条"雷暴类 + 非雷暴码 ⇒ 0 次"

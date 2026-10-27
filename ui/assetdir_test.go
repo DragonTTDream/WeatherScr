@@ -1,10 +1,8 @@
 package ui
 
 // 素材覆盖目录（预览工装）的自检。
-//
 // 覆盖四条分支的生效条件（天空 / 月亮 / 太阳 / 雨）与一条硬判据：
 // WS_ASSET_DIR 未设置时，所有查询返回没有覆盖文件，渲染路径与改动前一致。
-//
 // 逐字节中性（未设置时画面不变）由 ui/pixeldump_test.go 的固定帧出图在改动前后
 // 各出一次、逐字节比对来证明，不在本文件里（本文件只证明生效条件）。
 
@@ -170,7 +168,7 @@ func TestAssetOverrideNegativeCache(t *testing.T) {
 	}
 }
 
-// 天空分支（规格 1.2）：
+// 天空分支：
 // is_day==1 → sky_day，is_day==0 → sky_night，日落窗口不启用（无日出日落数据源），
 // 夜间星星照旧烘在贴图之上，缓存键含贴图名。
 func TestSkyBranchConditions(t *testing.T) {
@@ -249,7 +247,7 @@ func TestSkyBranchConditions(t *testing.T) {
 	t.Logf("sky.SkyCache.Key.Tex = %s", sky.SkyCache.Key.Tex)
 }
 
-// 月亮分支（规格 1.3）：亮面用贴图表面细节、暗面保持透明、缓存键含贴图名。
+// 月亮分支：亮面用贴图表面细节、暗面保持透明、缓存键含贴图名。
 func TestMoonBranchConditions(t *testing.T) {
 	dir := newTestAssetDir(t)
 	// 一张明显偏红的月亮贴图（程序化 core 是 246,244,230 偏白，容易区分）
@@ -313,7 +311,7 @@ func TestMoonBranchConditions(t *testing.T) {
 	t.Logf("眉月左半透明像素 = %d", dark)
 }
 
-// 太阳分支（规格 1.4）：有 sun.png 时盘用贴图，Lorentz 光斑（A=200、L=0.08w）保留。
+// 太阳分支：有 sun.png 时盘用贴图，Lorentz 光斑（A=200、L=0.08w）保留。
 func TestSunBranchConditions(t *testing.T) {
 	dir := newTestAssetDir(t)
 	sun := image.NewNRGBA(image.Rect(0, 0, 64, 64))

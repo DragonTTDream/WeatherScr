@@ -1,5 +1,5 @@
 // Package screenfit 负责屏幕基准的最低层算术：归一化基准宽、竖屏目标口径、零屏/负屏兜底。
-// 纯算术模块：不依赖 gioui、不依赖 ui（spec/b2-screenfit.md §1；证据 evidence/p8-split-effects-20261023.md H3）。
+// 纯算术模块：不依赖 gioui、不依赖 ui（；证据 H3）。
 package screenfit
 
 // Canvas 是屏幕基准（像素），Baseline 是建场（屏未知）时的竖屏目标口径。
@@ -24,7 +24,7 @@ func Fallback(w, h int) (int, int) {
 const RefW = 1178
 
 // RefWidth 是 RefW 的 float64 视图，逐字 = 原 cloudDwRef = 1178.0 / 1080.0。
-// 原为常量表达式，现为运行时 float64 变量：同一 IEEE754 双除舍入结果（spec 硬判据，测试钉死）。
+// 原为常量表达式，现为运行时 float64 变量：同一 IEEE754 双除舍入结果。
 var RefWidth = 1178.0 / 1080.0
 
 // PortraitW 竖屏目标宽的 float64 视图，逐字 = 1080.0。

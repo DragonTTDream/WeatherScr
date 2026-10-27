@@ -9,7 +9,6 @@ import (
 
 // TestMoonCoveredOverTime 长时间模拟，统计"云盖住月亮"时长占比。
 // 之前只拿单帧图下判断（云还没走到月亮那儿）。
-//
 // 盘半径口径 = **moonRcFrac = 0.060（月盘）**，不含光晕（光晕 0.192 会把矩形虚大、
 // 占比虚高）；相交判据 = CelestialCover 的**真实相交**（24×24 网格采样盘面，
 // 云矩形取绘制同口径 spriteScale），不是"中心落在矩形里"。
@@ -18,7 +17,7 @@ func TestMoonCoveredOverTime(t *testing.T) {
 	for _, seed := range []int64{20261015, 20261016, 20261017} {
 		f := NewField(effect.Cloudy, false, seed)
 		f.Step(time.Second, PortraitW, PortraitH)
-		f.adaptFps(15) // 低性能 x86 小主机目标帧率
+		f.adaptFps(15) // 低性能 x86 实机目标帧率
 		act := f.ActiveCount()
 		covered := 0
 		frames := 0

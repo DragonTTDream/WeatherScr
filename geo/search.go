@@ -1,8 +1,6 @@
 // Package geo 是地名搜索。
-//
 // 定案的口径 = **存坐标 + 搜索选点**：设置里搜索 → 从候选里选一个 →
 // 存 lat/lon 与中英文显示名；运行时**零地理编码请求**（只用存的坐标）。
-//
 // 为什么必须自己做搜索（实测 + 上游取证）：
 //
 //	上游 ui/widgets/geocode_completer.py:145 把参数硬编码成
@@ -13,10 +11,10 @@
 //
 //	Open-Meteo geocoding language=en + 中文查询 = **0 结果**
 //	Open-Meteo geocoding language=zh：成都/拉萨/义乌 通；**本市短名 = 0 结果**
-//	  （要写全名"杭州市"）；**绵阳 zh 只返回贵州那个，四川绵阳（人口 155 万）
-//	  只在 en 数据集里** ⇒ zh 数据集是有损的部分翻译层
+//	 （要写全名"杭州市"）；**绵阳 zh 只返回贵州那个，四川绵阳（人口 155 万）
+//	 只在 en 数据集里** ⇒ zh 数据集是有损的部分翻译层
 //	Nominatim(OSM)：绵阳→绵阳市/四川省(31.460,104.716 正确)、本市短名也能命中全名、
-//	  成都/拉萨/义乌 全对 ⇒ **中文查询走 Nominatim**
+//	 成都/拉萨/义乌 全对 ⇒ **中文查询走 Nominatim**
 //
 // ⇒ 拉丁/拼音走 Open-Meteo（en + zh 两份合并），中文走 Nominatim。
 package geo
@@ -49,15 +47,15 @@ type Place struct {
 	Admin1Zh    string
 	CountryZh   string
 
-	// ---- 批次 b-alert-v2 第 4 步：完整行政路径 + 语言无关行政区码 + 一致性标记 ----
+	// ---- ：完整行政路径 + 语言无关行政区码 + 一致性标记 ----
 	// FullPath = 搜索命中后**用坐标反查**得到的完整行政路径
 	// （`country/state/region/city/district`，缺级自动跳过，分隔符 "/"）。
-	// 口径（§12 铁律）：行政区一律从坐标反查，绝不从名字推。
+	// 口径（铁律）：行政区一律从坐标反查，绝不从名字推。
 	FullPath string
-	// ISO3166 = `ISO3166-2-lvl4`（§13.2：语言无关的行政区码，NMC 省名映射的键）。
+	// ISO3166 = `ISO3166-2-lvl4`（语言无关的行政区码，NMC 省名映射的键）。
 	ISO3166 string
-	// Mismatch = 搜索侧 admin 与坐标反查侧 admin 不一致（§13.4 裁决 C：
-	// 面板明说 + **保留用户原选择**，不阻断保存、不静默改点）。
+	// Mismatch = 搜索侧 admin 与坐标反查侧 admin 不一致（定案：
+	// 面板明说 + **保留原选择**，不阻断保存、不静默改点）。
 	Mismatch bool
 }
 
@@ -77,9 +75,8 @@ func (p Place) Label() string {
 }
 
 // PathOrLabel 返回选点确认用的显示串：
-// 有完整行政路径（反查成功）⇒ 用完整路径；没有 ⇒ 回落到三级 Label()。
-//
-// 注意：**屏保画面的地名不走这里**（裁决 B：屏保口径 = 短名 + 国家，不动）。
+// 有完整行政路径（反查成功）⇒ 用完整路径；没有 ⇒ 回落到三级 Label。
+// 注意：**屏保画面的地名不走这里**（定案：屏保口径 = 短名 + 国家，不动）。
 func (p Place) PathOrLabel() string {
 	if p.FullPath != "" {
 		return p.FullPath
@@ -106,7 +103,7 @@ func IsCJK(q string) bool { return cjkRe.MatchString(q) }
 type Searcher struct {
 	HTTP    *http.Client
 	BaseURL string
-	// ReverseLang = 反查的 accept-language（spec 逐字默认 "zh"；诊断工具按 lang 传）。
+	// ReverseLang = 反查的 accept-language。
 	ReverseLang string
 
 	mu      sync.Mutex
@@ -121,7 +118,6 @@ func (s *Searcher) client() *http.Client {
 }
 
 // openMeteoEndpoint 只把 **Open-Meteo** 端点指到自建代理（`weather_base_url` 的唯一用途）。
-//
 // Nominatim（搜索与反查）与 NMC（官方预警）的 URL 一律逐字使用，理由（实测口径）：
 // 旧写法 `endpoint()` 把**完整 URL** 当 path 拼接，`weather_base_url` 一旦设成自建代理，
 // Nominatim 请求会变成 `http://代理/https://nominatim.openstreetmap.org/search` 这种畸形串。
@@ -134,7 +130,6 @@ func (s *Searcher) openMeteoEndpoint(path string) string {
 }
 
 // Search 按查询返回候选地名（已去重、已按人口降序）。
-//
 // 中文查询 → Nominatim；拉丁/拼音 → Open-Meteo 的 en 与 zh 两份合并。
 // 两路都空时返回"无结果"错误，由调用方提示使用者改写（如"杭州"要写"杭州市"）。
 func (s *Searcher) Search(ctx context.Context, query string) ([]Place, error) {
@@ -172,7 +167,7 @@ func (s *Searcher) Search(ctx context.Context, query string) ([]Place, error) {
 	out = dedupeByCoords(out)
 	// 中文查询 = 国内地名检索场景 ⇒ **中国结果优先**，同级内再按人口/权重排。
 	// 实测不这么做会翻车：搜"大安区"排第一的是**台湾的大安區**(25.03,121.53)，
-	// 四川那个同名区(29.37,104.77) 被压到第二。
+	// 四川那个同名区被压到第二。
 	if IsCJK(q) {
 		sortByChinaThenPop(out)
 	} else {
@@ -187,8 +182,8 @@ func (s *Searcher) Search(ctx context.Context, query string) ([]Place, error) {
 		}
 		return nil, fmt.Errorf("无候选：%s（中文地名试试写全名，如\"杭州市\"）", q)
 	}
-	// 批次 b-alert-v2 第 4 步：**搜索命中后做一次反查**（坐标 = 唯一真相，§12 铁律）
-	// ⇒ 候选行显示完整行政路径，点之前就能看出是不是要的地方（§13.3 第 1 条）。
+	// **搜索命中后做一次反查**（坐标 = 唯一真相， 铁律）
+	// ⇒ 候选行显示完整行政路径，点之前就能看出是不是要的地方（第 1 条）。
 	s.enrichPaths(ctx, out)
 	return out, nil
 }
@@ -202,14 +197,12 @@ func (s *Searcher) reverseLang() string {
 }
 
 // pathEnrichMax 一次搜索最多反查几条候选。
-//
-// 规格未点名上限 ⇒ 这里取 5（自定，已记进 out/notes-alert-v2.md）：
+// 规格未点名上限 ⇒ 这里取 5（自定，已记进）：
 // Nominatim ≤1 req/s ⇒ 10 条 = 11 s，会顶穿调用方 15 s 的 ctx 超时；
 // 5 条 = 5.5 s，面板一屏正好放得下。
 const pathEnrichMax = 5
 
 // enrichPaths 给候选补 FullPath / ISO3166，并做搜索侧 vs 反查侧的一致性标记。
-//
 // 反查失败（断网/限流）⇒ 保留搜索侧路径，不报错（选点仍可用，坐标已够）。
 func (s *Searcher) enrichPaths(ctx context.Context, out []Place) {
 	for i := range out {
@@ -226,7 +219,7 @@ func (s *Searcher) enrichPaths(ctx context.Context, out []Place) {
 			continue
 		}
 		if r.FullPath != "" {
-			out[i].FullPath = r.FullPath // 反查侧 = 权威层（§12 第 2 步）
+			out[i].FullPath = r.FullPath // 反查侧 = 权威层（第 2 步）
 		}
 		if r.ISO3166 != "" {
 			out[i].ISO3166 = r.ISO3166
@@ -254,8 +247,8 @@ func nonEmpty(in []string) []string {
 	return out
 }
 
-// adminSuffixes 行政后缀归一表（长后缀先剥，§12.4 的旧口径兜底：
-// 搜索侧「江苏」与反查侧「江苏省」是同一个地方，不能算不一致）。
+// adminSuffixes 行政后缀归一表（长后缀先剥， 的旧口径兜底：
+// 搜索侧'江苏'与反查侧'江苏省'是同一个地方，不能算不一致）。
 var adminSuffixes = []string{
 	"壮族自治区", "回族自治区", "维吾尔自治区", "特别行政区",
 	"自治区", "省", "市", "地区", "盟", "州",
@@ -279,12 +272,11 @@ func normAdminSet(in []string) map[string]bool {
 	return m
 }
 
-// adminMismatch 判定搜索侧 admin 与坐标反查侧 admin 是否不一致（§13.4 裁决 C）。
-//
-// 主判据 = `ISO3166-2-lvl4` 比对（§13.2 定案：语言无关的行政区码，
-// 「精确匹配与 NMC 省名映射都改用它做键，不再靠字符串去后缀」）。
+// adminMismatch 判定搜索侧 admin 与坐标反查侧 admin 是否不一致（定案）。
+// 主判据 = `ISO3166-2-lvl4` 比对（定案：语言无关的行政区码，
+// '精确匹配与 NMC 省名映射都改用它做键，不再靠字符串去后缀'）。
 // 搜索侧没有 ISO（Open-Meteo 通道）⇒ 退化成同脚本内的层级名比对（剥行政后缀）；
-// 搜索侧是拉丁名 ⇒ **跨脚本比对未取证**，不判定（已写进 out/notes-alert-v2.md 的未决）。
+// 搜索侧是拉丁名 ⇒ **跨脚本比对未取证**，不判定（已写进 的未决）。
 func adminMismatch(searchISO string, searchAdmin []string, revISO string, revAdmin []string) bool {
 	if searchISO != "" && revISO != "" {
 		return searchISO != revISO
@@ -344,9 +336,8 @@ func (s *Searcher) openMeteo(ctx context.Context, q, language string) ([]Place, 
 }
 
 // nominatimSlot 是 Nominatim 的共享节流闸（≤1 req/s，geo/search.go:74 的 minNomGap）。
-//
-// 批次 b-alert-v2 第 3 步：搜索与**反查共用这一个闸**
-// （brief §1 逐字：「现有 Nominatim 节流复用到反查，不要新建第二个节流器」）。
+// 搜索与**反查共用这一个闸**
+// 。
 func (s *Searcher) nominatimSlot(ctx context.Context) error {
 	s.mu.Lock()
 	if d := time.Since(s.lastNom); d < minNomGap {
@@ -364,7 +355,6 @@ func (s *Searcher) nominatimSlot(ctx context.Context) error {
 }
 
 // nominatim 拉 OSM 搜索（中文查询的主后端）。
-//
 // 两条硬约束（实测）：必须带描述性 User-Agent；**1 请求/秒** ⇒ 包内节流。
 func (s *Searcher) nominatim(ctx context.Context, q string) ([]Place, error) {
 	if err := s.nominatimSlot(ctx); err != nil {
@@ -419,8 +409,8 @@ func (s *Searcher) nominatim(ctx context.Context, q string) ([]Place, error) {
 		if cc == "" {
 			cc = x.Address.CountryCode
 		}
-		// 搜索侧的层级原料（§13.2 实测：district/region/state + ISO3166-2-lvl4）。
-		// 反查成功后会被反查侧覆盖（反查侧 = 权威层，§12 第 2 步）。
+		// 搜索侧的层级原料（实测：district/region/state + ISO3166-2-lvl4）。
+		// 反查成功后会被反查侧覆盖（反查侧 = 权威层， 第 2 步）。
 		searchPath := joinPath(nonEmpty([]string{
 			country, x.Address.State, x.Address.Region, x.Address.City, x.Address.District,
 		}))

@@ -11,10 +11,8 @@ import (
 )
 
 // Fetch 的伞图标口径测试（需求 5）：
-//
 //	Current.PrecipitationProbability=42 且 Hourly[0]=16 ⇒ 取 42（当前时刻）
 //	Current 为 nil 且 Hourly[0]=16 ⇒ 回落 16（旧行为，不空）
-//
 // 用 httptest 起一个本地 forecast 端点（Client.BaseURL 走代理口径，
 // 见 provider.go 的 wxURL，零外网依赖。
 
@@ -115,7 +113,7 @@ func TestFetchUmbrellaFallsBackToHourly0(t *testing.T) {
 
 // TestRainWithinUsesFetchedSample 把 Fetch 的产物直接喂进 RainWithin，
 // 实测"时基 = 当地"这条链路（local := UTC + utc_offset_seconds）。
-// b-alert-v1 之后预警判据 = 官方配对判据的 R(Δ)（旧 WindowProb 已重写掉）。
+// 之后预警判据 = 官方配对判据的 R(Δ)（旧 WindowProb 已重写掉）。
 func TestRainWithinUsesFetchedSample(t *testing.T) {
 	s := fetchFrom(t, `{"temperature_2m":18.3,"weather_code":61,"wind_speed_10m":4.2,
 		"is_day":1,"relative_humidity_2m":77,"precipitation":0.0,"rain":0.0,

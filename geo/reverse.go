@@ -1,31 +1,23 @@
 package geo
 
-// 坐标反查（批次 b-alert-v2 第 3 步）。
-//
-// 铁律（spec/alert-latency-and-logic.md §12）：**坐标是唯一真相；名字只是检索入口；
+// 坐标反查。
+// 铁律：**坐标是唯一真相；名字只是检索入口；
 // 行政区一律从坐标反查，绝不从名字推。**
-//
-// 请求逐字（spec/b-alert-v2.md 第 3 步）：
-//
+// 请求逐字（第 3 步）：
 //	GET https://nominatim.openstreetmap.org/reverse
-//	    ?format=jsonv2&addressdetails=1&accept-language=zh
-//
-// 层级原料（§13.2 实测逐字）：address 里的 `country / state / region / city / district`
-// + `ISO3166-2-lvl4`（语言无关的行政区码，§13.2 定案用它做键）。
-//
-// zoom 取值（实测，2026-10-21 自贡 29.2771535,104.7044488）：
-//
-//	zoom=10 → city=舒坪街道（街道级混进路径，闸门期望的「国/省/市/区」形状被污染）
-//	zoom=8  → district=自流井区, region=自贡市, state=四川省, country=中国
-//	          ⇒ 完整路径 = 中国/四川省/自贡市/自流井区（逐字等于闸门 §6 期望串）
+//	 ?format=jsonv2&addressdetails=1&accept-language=zh
+// 层级原料（实测逐字）：address 里的 `country / state / region / city / district`
+// + `ISO3166-2-lvl4`（语言无关的行政区码，定案用它做键）。
+// zoom 取值（实测，杭州 30.2495201,120.1583013）：
+//	zoom=10 → city=留下街道（街道级混进路径，闸门期望的'国/省/市/区'形状被污染）
+//	zoom=8 → district=西湖区, region=杭州市, state=浙江省, country=中国
+//	 ⇒ 完整路径 = 中国/浙江省/杭州市/西湖区（逐字等于期望串）
 //	zoom=14/18 → 多出 suburb / road 级 ⇒ 更脏
-//	⇒ 本包钉 zoom=8（spec 未点名 zoom，此处按闸门期望串选定，已记进 out/notes-alert-v2.md）。
-//
-// 限流合规（§12 末 + geo/search.go:73-74 的既有常量）：Nominatim ≤1 req/s + 必须带
-// 描述性 User-Agent ⇒ **复用搜索侧同一个节流器与 UA**（brief §1 明令「不要新建第二个节流器」），
+//	⇒ 本包钉 zoom=8。
+// 限流合规（geo/search.go:73-74 的既有常量）：Nominatim ≤1 req/s + 必须带
+// 描述性 User-Agent ⇒ **复用搜索侧同一个节流器与 UA**，
 // 每地点一次、持久缓存、不进轮询。
-//
-// 持久缓存键 = `lat,lon` 量化到 **4 位小数**（spec/b-alert-v2.md 第 3 步逐字）。
+// 持久缓存键 = `lat,lon` 量化到 **4 位小数**（逐字）。
 
 import (
 	"context"
@@ -56,7 +48,7 @@ type Reverse struct {
 }
 
 // AdminPath 返回完整行政路径（`country/state/region/city/district`，缺级自动跳过）。
-// 顺序逐字按 spec/b-alert-v2.md 第 3 步列出的顺序。
+// 顺序逐字按 第 3 步列出的顺序。
 func (r Reverse) AdminPath() string {
 	parts := make([]string, 0, 5)
 	for _, s := range []string{r.Country, r.State, r.Region, r.City, r.District} {
@@ -84,7 +76,7 @@ func (r Reverse) adminComponents() []string {
 	return nonEmpty([]string{r.State, r.Region, r.City, r.District})
 }
 
-// reverseCacheKey 持久缓存键 = `lat,lon` 4 位小数（spec 第 3 步逐字）。
+// reverseCacheKey 持久缓存键 = `lat,lon` 4 位小数。
 func reverseCacheKey(lat, lon float64) string {
 	return fmt.Sprintf("%.4f,%.4f", lat, lon)
 }
@@ -100,9 +92,8 @@ type reverseCache struct {
 var geoCache = &reverseCache{}
 
 // ReverseCachePath 返回反查缓存文件路径。
-//
-// 落点 = **既有 geo 缓存目录**：`os.UserConfigDir()/WeatherScr`，
-// 与 config.CachePath() 同族（config 的缓存文件就在同一目录）。
+// 落点 = **既有 geo 缓存目录**：`os.UserConfigDir/WeatherScr`，
+// 与 config.CachePath 同族（config 的缓存文件就在同一目录）。
 // 注意：本包**不能 import config** —— config → ui → geo 会成 import 环，
 // 故这里按同一族口径自行落点（安装目录不可写时的口径一致）。
 func ReverseCachePath() string {
@@ -163,9 +154,8 @@ func (c *reverseCache) put(k string, r Reverse) {
 }
 
 // Reverse 按坐标反查行政区（命中缓存 ⇒ 零请求）。
-//
-// 节流：复用搜索侧的 `minNomGap` + `nominatimUA`（brief §1：不要新建第二个节流器）。
-// lang = accept-language（spec 逐字 = "zh"；诊断工具可传 "en" 看英文路径）。
+// 节流：复用搜索侧的 `minNomGap` + `nominatimUA`。
+// lang = accept-language。
 func (s *Searcher) Reverse(ctx context.Context, lat, lon float64, lang string) (Reverse, error) {
 	if lang == "" {
 		lang = "zh"

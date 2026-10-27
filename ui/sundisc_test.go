@@ -1,21 +1,16 @@
 package ui
 
 // 太阳盘可见性分级 + 中间亮核尺寸 的判据。
-//
 // 共同纪律：每条都真的测量并打印数字。取样盒/取样点只由烘焙幅面与常量决定，
 // 不随天气类或云量缩放；样本不足/测不到东西时直接判红（不写恒真断言）。
-//
-//	TestSunCoreSizeRestored    中间亮核的半高宽 ≤ 0.22 倍烘焙宽 + 0.45w 净抬升 ≥ 峰值 25%
+//	TestSunCoreSizeRestored 中间亮核的半高宽 ≤ 0.22 倍烘焙宽 + 0.45w 净抬升 ≥ 峰值 25%
 //	TestSunDiscVisibilityTable 逐格核对可见性表，并打印每格实测的盘内亮像素
-//	TestSunShowerShowsDisc     太阳雨（rain 云量 40）出盘、rain 云量 90 不出盘，天空底色照旧
-//	TestOvercastNoDisc         阴（云量 95）无盘、0.45w 处宽光还在
-//	TestDiffuseLightUnchanged  门开/关两帧的 0.45w 净抬升：宽光没被门吃掉
-//
+//	TestSunShowerShowsDisc 太阳雨（rain 云量 40）出盘、rain 云量 90 不出盘，天空底色照旧
+//	TestOvercastNoDisc 阴（云量 95）无盘、0.45w 处宽光还在
+//	TestDiffuseLightUnchanged 门开/关两帧的 0.45w 净抬升：宽光没被门吃掉
 // 盘内亮像素的口径（与 TestSunDiscEdge 的盘心/盘外 3rc 口径同源）：
-//
 //	盘区 = 以盘心为圆心、半径 rc = 0.045 倍烘焙宽的圆（固定口径，只由幅面决定）
-//	亮   = 该像素的净抬升（烘焙 - 同位置天空基色）≥ 同帧 3rc 环带峰值 + 20 级
-//
+//	亮 = 该像素的净抬升（烘焙 - 同位置天空基色）≥ 同帧 3rc 环带峰值 + 20 级
 // 理由：盘体（sunDiscLevel×dim×盘可见度）的签名是"盘区比它周围的宽光高出一截"；
 // 全天空抬升项是一条铺到整张画布的缓坡，在盘区与 3rc 处几乎同高（实测差 1–5 级），
 // 用绝对亮度门槛会把"宽光把天空抬起来"误读成"有盘"（实测云量 20 的阴档盘心净抬升 133 级）。
@@ -77,7 +72,6 @@ func (p sunDiscProbe) ring3rc(baked, base *image.NRGBA) float64 {
 }
 
 // discBright 盘区（r ≤ rc）内的盘体亮像素数 + 盘心净抬升 + 盘区像素数。
-//
 // 盘区像素数必须打印：盒子按类缩成 0 px 的写法 = 空转，这里逐格量同一个圆。
 func (p sunDiscProbe) discBright(baked, base *image.NRGBA) (bright, total int, center, ring float64) {
 	ring = p.ring3rc(baked, base)
@@ -101,20 +95,19 @@ func (p sunDiscProbe) discBright(baked, base *image.NRGBA) (bright, total int, c
 	return
 }
 
-// TestSunCoreSizeRestored 中间亮核的尺寸与整体铺光范围（规格 2.1 的单一连续剖面口径）。
-//
+// TestSunCoreSizeRestored 中间亮核的尺寸与整体铺光范围。
 // 两条都实测：
 //
 //	1 中间亮核的半高宽 ≤ 0.22 倍烘焙宽。
-//	  半高宽 = 过盘心的剖面上"净抬升降到峰值一半"的半径。
-//	  中间亮核 = 小亮核那一组（Acore=120·dim·vis、Lc=0.06w + 盘体 + 泛光）；
-//	  量它时把全天空常数整项关掉（预览工装 sky.SunSkyScale，出厂 1.0 不动画面），
-//	  否则量到的是"小亮核 + 0.9w 主圈"的复合宽，不是中间亮核的宽。
+//	 半高宽 = 过盘心的剖面上"净抬升降到峰值一半"的半径。
+//	 中间亮核 = 小亮核那一组（Acore=120·dim·vis、Lc=0.06w + 盘体 + 泛光）；
+//	 量它时把全天空常数整项关掉（预览工装 sky.SunSkyScale，出厂 1.0 不动画面），
+//	 否则量到的是"小亮核 + 0.9w 主圈"的复合宽，不是中间亮核的宽。
 //	2 0.45w 处净抬升 ≥ 峰值 25%（出厂口径，主圈与全天空常数都在场）⇒ 整体范围不缩。
 //
-// 常量口径逐条核对（规格 2.1 逐字）：主圈 A=150·dim、L=0.90 倍烘焙宽；
+// 常量口径逐条核对：主圈 A=150·dim、L=0.90 倍烘焙宽；
 // 小亮核 Acore=70·dim·vis、Lc=0.06 倍烘焙宽；全天空常数 U=12·dim。
-// 小亮核峰值 120 → 70 是晴档平顶那一批（publish-sunplateau 规格 2.2）的幅度重调：
+// 小亮核峰值 120 → 70 是晴档平顶那一批的幅度重调：
 // 120 级的小亮核与主圈 150、盘体 170 在盘心叠到 430 级，旧口径 a=added/255 钳到 1
 // ⇒ 182×182 的饱和平顶（整帧实测 19611 个 ≥250 像素）。半径 Lc 不动。
 // 旧口径的近场 Lorentz（A=200、L=0.18w）与全天空 Lorentz（A=90）已并入 exp 形式。
@@ -193,7 +186,6 @@ func TestSunCoreSizeRestored(t *testing.T) {
 }
 
 // TestSunDiscVisibilityTable 逐格核对可见性表，并打印每格实测的盘内亮像素。
-//
 // 可见度查函数本体（sunDiscVisibility 是盘可见度的唯一出处），
 // 盘在不在同时逐格量像素：可见度 0 的格盘内亮像素必须为 0，可见度 >0 的格必须 >0。
 func TestSunDiscVisibilityTable(t *testing.T) {
@@ -281,7 +273,6 @@ func TestSunDiscVisibilityTable(t *testing.T) {
 }
 
 // TestSunShowerShowsDisc 太阳雨：有降水而总云量低时太阳可见（Wikipedia Sunshower）。
-//
 // rain 云量 40 = 太阳雨 ⇒ 盘内亮像素 > 0；rain 云量 90 ⇒ 盘内亮像素 = 0。
 // 第三条：两帧的天空底色差 ≤ 6 级（盘没了但天空照旧 = 漫射光口径）。
 // 天空底色 = 屏底 20% 的固定横带（离太阳 0.8–1.8 倍烘焙宽，盘这一组在两帧里都到不了那儿）
@@ -371,7 +362,6 @@ func TestOvercastNoDisc(t *testing.T) {
 }
 
 // TestDiffuseLightUnchanged 盘可见度门开/关两帧，0.45w 处的净抬升：宽光没被门吃掉。
-//
 // 两帧同一天气（rain）、同云量（90）：
 //
 //	门关 = 出厂帧（可见度 0 ⇒ 盘本体/小亮核/近场项/星芒全为 0，宽光与全天空抬升照旧）

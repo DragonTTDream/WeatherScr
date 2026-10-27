@@ -1,9 +1,7 @@
 // fxshot：离线渲染特效帧并量化可见性。
-//
-// 用途：不在低性能 x86 小主机上跑，用 gioui 的 headless GPU 在本机把
+// 用途：不在低性能 x86 实机上跑，用 gioui 的 headless GPU 在本机把
 // ui.Field 渲染成 PNG，直接数"非背景像素占比"。这样调特效参数
-// 不用来回折腾低性能 x86 小主机（一次往返 3~6 分钟）。
-//
+// 不用来回折腾低性能 x86 实机（一次往返 3~6 分钟）。
 // GOOS=linux 专用（headless 走 EGL/OSMesa）。
 package main
 
@@ -26,7 +24,7 @@ import (
 )
 
 func main() {
-	// 素材预览工装（规格 1.6）：FX_ASSET_DIR 存在 ⇒ 透传给 ui 包的 WS_ASSET_DIR，
+	// 素材预览工装：FX_ASSET_DIR 存在 ⇒ 透传给 ui 包的 WS_ASSET_DIR，
 	// 让渲染路径从外部目录读素材。必须在任何 ui 调用之前设（贴图集在首次用到时加载）。
 	// 出厂二进制 cmd/scr 不读这个变量，也不读 WS_ASSET_DIR。
 	if v := os.Getenv("FX_ASSET_DIR"); v != "" {
@@ -82,7 +80,7 @@ func main() {
 		}
 	}
 	stepUp(frames)
-	// 闪现间隔按码分级（D4）：把 FX_CODE 传进粒子场。
+	// 闪现间隔按码分级：把 FX_CODE 传进粒子场。
 	// 非雷暴码 ⇒ 不闪（出厂口径），要看闪光用 FX_FLASH 强制一次局域闪光。
 	field.SetWeatherCode(fxCode())
 	if v := os.Getenv("FX_FLASH"); v != "" {
@@ -91,8 +89,8 @@ func main() {
 	}
 
 	// 降雨提醒：FX_ALERT 是**存在开关** —— 非空 = 出预警（出厂 panelrow 版式），
-	// 不再接受版式名。FX_ALERT_STATE = 三态开关（批次 b-alert-v1 第 9 步）：
-	//   "daily"（默认，带伞提醒）/ "disaster"（自算灾害）/ "unavailable"（数据不可用）。
+	// 不再接受版式名。FX_ALERT_STATE = 三态开关：
+	// "daily"（默认，带伞提醒）/ "disaster"（自算灾害）/ "unavailable"（数据不可用）。
 	// FX_ALERT_PCT=日常层概率，FX_ALERT_MM=灾害层 mm 或日常层 mm/h，
 	// FX_ALERT_TIER=灾害档位 1..4，FX_ALERT_HOURS=灾害窗口小时，
 	// FX_ALERT_PULSE=相位 0..1，FX_ALERT_STATIC=1 关掉脉动。
@@ -137,8 +135,8 @@ func main() {
 			a.State = ui.AlertDisaster
 			a.TierVal, a.MM, a.DisasterHours = tier, mm, hours
 		case "official":
-			// 批次 b-alert-v2 态①（官方信号）。默认值取现网实测样本：
-			// 四川省 2026-10-21 22:44 雷电黄色预警（out/nmc-pic-code.txt 同族口径）。
+			// 态①（官方信号）。默认值取现网实测样本：
+			// 四川省 雷电黄色预警（同族口径）。
 			a.State = ui.AlertOfficial
 			a.OfficialLevel = 2
 			if v := os.Getenv("FX_ALERT_OFF_LEVEL"); v != "" {
@@ -201,7 +199,7 @@ func main() {
 		fmt.Printf("LAYERS=%d\n", n)
 	}
 
-	// 走生产渲染路径（ui.Screen.Layout），保证离线图与低性能 x86 小主机一致
+	// 走生产渲染路径（ui.Screen.Layout），保证离线图与低性能 x86 实机一致
 	screen := ui.New()
 	th := time.Now()
 	renderTo := func(name string) bool {
@@ -370,15 +368,15 @@ func parseClass(name string) effect.Class {
 	return effect.Clear
 }
 
-// sample 造一份固定天气样本，让离线图带上文字层（与低性能 x86 小主机同构）。
+// sample 造一份固定天气样本，让离线图带上文字层（与低性能 x86 实机同构）。
 func sample() *weather.Sample {
 	t := 22.4
 	hu := 84.0
 	pp := 0.0
 	ws := 4.6
 	cond := "Mainly clear"
-	// 用低性能 x86 小主机实时数据出图（FX_T/FX_HU/FX_PP/FX_WS/FX_COND/FX_TMAX/FX_TMIN）：
-	// 离线图与低性能 x86 小主机逐字一致，判读才有意义。
+	// 用低性能 x86 实机实时数据出图（FX_T/FX_HU/FX_PP/FX_WS/FX_COND/FX_TMAX/FX_TMIN）：
+	// 离线图与低性能 x86 实机逐字一致，判读才有意义。
 	if v := os.Getenv("FX_T"); v != "" {
 		t, _ = strconv.ParseFloat(v, 64)
 	}

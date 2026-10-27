@@ -1,14 +1,12 @@
 package settings
 
-// R5 卡 8（本卡）随实现迁来的**兼容 shim**：本体全部在已结案的 ui/panel（R5 卡 7）。
-//
-// 证据 = plans/active.md:212（ui/settings = 设置页 UI，横矩形 + 新交互）与
-// plans/active.md:211（ui/panel = 面板/文本/图标布局，含横竖两制，已结案）。
+// 随实现迁来的**兼容 shim**：本体全部在已结案的 ui/panel。
+// 分层口径 = ui/settings（设置页 UI，横矩形 + 新交互）与
+// ui/panel（面板/文本/图标布局，含横竖两制，已结案）。
 // 纪律：本文件不产生任何新数值 ⇒ 字号/行距/配色/选档公式一律取 panel 的同名导出件，
-// 逐字段搬运的 shim 与 ui/theme.go:30-82（卡 7 留下的同型 shim）**逐字同型**，
+// 逐字段搬运的 shim 与 ui/theme.go:30-82（留下的同型 shim）**逐字同型**，
 // 目的是让迁来的行构造代码（panel.go）与迁来的判据文件按下划线字段名取档、
 // 一字不改（判据文件 ui/panel_landscape_test.go 与 ui/settings_ui_test.go 的写法）。
-//
 // 深浅色的**读取**不在本包：本体 currentThemeMode 按 //go:build 分档住在
 // ui/theme_windows.go（注册表）与 ui/theme_other.go（非 Windows = 浅色），
 // ui/settings 不得 import ui（ui 已 import 本包 ⇒ 会成环）⇒ 以 SystemDark
@@ -80,10 +78,9 @@ func NewPanelTheme(landscape ...bool) *material.Theme {
 }
 
 // formatNum 整数值去掉小数点，与上游 :.0f 呈现习惯一致。
-//
-// 逐字副本（公式零改动），本体 = ui/render.go:559-564（R5 卡 7 判为"天气数据计算
+// 逐字副本（公式零改动），本体 = ui/render.go:559-564（判为"天气数据计算
 // 留在原处"的那件，ui/settings 不得 import ui ⇒ 这里留一份逐字副本，
-// 同 R5 卡 2 在 ui 留 blendPix 逐字副本的先例，见 out/notes-R5-panel.md §2）。
+// 同 在 ui 留 blendPix 逐字副本的先例，见）。
 func formatNum(v float64) string {
 	if v == float64(int64(v)) {
 		return strconv.FormatInt(int64(v), 10)

@@ -2,8 +2,8 @@
 
 package main
 
-// R5 拆分卡 10：SCRNSAVE / ScreenSaveTimeOut 读备份恢复、Control Panel Desktop、安装前状态与 ARP 项。
-// 原 cmd/setup/main.go:1094-1232 逐字搬移，零行为变化（「不改 ScreenSaveTimeOut」口径与注释逐字保持）。
+// 安装器拆分：SCRNSAVE / ScreenSaveTimeOut 读备份恢复、Control Panel Desktop、安装前状态与 ARP 项。
+// 原 cmd/setup/main.go:1094-1232 逐字搬移，零行为变化（'不改 ScreenSaveTimeOut'口径与注释逐字保持）。
 
 import (
 	"fmt"
@@ -53,7 +53,7 @@ func deleteScrSave() error {
 }
 
 // readCPInt 读 Control Panel\Desktop 里的数值项。
-// **这些项在低性能 x86 小主机上是 REG_SZ 字符串**（2026-10-16 实测：
+// **这些项在低性能 x86 实机上是 REG_SZ 字符串**（2026-10-16 实测：
 // SCRNSAVE.EXE / ScreenSaveActive / ScreenSaveTimeOut 类型全 = String，
 // 所以读也按字符串读、解析成 int；写同理必须写字符串（见 setCPStr）。
 func readCPInt(key, name string) int {

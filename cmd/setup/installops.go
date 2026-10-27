@@ -2,7 +2,7 @@
 
 package main
 
-// R5 拆分卡 10：payload 读取/提权复制写 System32/桌面快捷方式创建删除/卸载主流程。
+// 安装器拆分：payload 读取/提权复制写 System32/桌面快捷方式创建删除/卸载主流程。
 // 原 cmd/setup/main.go:671-1092、1234-1363、1475-1501 逐字搬移，零行为变化。
 
 import (
@@ -65,14 +65,14 @@ func relaunchElevated(args string) error {
 // ───────────────────────── 安装 ─────────────────────────
 
 func runInstall() {
-	// R16-A（spec r16-wizard §1A）：重入锁置于函数最前——取不到锁直接 return，
+	// 重入锁置于函数最前——取不到锁直接 return，
 	// 此时 defer wmAppDone 尚未挂上，重复触发不会把第一轮的完成页/状态机打乱。
 	if !acquireInstall() {
 		logf("安装已在进行，忽略重复触发")
 		return
 	}
 	defer releaseInstall()
-	installOK = false // D5（spec §1.1）：入口复位结果状态，失败分支保持 false
+	installOK = false // 入口复位结果状态，失败分支保持 false
 	defer procPostMessageW.Call(uintptr(hMain), wmAppDone, 0, 0)
 	defer func() {
 		if r := recover(); r != nil {
@@ -81,7 +81,7 @@ func runInstall() {
 		}
 	}()
 
-	// 证据 E4（spec §0.4 / §1.4）：一进入安装就禁用安装/上一步/下一步（只留"取消"）。
+	// 证据 E4：一进入安装就禁用安装/上一步/下一步（只留"取消"）。
 	// 旧版只发了不存在的 WM_ENABLE 消息 ⇒ 按钮实际未禁用，第二次点击又跑了一遍 runInstall，
 	// 把 PreviousScr 覆盖成"安装后的值"（C:\Windows\System32\SRPSS.scr → ...\WeatherScr.scr）。
 	// EnableWindow 必须在 GUI 线程调用 ⇒ 经 wmAppButtons 转投给窗口过程。
@@ -118,11 +118,11 @@ func runInstall() {
 	logf("已解包 %s（%d 字节，SHA256 %s）", tmp, fileSize(tmp), sha256Of(tmp))
 
 	// 3 提权复制（唯一一次 UAC）
-	// A1（spec publish-install-verify §1 A1）：提权复制**之前**轮询「目标可写」，
+	// 提权复制**之前**轮询'目标可写'，
 	// 节奏复用卸载批的 stopPollEveryMS=200 ms × stopPollMax=50 = 10 s（见 procname.go 常量、
-	// procstop_windows.go:waitFileWritable）。证据 out/b18-run.log:100-105：卸载删除成功后
+	// procstop_windows.go:waitFileWritable）。证据：卸载删除成功后
 	// 立刻 Copy-Item 覆盖同名文件 ⇒ Access is denied（delete-pending 锁）；
-	// out/b19-run.log:2 = COPY_OK attempt=0（约 40 s 后可写）⇒ 删除后的同名路径长时间不可创建。
+	// 2 = COPY_OK attempt=0（约 40 s 后可写）⇒ 删除后的同名路径长时间不可创建。
 	logf("请求提权以写入 System32（会弹一次 UAC）…")
 	setStatus("等待 UAC 授权…")
 	t0 := time.Now()
@@ -135,13 +135,13 @@ func runInstall() {
 	} else {
 		logf("目标在 10 秒内不可写，仍尝试写入")
 	}
-	// B12（spec publish-rename-swap.md §3.1）：10 秒轮询后目标仍不可写 ⇒ **重命名让开**，
+	// 10 秒轮询后目标仍不可写 ⇒ **重命名让开**，
 	// 映射节跟着旧名字走，原名对新写入开放；让开出来的 .old 尽力删（见本函数末尾）。
-	// 机制出处（简报 §4 逐字引用）：
-	//   unprotect.it/technique/process-ghosting —「Once a file is mapped into an image section,
-	//   attempts to open it with FILE_WRITE_DATA will fail with ERROR_SHARING_VIOLATION …
-	//   the delete-pending state also blocks external file-open attempts」
-	//   stackoverflow.com/questions/799656（Renaming A Running Process' File Image On Windows）
+	// 机制出处：
+	// unprotect.it/technique/process-ghosting —'Once a file is mapped into an image section,
+	// attempts to open it with FILE_WRITE_DATA will fail with ERROR_SHARING_VIOLATION …
+	// the delete-pending state also blocks external file-open attempts'
+	// stackoverflow.com/questions/799656（Renaming A Running Process' File Image On Windows）
 	// 重命名失败 ⇒ 不回滚、不阻断（不比现状更差）：照旧弹 UAC 尝试写入，写不进去由 A2 落盘校验判。
 	if swapped, _ := swapIn(warmupExe, tmp, logf); swapped {
 		logf("原名已让开，提权子进程按原名写入 %s", warmupExe)
@@ -150,12 +150,11 @@ func runInstall() {
 	_ = os.Remove(marker)
 	ok := false
 	markerSHA := ""
-	// B13（定因证据 out/b43-run.log 17:12:55 的 marker 原文）：
-	//   COPY_FAIL open C:\Windows\System32\WeatherScr.scr: The process cannot access
-	//   the file because it is being used by another process.
+	// COPY_FAIL open C:\Windows\System32\WeatherScr.scr: The process cannot access
+	// the file because it is being used by another process.
 	// 同批读数：本机 EnableLUA=0（UAC 整个关着）、全程 0 个 consent.exe、seclogon=STOPPED，
 	// 而父进程 SELF_ELEVATED=True 且带 Mandatory Label\High Mandatory Level
-	// （out/b42-run.log）⇒ 绕 runas 重启自己只会白等 60 s，完成页还会显示与真实原因无关的 UAC 文案。
+	// ⇒ 绕 runas 重启自己只会白等 60 s，完成页还会显示与真实原因无关的 UAC 文案。
 	// ⇒ 已提权就在本进程直接写：copyFile 与 --copy-only 子进程用的是同一个函数、同一套落盘校验。
 	if isElevated() {
 		logf("本进程已提权 ⇒ 直接写入 %s（不绕 runas 重启自己）", warmupExe)
@@ -179,7 +178,7 @@ func runInstall() {
 		for i := 0; i < 120; i++ {
 			if b, err := os.ReadFile(marker); err == nil && strings.Contains(string(b), "COPY_OK") {
 				ok = true
-				// A2：marker 口径 = "COPY_OK <sha256>"（前缀逐字不变，只在其后追加 SHA）
+				// marker 口径 = "COPY_OK <sha256>"（前缀逐字不变，只在其后追加 SHA）
 				markerSHA = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(b)), "COPY_OK"))
 				break
 			}
@@ -198,16 +197,16 @@ func runInstall() {
 	}
 	logf("已写入 %s（%d 字节）", warmupExe, fileSize(warmupExe))
 
-	// A2 落盘校验（父进程侧，spec §1 A2）：marker 里的 SHA 与解包文件比对，
+	// A2 落盘校验（父进程侧）：marker 里的 SHA 与解包文件比对，
 	// **并独立**对落地文件算一次 sha256Of 比对（读 System32 文件不需要写权）。
-	// 任一不符 ⇒ 回滚（证据 out/b18-run.log:51-60：半安装态 = SCRNSAVE.EXE 指向不存在的 .scr，
+	// 任一不符 ⇒ 回滚（证据：半安装态 = SCRNSAVE.EXE 指向不存在的 .scr，
 	// 且窗口关掉后连回滚都不跑 ⇒ 校验必须在父进程侧也做一遍）。
-	// B12（spec publish-rename-swap.md §3.3）：父进程侧的读要**重试** 10 × 500 ms
+	// 父进程侧的读要**重试** 10 × 500 ms
 	// （sha256OfRetry，sha256Of 返回 "?" 视作读失败继续重试）——刚写完的文件可能被扫描器
-	// 短暂占用，**读失败 ≠ 写入失败**。证据 out/b23-run4.log PH1：文件确实落成功
+	// 短暂占用，**读失败 ≠ 写入失败**。证据 PH1：文件确实落成功
 	// （SYS32=PRESENT 1169194F = 期望新二进制的 SHA 前 8 位），一次读失败 ⇒ 判失败并把
-	// 好结果回滚掉（完成页「安装失败（已回滚）」+ 注册表回滚 = 假阴性）。
-	// 重试到超时仍读不到 ⇒ 按「大小相等 + 子进程 marker 的 SHA 匹配」放行并记日志，**不回滚**；
+	// 好结果回滚掉（完成页'安装失败（已回滚）'+ 注册表回滚 = 假阴性）。
+	// 重试到超时仍读不到 ⇒ 按'大小相等 + 子进程 marker 的 SHA 匹配'放行并记日志，**不回滚**；
 	// 只有大小不符（或 marker 是 COPY_FAIL ⇒ 上面 !ok 分支已经先回滚）才回滚。
 	wantSHA := sha256Of(tmp)
 	gotSHA, gotOK := sha256OfRetry(warmupExe, shaRetryAttempts, time.Duration(shaRetryEveryMS)*time.Millisecond)
@@ -224,22 +223,22 @@ func runInstall() {
 		}
 	} else if !shaMatches(markerSHA, wantSHA) || !shaMatches(gotSHA, wantSHA) {
 		logf("校验失败：目标 SHA256 %s，期望 %s", gotSHA, wantSHA)
-		lastVerify = "警告：已装件 SHA256 与构建件不一致（已回滚）" // R16-C：失败态也留自验记录
+		lastVerify = "警告：已装件 SHA256 与构建件不一致（已回滚）" // 失败态也留自验记录
 		rollback("System32 落盘校验失败")
 		setStatus("安装失败（已回滚）")
 		return
 	}
 	logf("已校验 %s SHA256 与解包一致", warmupExe)
 
-	// R16-C（spec r16-wizard §1C）：完成页自验行——校验通过的 SHA 现场写进 lastVerify，
-	// 完成页正文追加（finishpage.go finishVerifyLine）。用户可见判据 = 「SHA256 与构建件一致」逐字。
+	// 完成页自验行——校验通过的 SHA 现场写进 lastVerify，
+	// 完成页正文追加（finishpage.go finishVerifyLine）。界面上看得见的判据 = 'SHA256 与构建件一致'（逐字）。
 	lastVerify = fmt.Sprintf("已装件 SHA256 与构建件一致（%.16s…）", wantSHA)
 	if !gotOK {
 		lastVerify = "已装件 SHA256 现场读取失败，按 marker 与大小核验放行（无逐字比对）"
 	}
 
 	// 4 账户级：写 HKCU + Add/Remove Programs
-	// A3（spec §1 A3）：整块从「提权复制之前」挪到「落盘校验通过之后」——
+	// 整块从'提权复制之前'挪到'落盘校验通过之后'——
 	// 校验失败时上面已经 return ⇒ 不会留下指向不存在文件的 SCRNSAVE/ARP 状态。
 	// 仍在未提权的本进程里写 ⇒ hive 归属不变（登录账户）。
 	if err := writeScrSave(warmupExe); err != nil {
@@ -296,18 +295,18 @@ func runInstall() {
 		}
 	}
 
-	// B12（spec publish-rename-swap.md §3.1）：让开出来的 .old 尽力删（轮询 10 s），
+	// 让开出来的 .old 尽力删（轮询 10 s），
 	// 删不掉就**留着**（不报错、不阻塞安装）——下次安装/卸载开头还会再清一次（swapIn 开头）。
 	cleanupAsideLeftovers(warmupExe, renameSuffixOld, logf)
 
-	installOK = true // D5（spec §1.1）：成功路径在「=== 安装完成 ===」之前置真
+	installOK = true // 成功路径在'=== 安装完成 ==='之前置真
 	logf("=== 安装完成 ===")
 	logf("屏保程序 = %s；设置 = %s %s；启动 = %s /s", warmupExe, settingsTarget, settingsArgs, warmupExe)
 	setStatus("安装完成")
 }
 
 func rollback(why string) {
-	lastFail = why // D5（spec §1.1）：记录失败原因，供完成页正文取值（空则文案回落「未记录」）
+	lastFail = why // 记录失败原因，供完成页正文取值（空则文案回落'未记录'）
 	logf("回滚：%s", why)
 	if prev, err := loadState("PreviousScr"); err == nil {
 		if prev == "" {
@@ -331,7 +330,7 @@ func rollback(why string) {
 }
 
 func runUninstall() {
-	// R16-A（spec r16-wizard §1A）：卸载与安装共用同一把锁，只许一轮在跑；
+	// 卸载与安装共用同一把锁，只许一轮在跑；
 	// 同 runInstall 的形状，锁在 defer wmAppDone 之前。
 	if !acquireInstall() {
 		logf("安装/卸载已在进行，忽略重复触发")
@@ -345,13 +344,13 @@ func runUninstall() {
 			setStatus("卸载失败")
 		}
 	}()
-	// R13（spec §4）：每次跑卸载都重置结果态，避免复用上一次的值污染完成页文案。
+	// 每次跑卸载都重置结果态，避免复用上一次的值污染完成页文案。
 	uninstallOK = false
 	lastFail = ""
 	logf("=== 卸载开始 ===")
 	prev, _ := loadState("PreviousScr")
 	logf("安装前记录的屏保程序 = %q", prev)
-	// 证据 E5（spec §0.5）：记录值就是本程序自己的安装路径时（双安装把回滚值覆盖成了安装后的值），
+	// 证据 E5：记录值就是本程序自己的安装路径时（双安装把回滚值覆盖成了安装后的值），
 	// 恢复它等于把 SCRNSAVE.EXE 指向一个即将被卸载删除的文件 ⇒ 按"安装前没有屏保"处理。
 	if isSelfScrPath(prev, warmupExe) {
 		logf("记录值 = 本程序安装路径（自指）⇒ 按\"安装前没有屏保\"处理，卸载后删除 SCRNSAVE.EXE 值")
@@ -359,9 +358,9 @@ func runUninstall() {
 	}
 
 	// 删 System32 里的文件需要提权
-	// 证据 E-uninstall（spec publish-uninstall-stopscr §0，源 out/notes-b5c.md §3）：
+	// 证据 E-uninstall：
 	// 运行中的同名进程以镜像方式占用该文件 ⇒ 提权删除也被拒（DEL_FAIL Access is denied），
-	// 且进程刚被终止后镜像锁仍会短暂残留 ⇒ 先停进程、再轮询「可删」，最后才请求提权。
+	// 且进程刚被终止后镜像锁仍会短暂残留 ⇒ 先停进程、再轮询'可删'，最后才请求提权。
 	// 轮询在提权**之前**，不替换下面的 marker 轮询（120×500 ms 口径不变）。
 	if n := stopRunningScrImages(warmupExe); n > 0 {
 		logf("已停止 %d 个运行中的屏保进程", n)
@@ -370,20 +369,20 @@ func runUninstall() {
 	}
 	waitFileDeletable(warmupExe)
 	if fileExists(warmupExe) {
-		// B12（spec publish-rename-swap.md §3.2）：停进程后**不要**对原名文件调 os.Remove/DeleteFile
-		// —— 删除会把名字送进 delete-pending，之后连重命名都 FAIL（证据 out/b23-run4.log：
+		// 停进程后**不要**对原名文件调 os.Remove/DeleteFile
+		// —— 删除会把名字送进 delete-pending，之后连重命名都 FAIL（证据 ：
 		// DELETABLE=False after poll、RESTORE_SHA=LOCKED；b30 的访问掩码矩阵全 FAIL）。
-		// 机制出处（简报 §4 逐字引用）：unprotect.it/technique/process-ghosting —
-		// 「Once a file is mapped into an image section, attempts to open it with FILE_WRITE_DATA
+		// 机制出处：unprotect.it/technique/process-ghosting —
+		// 'Once a file is mapped into an image section, attempts to open it with FILE_WRITE_DATA
 		// will fail with ERROR_SHARING_VIOLATION … the delete-pending state also blocks external
-		// file-open attempts」；stackoverflow.com/questions/799656（正在运行的 exe 可以被重命名）。
+		// file-open attempts'；stackoverflow.com/questions/799656（正在运行的 exe 可以被重命名）。
 		// ⇒ 先重命名成 .del-<时间戳> 让开，再轮询删**重命名后的**路径；删不掉留着不报错。
 		// 父进程未提权 ⇒ 对 System32 多半没有 DELETE 权（重命名也要 DELETE）：让开失败就交回
-		// 下面的提权子进程（子进程有 DELETE 权，同样走「先重命名再删」）。
+		// 下面的提权子进程（子进程有 DELETE 权，同样走'先重命名再删'）。
 		if deleteRenamed(warmupExe, logf) {
 			logf("已删除 %s", warmupExe)
 		} else if isElevated() {
-			// B13：已提权（EnableLUA=0 的机器上父进程就是 High 完整令牌）⇒ 不绕 runas。
+			// 已提权（EnableLUA=0 的机器上父进程就是 High 完整令牌）⇒ 不绕 runas。
 			// 走到这里说明 deleteRenamed 已失败 = 文件被占用，成败交末尾核验判。
 			logf("本进程已提权仍删不掉 %s（文件被占用）⇒ 不绕 runas，由末尾核验判成败", warmupExe)
 			marker := filepath.Join(os.TempDir(), fmt.Sprintf("wssetup_del_%d.txt", os.Getpid()))
@@ -442,26 +441,26 @@ func runUninstall() {
 			}
 		}
 	}
-	// 证据 E-arp（spec §0 / §1 A3，卸载页日志实测 b17_u1.png）：键本就不存在时
-	// RegDeleteKey 返回 ERROR_FILE_NOT_FOUND，旧代码打印「失败」属噪声 ⇒ 幂等视作成功。
+	// 证据 E-arp（卸载页日志实测）：键本就不存在时
+	// RegDeleteKey 返回 ERROR_FILE_NOT_FOUND，旧代码打印'失败'属噪声 ⇒ 幂等视作成功。
 	if err := removeARP(); !arpDeleteIsOk(err) {
 		logf("删除 Add/Remove Programs 项失败：%v", err)
 	} else {
 		logf("已删除 Add/Remove Programs 项")
 	}
-	// B13 / D9（证据 out/b41-run.log PH2 与 out/b42-run.log PH2：完成页写 卸载完成，
+	// B13 / D9（证据 PH2 与 PH2：完成页写 卸载完成，
 	// 而探针断言行 SYS32_EXISTS_AFTER_UNINSTALL=True —— 文件从头到尾没被删掉）。
 	// 卸载成功判据 = 文件真的不在了；marker 的 DEL_OK 与流程走完都不算。
 	if fileExists(warmupExe) {
 		logf("卸载核验失败：%s 仍然存在", warmupExe)
 		logf("=== 卸载未完成（文件仍在）===")
-		// R13（spec §4）：核验失败原因写进 lastFail，完成页正文的 %s 取它（finishBodyFor(opUninstall,false,…)）。
+		// 核验失败原因写进 lastFail，完成页正文的 %s 取它（finishBodyFor(opUninstall,false,…)）。
 		lastFail = "文件 C:\\Windows\\System32\\WeatherScr.scr 仍存在"
 		setStatus("卸载失败（文件仍在，未删除）")
 		return
 	}
 	logf("卸载核验通过：%s 已不存在", warmupExe)
-	// R13（spec §4）：核验通过 ⇒ 卸载成功态，完成页取「卸载完成」文案。
+	// 核验通过 ⇒ 卸载成功态，完成页取'卸载完成'文案。
 	uninstallOK = true
 	logf("=== 卸载完成 ===")
 	setStatus("卸载完成")

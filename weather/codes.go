@@ -1,5 +1,4 @@
 // Package weather 实现 Open-Meteo 客户端与上游逐字段对齐的数据 schema。
-//
 // 基准来源（逐字核对，2026-10-15）：上游 Basjohn/ShittyRandomPhotoScreenSaver
 // main 分支 weather/open_meteo_provider.py。
 package weather

@@ -1,22 +1,20 @@
-// Package ui 侧的叠加层对拍（R5 卡 4 判据 3 的"同一批数字再对一遍 + 建场态 + 200 帧连跑"）。
-//
+// Package ui 侧的叠加层对拍（判据 3 的"同一批数字再对一遍 + 建场态 + 200 帧连跑"）。
 // 常量来源 = 迁移**前**的 ui 旧实现跑同一固定输入打印出来的数字（逐字抄录、不改位）：
 //
 //	取数件 = ui/zz_pre_overlay_test.go（临时，取数后删除），命令
 //	WS_PRE_OVERLAY=1 go test -tags=novulkan,nox11 -count=1 -run TestZZPreOverlayNumbers ./ui -v
-//	全量输出（287 行 PRE）存档 = out/pre-overlay-numbers.txt；本文件 overlayWant 逐字抄录。
+//	全量输出（287 行 PRE）存档 = ；本文件 overlayWant 逐字抄录。
 //
 // 判据 = 迁移后（ui/effects.go 走 ui/overlay 的导出函数）在同一固定输入下与旧实现
 // **逐位相等**（比较 %v 全精度字符串 ⇒ 末位不同也会红）。
-//
 // 覆盖三层：
 //
 //	① 函数与常量（雾的 sc/浓度/封顶/变体/倍率、提亮掩膜、闪电矩形、高斯核、生成函数）
-//	   + ui 侧别名常量必须与 ui/overlay 的定义同值 + fogNetScale（净倍率常量本体留在 ui）
+//	 + ui 侧别名常量必须与 ui/overlay 的定义同值 + fogNetScale（净倍率常量本体留在 ui）
 //	② 走贴图口的闪电形状掩膜（glow/* = BoltGlowMask 注入 ui 的取图口后的 ok/矩形/峰值/整张掩膜字节的 FNV）
 //	③ 建场态（newField 全链 = 生成顺序 + 随机数取用序列 + 实例抖动 + 变体 + 封顶）
 //	④ 200 帧连跑（Fog 昼/夜 + Snow + Thunder 4 类 × 两制 × 2 种子 = 16 组；每帧全场粒子 20 个字段
-//	   的 %v 全精度串做 FNV-64a，逐帧累计 acc + 第 0/1/2/100/199 帧的 mark ⇒ 位移序列逐帧钉死）
+//	 的 %v 全精度串做 FNV-64a，逐帧累计 acc + 第 0/1/2/100/199 帧的 mark ⇒ 位移序列逐帧钉死）
 package ui
 
 import (
@@ -322,7 +320,7 @@ var overlayWant = map[string]string{
 	"frames/thunder/1920x1080/7/mark199":          "12906482892032886565",
 }
 
-// zzOverlayState 全场粒子状态的逐字摘要（%v 全精度，20 个字段；与卡 3 的 zzParticlesState 同口径）。
+// zzOverlayState 全场粒子状态的逐字摘要（%v 全精度，20 个字段；与zzParticlesState 同口径）。
 func zzOverlayState(f *Field) string {
 	out := ""
 	for i := range f.parts {

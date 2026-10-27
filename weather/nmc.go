@@ -1,31 +1,23 @@
 package weather
 
-// 中国官方预警信号层（批次 b-alert-v2 第 1 步）。
-//
-// 端点逐字（spec/b-alert-v2.md 第 1 步）：
-//
+// 中国官方预警信号层。
+// 端点逐字（第 1 步）：
 //	GET https://www.nmc.cn/rest/findAlarm?pageNo=1&pageSize=20&signaltype=&signallevel=&province=<官方全称>
-//
-// **禁止传中文 signaltype / signallevel**（§15.2 决定性实测）：
-//
+// **禁止传中文 signaltype / signallevel**（决定性实测）：
 //	signaltype=暴雨（全省）= 0；signaltype=暴雨&province=云南省 = 0
-//	  —— 而同一省**当时就有一条暴雨黄色预警**
+//	 —— 而同一省**当时就有一条暴雨黄色预警**
 //	signallevel=红色 = 0；signallevel=暴雨红色 = 0
 //	⇒ 类型与等级必须**客户端解析**，不能交给接口过滤 ⇒ 两个参数恒留空。
-//
-// 字段逐字（§15.3，462 条全量解析）：`alertid` `issuetime` `title` `url` `pic`。
-//
-// 编码闭表（§15.3 实测）：`pic` 文件名 = `p` + **4 位类型码** + **3 位等级码**，
+// 字段逐字（462 条全量解析）：`alertid` `issuetime` `title` `url` `pic`。
+// 编码闭表（实测）：`pic` 文件名 = `p` + **4 位类型码** + **3 位等级码**，
 // 等级码 `002=橙 003=黄 004=蓝`；类型码 13 类（见下方 nmcTypeCodes）。
 // **红色等级码未实测**（现网 462 条无红色，推测 001 ⇒ 未取证）
 // ⇒ 红色只由标题颜色词判定，不写进等级码闭表。
-//
 // 交叉校验：pic 码解出的 (类型, 等级) 与标题正则解出的 (类型, 颜色) 互相校验，
-// 不一致 ⇒ 记日志并**降级为「仅标题」**（不静默丢弃；§15.3 的 3 条不匹配样本未取证）。
-//
-// count=0 的口径（§15.1 判据缺陷，决定性）：`province=zzzz省`（故意无效）也返回
+// 不一致 ⇒ 记日志并**降级为'仅标题'**（不静默丢弃； 的 3 条不匹配样本未取证）。
+// count=0 的口径（判据缺陷，决定性）：`province=zzzz省`（故意无效）也返回
 // `code=0 msg=success count=0` ⇒ **count=0 不能证明省名被接受**
-// ⇒ Note 置 `count0-unknown`，不得当「该省无预警」上报。
+// ⇒ Note 置 `count0-unknown`，不得当'该省无预警'上报。
 
 import (
 	"context"
@@ -43,21 +35,21 @@ import (
 // 它在 weather/window.go 的禁改清单里 ⇒ 这里只引用、不重复定义、不改值）。
 const OfficialMaxWindowHours = officialMaxWindowHours
 
-// nmcFindAlarmURL 端点与参数形状（逐字，spec/b-alert-v2.md 第 1 步）。
+// nmcFindAlarmURL 端点与参数形状（逐字， 第 1 步）。
 const nmcFindAlarmURL = "https://www.nmc.cn/rest/findAlarm"
 
-// nmcQueryFixed 固定参数段：signaltype / signallevel **恒空**（§15.2 实测中文过滤不可用）。
+// nmcQueryFixed 固定参数段：signaltype / signallevel **恒空**（实测中文过滤不可用）。
 const nmcQueryFixed = "pageNo=1&pageSize=20&signaltype=&signallevel=&province="
 
-// nmcIssuetimeLayout issuetime 字段的墙钟格式（§15.3 逐字样例 `2026-10-21 22:44`）。
+// nmcIssuetimeLayout issuetime 字段的墙钟格式（逐字样例：年-月-日 时:分）。
 const nmcIssuetimeLayout = "2006-01-02 15:04"
 
-// nmcTitleRe 标题正则（§15.3 逐字，462 条中 3 条不匹配 ⇒ 不匹配走降级，不得静默丢弃）。
+// nmcTitleRe 标题正则（逐字，462 条中 3 条不匹配 ⇒ 不匹配走降级，不得静默丢弃）。
 const nmcTitleRe = `发布(.+?)(蓝色|黄色|橙色|红色)预警信号`
 
 var nmcTitleRX = regexp.MustCompile(nmcTitleRe)
 
-// nmcTypeCodes 类型码闭表（§15.3 实测 13 类，逐字抄 out/nmc-pic-code.txt）。
+// nmcTypeCodes 类型码闭表（实测 13 类，逐字抄）。
 var nmcTypeCodes = map[string]string{
 	"0000": "海上雷雨大风",
 	"0002": "暴雨",
@@ -74,8 +66,7 @@ var nmcTypeCodes = map[string]string{
 	"0030": "森林火险",
 }
 
-// nmcLevelCodes 等级码闭表（§15.3 实测 3 条：002=橙 003=黄 004=蓝）。
-//
+// nmcLevelCodes 等级码闭表（实测 3 条：002=橙 003=黄 004=蓝）。
 // 红色码未实测 ⇒ **不入表**（推测 001，未取证）；红色由标题颜色词判定。
 var nmcLevelCodes = map[string]int{
 	"002": 3, // 橙
@@ -89,9 +80,9 @@ var nmcColorLevels = map[string]int{
 	"蓝色": 1, "黄色": 2, "橙色": 3, "红色": 4,
 }
 
-// nmcTypePriority 同级显示优先级（spec/b-alert-v2.md 第 6 步逐字：
+// nmcTypePriority 同级显示优先级（第 6 步逐字：
 // 暴雨/台风 > 暴雪/寒潮 > 雷电/大风 > 其他）。
-// 台风不在 §15.3 的 13 类实测表里（现网无台风条目）⇒ 只按标题类型名参与排序。
+// 台风不在 的 13 类实测表里（现网无台风条目）⇒ 只按标题类型名参与排序。
 func nmcTypePriority(t string) int {
 	switch {
 	case strings.Contains(t, "暴雨"), strings.Contains(t, "台风"):
@@ -108,7 +99,7 @@ func nmcTypePriority(t string) int {
 // nmcCST NMC 的 issuetime 是北京墙钟（UTC+8）。
 var nmcCST = time.FixedZone("CST", 8*3600)
 
-// NMCCount0Unknown count=0 时的带外标注（§15.1：无效省名也返回 0，不得当"该省无预警"上报）。
+// NMCCount0Unknown count=0 时的带外标注（无效省名也返回 0，不得当"该省无预警"上报）。
 const NMCCount0Unknown = "count0-unknown"
 
 // NMCAlarm 一条官方预警信号。
@@ -151,7 +142,7 @@ func NMCTypeCodes() map[string]string { return nmcTypeCodes }
 // NMCLevelCodes 返回等级码闭表（单测钉死 3 条）。
 func NMCLevelCodes() map[string]int { return nmcLevelCodes }
 
-// NMCParsePic 解 `pic` 文件名：`p` + 4 位类型码 + 3 位等级码（§15.3 逐字）。
+// NMCParsePic 解 `pic` 文件名：`p` + 4 位类型码 + 3 位等级码。
 // 解不出 ⇒ ok=false。
 func NMCParsePic(pic string) (typeCode, levelCode string, ok bool) {
 	base := pic
@@ -173,7 +164,7 @@ func NMCParsePic(pic string) (typeCode, levelCode string, ok bool) {
 	return t, l, true
 }
 
-// NMCParseTitle 用标题正则取中文类型名与颜色词（§15.3 逐字）。
+// NMCParseTitle 用标题正则取中文类型名与颜色词。
 func NMCParseTitle(title string) (typeZh, color string, ok bool) {
 	m := nmcTitleRX.FindStringSubmatch(title)
 	if m == nil {
@@ -182,7 +173,7 @@ func NMCParseTitle(title string) (typeZh, color string, ok bool) {
 	return m[1], m[2], true
 }
 
-// nmcItem 响应里的一条条目（字段名逐字 §15.3：alertid/issuetime/title/url/pic）。
+// nmcItem 响应里的一条条目（字段名逐字 ：alertid/issuetime/title/url/pic）。
 type nmcItem struct {
 	AlertID   string `json:"alertid"`
 	IssueTime string `json:"issuetime"`
@@ -192,9 +183,8 @@ type nmcItem struct {
 }
 
 // nmcDecode 把一条条目解成 NMCAlarm（两路交叉校验，不一致 ⇒ 降级为"仅标题"）。
-//
-// 降级口径（spec 第 1 步）：pic 路只用于记日志，**显示取标题路**；
-// 标题路解不出（§15.3 的 3 条样本）⇒ 该条不参与显示（记日志，不静默丢弃 = 日志里点名）。
+// 降级口径：pic 路只用于记日志，**显示取标题路**；
+// 标题路解不出（的 3 条样本）⇒ 该条不参与显示（记日志，不静默丢弃 = 日志里点名）。
 func nmcDecode(item nmcItem) NMCAlarm {
 	a := NMCAlarm{AlertID: item.AlertID, IssueTime: item.IssueTime, Title: item.Title, URL: item.URL, Pic: item.Pic}
 	if t, l, ok := NMCParsePic(a.Pic); ok {
@@ -275,7 +265,7 @@ func NMCDecodePage(province string, body []byte) (NMCPage, error) {
 	for _, it := range r.Data.Page.List {
 		out.Items = append(out.Items, nmcDecode(it))
 	}
-	// §15.1 判据缺陷：无效省名也返回 count=0 ⇒ 0 不能证明省名被接受，
+	// 判据缺陷：无效省名也返回 count=0 ⇒ 0 不能证明省名被接受，
 	// 也不能证明该省无预警 ⇒ 只标 unknown。
 	if out.Count == 0 {
 		out.Note = NMCCount0Unknown
@@ -284,7 +274,7 @@ func NMCDecodePage(province string, body []byte) (NMCPage, error) {
 }
 
 // NMCTop 取显示用的那一条：级别最高（红>橙>黄>蓝）、同级取类型优先级
-// （暴雨/台风 > 暴雪/寒潮 > 雷电/大风 > 其他）、再同级取最新（§11「同级取最新」）。
+// （暴雨/台风 > 暴雪/寒潮 > 雷电/大风 > 其他）、再同级取最新（'同级取最新'）。
 // 标题路解不出的条目（TitleLevel=0）不参与显示。
 func NMCTop(p NMCPage) (NMCAlarm, bool) {
 	var best NMCAlarm
@@ -311,9 +301,8 @@ func NMCTop(p NMCPage) (NMCAlarm, bool) {
 }
 
 // NMCTypeEn 中文类型名 → 英文类型名（态① 文案用）。
-//
-// TODO(未取证)：英文名不在 §15.3 的取证范围（取证只给了中文类型码表），
-// 这里按 NMC 站面的常用英译自定，已记进 out/notes-alert-v2.md 的未决。
+// TODO(未取证)：英文名不在 的取证范围（取证只给了中文类型码表），
+// 这里按 NMC 站面的常用英译自定，已记进 的未决。
 func NMCTypeEn(zh string) string {
 	switch {
 	case strings.Contains(zh, "海上雷雨大风"):
@@ -348,7 +337,7 @@ func NMCTypeEn(zh string) string {
 	return zh
 }
 
-// NMCLevelName 档位名（1=蓝 2=黄 3=橙 4=红），逐字对应 §15.3 的颜色词。
+// NMCLevelName 档位名（1=蓝 2=黄 3=橙 4=红），逐字对应 的颜色词。
 func NMCLevelName(level int, lang string) string {
 	if lang == "zh" {
 		switch level {

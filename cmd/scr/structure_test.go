@@ -6,26 +6,24 @@ import (
 	"testing"
 )
 
-// TestAppScrStructure 结构钉（R5 拆分系列卡 9，plans/active.md:214）。
-//
+// TestAppScrStructure 结构钉（拆分系列）。
 // 钉三件事，防 cmd/scr 再退回"main.go 单文件承载全部"：
-//  1. 职责文件在场（run_lifecycle / run_events / run_orientation / run_debugflags
-//     = 卡 9 点名四件；run_panelmodel / run_alert / run_data = 卡 9 要求 2
-//     "main.go 只留 main()+args 派发" 逼出的剩余桶）；
-//  2. main.go 行数上限 ≤250（现树拆分后 213 行，只含 main() 与 args 派发目标）；
-//  3. 每个文件顶部有 `// 职责（卡9-app/scr）：` 职责注释行（并带"搬移来源"行，
-//     指向 cmd/scr/main.go 的旧行号区间），main.go 里不得再出现帧循环/事件分发的函数。
-//
+// 1. 职责文件在场（run_lifecycle / run_events / run_orientation / run_debugflags
+// = 拆分点名四件；run_panelmodel / run_alert / run_data = 拆分要求 2
+// "main.go 只留 main+args 派发" 逼出的剩余桶）；
+// 2. main.go 行数上限 ≤250（现树拆分后 213 行，只含 main 与 args 派发目标）；
+// 3. 每个文件顶部有 `// 职责（app/scr）：` 职责注释行（并带"搬移来源"行，
+// 指向 cmd/scr/main.go 的旧行号区间），main.go 里不得再出现帧循环/事件分发的函数。
 // 纯结构钉：不触碰任何行为，断言只读文件文本。
 func TestAppScrStructure(t *testing.T) {
-	// 卡 9 点名四件 + 派发件；职责注释行的关键词逐文件钉（关键词 = 卡 9 的职责名）
+	// 拆分点名四件 + 派发件；职责注释行的关键词逐文件钉（关键词 = 职责名）
 	want := []struct{ file, keyword string }{
 		{"main.go", "main()+args 派发"},
 		{"run_lifecycle.go", "屏保生命周期"},
 		{"run_events.go", "事件分发"},
 		{"run_orientation.go", "朝向切换"},
 		{"run_debugflags.go", "调试开关读取"},
-		// 剩余桶（卡 9 未点名，因"main.go 只留 main()"必须有个家）
+		// 剩余桶（拆分未点名，因"main.go 只留 main"必须有个家）
 		{"run_panelmodel.go", "面板模型换算"},
 		{"run_alert.go", "预警判据"},
 		{"run_data.go", "取数与天气态"},
@@ -71,7 +69,7 @@ func TestAppScrStructure(t *testing.T) {
 		}
 	}
 
-	// 闸门锚点钉（gate-b2:108/114-117 逐字 grep cmd/scr/main.go）：
+	// 闸门锚点钉（逐字 grep cmd/scr/main.go）：
 	// 这些取数日志锚点所在函数 refresher 因此留在 main.go —— 锚点一挪走，闸门就红。
 	for _, anchor := range []string{
 		`logf("WXURL=%s", u)`,
@@ -85,7 +83,7 @@ func TestAppScrStructure(t *testing.T) {
 		}
 	}
 
-	// 卡 9 点名的朝向消费点：仍逐字在场于 run_lifecycle.go（未被删）
+	// 拆分点名的朝向消费点：仍逐字在场于 run_lifecycle.go（未被删）
 	life, err := os.ReadFile("run_lifecycle.go")
 	if err != nil {
 		t.Fatalf("读 run_lifecycle.go: %v", err)

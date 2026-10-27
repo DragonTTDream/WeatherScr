@@ -21,7 +21,7 @@
 4) Kenney "Light Masks"
    来源: https://kenney.nl/assets/light-masks
    作者: Kenney (www.kenney.nl)
-   许可页原文: "License / Creative Commons CC0"（2026-10-20 逐页核验）
+   许可页原文: "License / Creative Commons CC0"（逐页核验）
    许可: Creative Commons Zero, CC0  http://creativecommons.org/publicdomain/zero/1.0/
    在用的文件: circle_a.png 的两份缩放副本 ——
      ui/embed/sunglow.png   （1024 宽，灰蒙档的宽光罩）
@@ -30,7 +30,7 @@
 5) Kenney "Smoke Particles"
    来源: https://kenney.nl/assets/smoke-particles
    作者: Kenney (www.kenney.nl)
-   许可页原文: "License / Creative Commons CC0"（2026-10-20 逐页核验）
+   许可页原文: "License / Creative Commons CC0"（逐页核验）
    许可: Creative Commons Zero, CC0  http://creativecommons.org/publicdomain/zero/1.0/
    在用的文件: flash05.png 的缩放副本 ui/embed/sunrays.png（512 宽，晴档太阳的星芒）。
 

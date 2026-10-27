@@ -1,6 +1,6 @@
 package main
 
-// 官方信号层的进程侧单测（批次 b-alert-v2 第 9 步：非 CN 不发 NMC）。
+// 官方信号层的进程侧单测（非 CN 不发 NMC）。
 
 import (
 	"testing"
@@ -11,7 +11,7 @@ import (
 	"github.com/DragonTTDream/WeatherScr/weather"
 )
 
-// TestNMCRequestSkipsNonCN 钉死 spec/b-alert-v2.md 目标 1 逐字：
+// TestNMCRequestSkipsNonCN 钉死 目标 1 逐字：
 // **仅 country_code==CN 才发官方请求**，非中国区不发。
 func TestNMCRequestSkipsNonCN(t *testing.T) {
 	for _, cc := range []string{"cn", "CN", " Cn "} {
@@ -27,10 +27,10 @@ func TestNMCRequestSkipsNonCN(t *testing.T) {
 }
 
 // TestOfficialAlertPriorityAndExpiry 钉死态① 的取值与 12 h 窗口
-// （§11 态① 触发条件：`issuetime` ≤12 h；12 逐字取既有常量 officialMaxWindowHours）。
+// （态① 触发条件：`issuetime` ≤12 h；12 逐字取既有常量 officialMaxWindowHours）。
 func TestOfficialAlertPriorityAndExpiry(t *testing.T) {
 	body := []byte(`{"msg":"success","code":0,"data":{"page":{"count":1,"list":[
-		{"alertid":"530000_1","issuetime":"2026-10-21 22:44",
+		{"alertid":"530000_1","issuetime":"2024-05-21 22:44",
 		 "title":"云南省红河哈尼族彝族自治州元阳县气象台发布暴雨黄色预警信号",
 		 "pic":"https://image.nmc.cn/assets/img/alarm/p0002003.png"}
 	]}}}`)
@@ -41,7 +41,7 @@ func TestOfficialAlertPriorityAndExpiry(t *testing.T) {
 	setOfficial(page, time.Now())
 	defer clearOfficial()
 
-	now := time.Date(2026, 10, 21, 23, 0, 0, 0, time.UTC)
+	now := time.Date(2024, 5, 21, 23, 0, 0, 0, time.UTC)
 	a := officialAlert(config.Config{}, now)
 	if a == nil {
 		t.Fatalf("官方信号命中应出态①")
@@ -58,7 +58,7 @@ func TestOfficialAlertPriorityAndExpiry(t *testing.T) {
 	if got := a.Text("en"); got != "Rainstorm Yellow · issued 22:44" {
 		t.Fatalf("态① 英文文案 = %q 期望 `Rainstorm Yellow · issued 22:44`", got)
 	}
-	// §11 态① 逐字：橙/红 1.2 s 呼吸，蓝/黄 恒定
+	// 态① 逐字：橙/红 1.2 s 呼吸，蓝/黄 恒定
 	if a.PulseOn {
 		t.Fatalf("黄色档应恒定不脉动")
 	}

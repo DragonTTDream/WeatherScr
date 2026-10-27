@@ -1,5 +1,4 @@
 // setshot：离线渲染设置面板并量化其可见性。
-//
 // 用途：不开设置窗口，用 gioui 的 headless GPU 把 ui.SettingsPanel 渲染成
 // PNG，逐帧打印
 //
@@ -7,9 +6,7 @@
 //
 // 把"面板到底画没画出来、画出来的东西占不占窗口"变成可核对的数字。
 // 走 cmd/fxshot 同一条 headless 路径（headless.NewWindow → Frame → Screenshot）。
-//
 // GOOS=linux 专用（headless 走 EGL/OSMesa），构建带 -tags=novulkan。
-//
 // 底色：gioui 的 Windows 后端每帧把窗口清成不透明白
 // （gioui.org v0.10.3 app/window.go:216，color.NRGBA{A:ff,R:ff,G:ff,B:ff}），
 // 设置窗口自身不画背景 ⇒ 离屏图先铺同一层清屏色，
@@ -39,8 +36,7 @@ import (
 // windowClear 是 gioui Windows 后端的每帧清屏色（app/window.go:216）。
 var windowClear = color.NRGBA{A: 0xff, R: 0xff, G: 0xff, B: 0xff}
 
-// panelModel 是面板夹具，字段与 config.Defaults() 的面板字段一一对应。
-//
+// panelModel 是面板夹具，字段与 config.Defaults 的面板字段一一对应。
 // 内联构造：config 已 import ui，量化工具不 import config，
 // 免得把 config 拖进这条离屏渲染链路（与 ui 包不 import config 同一条规矩）。
 func panelModel() ui.PanelModel {
@@ -116,9 +112,9 @@ func main() {
 		}
 	}
 
-	// 面板主题（B2）：与设置窗口同一份（配色跟随 + 面板字号），
+	// 面板主题：与设置窗口同一份（配色跟随 + 面板字号），
 	// 这样量出来的行高/包围盒与 Windows 上设置窗口的观感同口径。
-	// B5：这里构建的是**竖屏档**主题，只用于 THEME 行的口径打印；
+	// 这里构建的是**竖屏档**主题，只用于 THEME 行的口径打印；
 	// 每个尺寸实际画面板用的是下面按朝向选档的 sth。
 	th := ui.NewPanelTheme()
 	fmt.Printf("THEME textsize=%.1f fg=%s bg=%s contrastbg=%s contrastfg=%s clear=%s density=%.2f\n",
@@ -128,8 +124,8 @@ func main() {
 
 	for _, sz := range sizes {
 		w, h := sz[0], sz[1]
-		// 朝向选档（spec/b5-settings-landscape.md 点位「NewPanelTheme 按参数选档
-		// （调用方按朝向传参）」）：横屏档 19/21/13sp，竖屏档逐字不变。
+		// 朝向选档（点位'NewPanelTheme 按参数选档
+		// （调用方按朝向传参）'）：横屏档 19/21/13sp，竖屏档逐字不变。
 		// 判定用与面板内部同一条 ui.PanelIsLandscape(宽,高) ⇒ 离屏量化与
 		// 真实设置窗口走同一个判据（宽>高 且 宽≥900，b11 阈值）。
 		land := ui.PanelIsLandscape(w, h)
@@ -196,7 +192,6 @@ func writePNG(name string, img *image.RGBA) error {
 }
 
 // nonbg 返回与背景色不同的像素占比（%）。
-//
 // 背景色 = 出现最多的颜色（与 cmd/fxshot 的 quantify 同一口径）；
 // 逐 2 px 采样，三通道差之和 > 40 记为"非背景"。
 func nonbg(img *image.RGBA) float64 {
@@ -243,7 +238,6 @@ func abs(v int) int {
 }
 
 // contentBox 返回非背景像素的包围盒与"行带"数（连续有内容的 y 段）。
-//
 // 行带数 = 首屏真正画出来的行数口径：面板每行之间都有 inset 空隙，
 // 一行有内容就是一段连续的 y，行与行之间空开 ⇒ 一段对应一行。
 func contentBox(img *image.RGBA) (int, int, int, int, int) {

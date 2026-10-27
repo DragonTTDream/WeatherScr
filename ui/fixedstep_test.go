@@ -1,11 +1,9 @@
 package ui
 
-// 批次 A2 / C1 + C3（渲染侧治卡顿）的钉死单测。
-//
-// 判据来源：spec/a2-cloud-stutter.md 的 C1（位移改固定步长）与 C3（启动期拆开）。
+// / C1 + C3（渲染侧治卡顿）的钉死单测。
+// 判据来源： 的 C1（位移改固定步长）与 C3（启动期拆开）。
 // 全部断言为精确值，无 t.Skip、无放宽。
-//
-// 与 spec 的已知不自洽处（记 TODO 于 out/notes-a2.md，逐字）：
+// 与上游公式的已知不自洽处（逐字记录）：
 // C1 的钉死单测写着"喂 dt 序列 61ms,112ms,451ms,1429ms ⇒ 累计步数 = {1,1,3,3}"，
 // 而 C1 第 1 条把基准写死 fixedStep = time.Second/60 = 16.6666…ms。
 // 61 ms ÷ 16.6667 ms = 3.66 ⇒ 61 ms 那一帧在 1/60 基准下**不可能只走 1 步**；
@@ -82,7 +80,7 @@ func TestFixedStepDisplacement(t *testing.T) {
 	t.Logf("步数/位移：%v ⇒ 每步位移 %.8f（旧吃 dt 口径下四帧位移比 = %.3f）",
 		stepsPer, wantStepDx, float64(dts[len(dts)-1])/float64(dts[0]))
 	// 3 对照（旧口径的机制，解析值）：吃 dt 时逐帧位移 = vx·dt ⇒ 比值 = dt 之比 ≈ 23.43
-	//   新口径的比值必须 = 1.0（同步数 ⇒ 同位移）⇒ "一顿一顿"的机制被封死。
+	// 新口径的比值必须 = 1.0（同步数 ⇒ 同位移）⇒ "一顿一顿"的机制被封死。
 	oldRatio := float64(dts[len(dts)-1]) / float64(dts[0])
 	newRatio := dxs[len(dxs)-1] / dxs[0]
 	if oldRatio < 20 {
@@ -99,7 +97,6 @@ func TestFixedStepDisplacement(t *testing.T) {
 
 // TestFixedStepNoWallClock 钉死 C1 第 3 条：云带横移只由累加步数驱动，
 // 与墙钟无关 ⇒ 同步数 ⇒ 同 x。
-//
 // 两条驱动路径：A 用 4 个长帧（墙钟合计 2053 ms），B 用 12 个精确 fixedStep 帧
 // （墙钟合计 200 ms）。墙钟差 10 倍、步数相同 ⇒ 动画自变量与云带落位逐字相同。
 func TestFixedStepNoWallClock(t *testing.T) {

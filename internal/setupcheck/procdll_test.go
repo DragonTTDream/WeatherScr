@@ -2,18 +2,16 @@
 package setupcheck
 
 // 闸门：LazyProc 的过程名与所属 DLL 配对检查。
-//
 // 为什么需要这条测试：x/sys 的 LazyProc 在**首次调用**时才解析过程名，解析不到就直接
-// panic（不是返回 error）。低性能 x86 小主机上出过一次：GetStockObject 挂在 user32 上，安装器一绘制
+// panic（不是返回 error）。低性能 x86 实机上出过一次：GetStockObject 挂在 user32 上，安装器一绘制
 // 触发 WM_CTLCOLORSTATIC ⇒ 处理函数调用它 ⇒
 // `panic: Failed to find GetStockObject procedure in user32.dll`，
 // 窗口 3 秒内退出、退出码 2。这类错误在 Linux 侧的编译与 vet 都发现不了（调用点写法
 // 完全合法），所以判据只能做在源码层。
-//
 // 口径（两步，全部从源码推，不认变量名的字面写法）：
-//  1. 先解析各文件里的 DLL 句柄声明 `xxx = windows.NewLazySystemDLL("user32.dll")`，
-//     建立 变量名 → DLL 文件名 映射（`pvUser32` 与 `user32` 一律归一到 "user32"）。
-//  2. 再解析 `procX = <dllVar>.NewProc("Name")`，用映射查真实 DLL 文件名，对照导出表。
+// 1. 先解析各文件里的 DLL 句柄声明 `xxx = windows.NewLazySystemDLL("user32.dll")`，
+// 建立 变量名 → DLL 文件名 映射（`pvUser32` 与 `user32` 一律归一到 "user32"）。
+// 2. 再解析 `procX = <dllVar>.NewProc("Name")`，用映射查真实 DLL 文件名，对照导出表。
 // 表里没列到的过程名一律要求 user32 —— 这两个包的绝大多数过程是窗口/消息类，默认
 // user32 是严格方向：新增一个 gdi32/kernel32 过程时测试会红，逼着把它写进表里
 // （写表 = 显式承认它属于哪个 DLL），而不是等 Windows 侧运行时 panic。
@@ -40,7 +38,7 @@ var nonUser32Exports = map[string]string{
 	// kernel32.dll
 	"GetModuleHandleW":     "kernel32",
 	"GetSystemPowerStatus": "kernel32",
-	// kernel32.dll（publish-uninstall-stopscr 批次：卸载前停进程 + 轮询可删，
+	// kernel32.dll（卸载前停进程 + 轮询可删，
 	// 声明在 cmd/setup/main.go 的 kernel32 句柄上，实现见 cmd/setup/procstop_windows.go）
 	"CreateToolhelp32Snapshot": "kernel32",
 	"Process32FirstW":          "kernel32",
@@ -49,7 +47,7 @@ var nonUser32Exports = map[string]string{
 	"TerminateProcess":         "kernel32",
 	"CloseHandle":              "kernel32",
 	"CreateFileW":              "kernel32",
-	// kernel32.dll（publish-rename-swap 批次 B12：重命名让开，简报 §2 逐字 "MoveFileExW":"kernel32"，
+	// kernel32.dll（重命名让开，逐字 "MoveFileExW":"kernel32"，
 	// 声明在 cmd/setup/main.go 的 kernel32 句柄上，实现见 cmd/setup/renameswap_windows.go:moveFileEx）
 	"MoveFileExW": "kernel32",
 }
@@ -65,8 +63,8 @@ func dllBase(name string) string {
 }
 
 func TestProcDLLPairing(t *testing.T) {
-	// R5 拆分卡 10（plans/active.md:217）：cmd/setup 的 DLL 句柄与 NewProc 声明表原在 main.go，
-	// 随「页面机/共享变量」逐字搬移到 pageflow.go —— 本判据的解析入口跟着改指，判据逻辑一字未动。
+	// 安装器拆分：cmd/setup 的 DLL 句柄与 NewProc 声明表原在 main.go，
+	// 随'页面机/共享变量'逐字搬移到 pageflow.go —— 本判据的解析入口跟着改指，判据逻辑一字未动。
 	files := []string{
 		"../../cmd/setup/pageflow.go",
 		"../../cmd/scr/foreground_windows.go",

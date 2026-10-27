@@ -8,7 +8,6 @@ import (
 )
 
 // Sample 是落盘 cache/weather.json 的逐字段复刻（10 个字段，golden 口径）。
-//
 // 指针字段表示上游可为 null 的量（humidity / precipitation_probability 在上游
 // 初始化即 None，取不到时保持 null，不得填 0 冒充。
 type Sample struct {
@@ -32,7 +31,7 @@ type Sample struct {
 	// 越界一律钳位 [0,100]。
 	CloudCoverPct int `json:"cloud_cover_pct,omitempty"`
 	// CloudMedian = 当前时刻三家模型云量（gfs_seamless / icon_seamless /
-	// ecmwf_ifs025）的**中位数**（规格 1.6）。
+	// ecmwf_ifs025）的**中位数**。
 	// 天空档位由它判：&lt;30 晴、30–70 多云见日、&gt;70 阴；降水类仍由天气码判。
 	// nil = 三家都没给 / 当前小时取不到 ⇒ 档位退回 CloudCover 与天气码。
 	CloudMedian *int `json:"cloud_median,omitempty"`
@@ -51,21 +50,21 @@ type Sample struct {
 	// ⇒ 照度只能自己算（见 ui.moonIllumination）。
 	// 取 daily 数组第一个值 = 今天；带 models= 的响应里 daily 只有带模型后缀的
 	// moon_phase_* 键（见 provider.go 的 Daily 段），填值顺序 = 裸键 → 三家后缀键。
-	// nil = 取不到 ⇒ **不画月亮**（与新月一致，规格 2.3）。
+	// nil = 取不到 ⇒ **不画月亮**（与新月一致）。
 	MoonPhase *float64 `json:"moon_phase"`
 	// ---- 未来 N 小时滚动窗口的原料（逐小时数据 + 时基）----
 	// 三条**平行数组**，从响应 hourly 原样存（不排序、不去空、不补齐）：
 	// HourlyTime = iso8601 **当地墙钟**（请求带 timezone=auto ⇒ 响应无时区标记），
 	// HourlyProb = precipitation_probability（%），
-	// HourlyMM   = precipitation（mm）。
+	// HourlyMM = precipitation（mm）。
 	// 实测 forecast_days=1 → 24 条、=2 → 48 条（需求 1）。
 	HourlyTime []string  `json:"hourly_time,omitempty"`
 	HourlyProb []float64 `json:"hourly_prob,omitempty"`
 	HourlyMM   []float64 `json:"hourly_mm,omitempty"`
-	// ---- b-alert-v1 第 2/3/4 步：逐模型中位数的产物与数据闸门计数 ----
+	// ---- 逐模型中位数的产物与数据闸门计数 ----
 	// ProbN = hourly 里"至少一家模型给出概率值"的格数（三模型全缺的格不计）。
-	// MMN   = 同口径的毫米格数。Min15N = 15 分钟层解析出的格数。
-	// 第 4 步的数据闸门：ProbN < 视野小时数 ⇒ 置「数据不可用」态；
+	// MMN = 同口径的毫米格数。Min15N = 15 分钟层解析出的格数。
+	// 第 4 步的数据闸门：ProbN < 视野小时数 ⇒ 置'数据不可用'态；
 	// alertdiag 自检打印 HOURLY_SLOTS / PROB_N / MM_N / MIN15_N 用的就是这三条。
 	ProbN  int `json:"prob_n,omitempty"`
 	MMN    int `json:"mm_n,omitempty"`

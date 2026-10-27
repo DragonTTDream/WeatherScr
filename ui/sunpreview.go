@@ -7,16 +7,15 @@ import (
 )
 
 // 预览工装（dev-only，出厂二进制不读这些变量；闸门逐字证明）。
-//
-// R5 卡 2：日照渐变那一组工装系数（WS_SUN_LIFT_R / WS_SUN_LIFT_LV / WS_SUN_LIFT_FADE /
+// 日照渐变那一组工装系数（WS_SUN_LIFT_R / WS_SUN_LIFT_LV / WS_SUN_LIFT_FADE /
 // WS_SUN_SKY）随烘焙层一起迁进 ui/sky（只有天空烘焙读它们）；这里只留特效侧的 WS_GLOWP 与 WS_SUN_L。
 // 用途：出太阳铺光候选效果图的对比图交肉眼定夺，不改出厂口径。
 //
-//	WS_GLOWP=0      关掉 pkGlow 光斑粒子（Kenney light_01 的小圆圈）
-//	WS_SUN_L        旧近场铺光的 L（屏宽分数），出厂 0.18；单一连续剖面起烘焙不再读它
-//	WS_SUN_SKY      全天空那一组（主圈 + 全天空常数）的幅度系数，出厂 1.0（0 = 整组关掉）
-//	WS_SUN_LIFT_R   盘周提亮的平台半径（× 盘半径），出厂 3.0
-//	WS_SUN_LIFT_LV  盘周提亮峰值亮度，出厂 0（提亮圈已归零，见 render.go 的 sunLiftLevel）
+//	WS_GLOWP=0 关掉 pkGlow 光斑粒子（Kenney light_01 的小圆圈）
+//	WS_SUN_L 旧近场铺光的 L（屏宽分数），出厂 0.18；单一连续剖面起烘焙不再读它
+//	WS_SUN_SKY 全天空那一组（主圈 + 全天空常数）的幅度系数，出厂 1.0（0 = 整组关掉）
+//	WS_SUN_LIFT_R 盘周提亮的平台半径（× 盘半径），出厂 3.0
+//	WS_SUN_LIFT_LV 盘周提亮峰值亮度，出厂 0（提亮圈已归零，见 render.go 的 sunLiftLevel）
 //	WS_SUN_LIFT_FADE 提亮平台到归零的半径倍数（越大越没有圈边），出厂 1.2667
 var (
 	glowParticlesOn = envBool("WS_GLOWP", true)

@@ -2,7 +2,7 @@
 
 package main
 
-// R5 拆分卡 10（plans/active.md:217，证据 evidence/p8-split-wizard-settings-20261023.md）：
+// 安装器拆分：：
 // 向导页面机、页面顺序与完成页文案构造（showPage / wndProc / 完成按钮）。
 // 原 cmd/setup/main.go:56-266、305-669 逐字搬移，零行为变化；完成页文案常量本体在 finishpage.go。
 
@@ -20,7 +20,7 @@ var (
 	user32  = windows.NewLazySystemDLL("user32.dll")
 	gdi32   = windows.NewLazySystemDLL("gdi32.dll")
 	shell32 = windows.NewLazySystemDLL("shell32.dll")
-	// kernel32：卸载前停运行中的屏保进程 + 轮询「文件可删除」（证据 out/notes-b5c.md §3：
+	// kernel32：卸载前停运行中的屏保进程 + 轮询'文件可删除'（证据 ：
 	// 运行中的同名进程以镜像方式占用 System32 文件 ⇒ 删除被拒；终止后锁仍短暂残留）。
 	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
 
@@ -39,7 +39,7 @@ var (
 	procSetWindowTextW   = user32.NewProc("SetWindowTextW")
 	procGetSystemMetrics = user32.NewProc("GetSystemMetrics")
 	procLoadCursorW      = user32.NewProc("LoadCursorW")
-	// 标题栏图标（证据 spec/publish-window-icons.md §0：注册类处从未给 hIcon/hIconSm 赋值）。
+	// 标题栏图标（证据 ：注册类处从未给 hIcon/hIconSm 赋值）。
 	// LoadImageW / LoadIconW 均属 user32.dll ⇒ 不进 nonUser32Exports 表
 	// （internal/setupcheck/procdll_test.go 的默认方向就是 user32）。
 	procLoadImageW = user32.NewProc("LoadImageW")
@@ -67,9 +67,9 @@ var (
 	procTerminateProcess         = kernel32.NewProc("TerminateProcess")
 	procCloseHandle              = kernel32.NewProc("CloseHandle")
 	procCreateFileW              = kernel32.NewProc("CreateFileW")
-	// 图标资源的模块句柄：spec §1 点名 kernel32!GetModuleHandleW(nil)（不用 CurrentProcess）。
+	// 图标资源的模块句柄： 点名 kernel32!GetModuleHandleW(nil)（不用 CurrentProcess）。
 	procGetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
-	// B12 重命名交换：MoveFileExW 属 **kernel32.dll**（简报 spec/publish-rename-swap-brief.md §2），
+	// B12 重命名交换：MoveFileExW 属 **kernel32.dll**，
 	// 配对已逐字登记进 internal/setupcheck/procdll_test.go 的 nonUser32Exports（"MoveFileExW":"kernel32"）。
 	// 机制出处：unprotect.it/technique/process-ghosting + stackoverflow.com/questions/799656
 	// （正在运行的 exe 可以被重命名 ⇒ 改名让开、原名重建）。实现见 renameswap_windows.go:moveFileEx。
@@ -86,7 +86,7 @@ const (
 	wmSize          = 0x0005
 	wmNotify        = 0x004E
 	wmSettingChange = 0x001A
-	// 证据 E1（spec §0.2）：STATIC 控件自带 COLOR_BTNFACE 灰底 ⇒ 截图里正文区是一整块灰面板。
+	// 证据 E1：STATIC 控件自带 COLOR_BTNFACE 灰底 ⇒ 截图里正文区是一整块灰面板。
 	// WM_CTLCOLORSTATIC 返回 GetStockObject(WHITE_BRUSH) 后，正文底色与窗口白底（hbrBackground=1）一致。
 	wmCtlColorStatic = 0x0138
 
@@ -123,7 +123,7 @@ const (
 	SPI_GETWORKAREA = 0x0030
 
 	// 向导主窗口样式：wizardWindowSize 与 CreateWindowExW 必须用同一个值，
-	// 这样 AdjustWindowRectEx 算出的非客户区才是这个窗口真正的非客户区（证据 E3）。
+	// 这样 AdjustWindowRectEx 算出的非客户区才是这个窗口真正的非客户区。
 	wizardStyle = wsOverlappedWindow
 
 	// GetWindowLongW 的索引（nIndex）
@@ -147,7 +147,7 @@ var (
 	hLog       windows.HWND
 	hStatus    windows.HWND
 	hBtnCancel windows.HWND
-	// D5（spec §1.2）：完成页标题/正文句柄化，写法照 hStatus（main.go:532 + setStatus）
+	// 完成页标题/正文句柄化，写法照 hStatus（main.go:532 + setStatus）
 	hFinishTitle windows.HWND
 	hFinishBody  windows.HWND
 	fontH        windows.Handle
@@ -160,12 +160,12 @@ var (
 	clientW, clientH int32
 	installing       bool
 	uninstalling     bool
-	// D5（spec §1.1）：安装结果状态与失败原因，供完成页文案取值
+	// 安装结果状态与失败原因，供完成页文案取值
 	installOK bool
-	// R13（spec §2）：卸载结果状态（核验通过=true），供完成页文案取值
+	// 卸载结果状态（核验通过=true），供完成页文案取值
 	uninstallOK bool
 	lastFail    string
-	// R16-C：lastVerify 声明在无 build tag 的 installguard.go（finishpage.go 无 tag，需要跨平台可见）
+	// lastVerify 声明在无 build tag 的 installguard.go（finishpage.go 无 tag，需要跨平台可见）
 
 	logLines []string
 )
@@ -240,7 +240,7 @@ const (
 func wndProc(hwnd windows.HWND, msg uint32, wp, lp uintptr) uintptr {
 	switch msg {
 	case wmCtlColorStatic:
-		// 证据 E1（spec §0.2 / §1.1）：STATIC 默认灰底（COLOR_BTNFACE）⇒ 正文区在截图里是一整块灰面板。
+		// 证据 E1：STATIC 默认灰底（COLOR_BTNFACE）⇒ 正文区在截图里是一整块灰面板。
 		// 返回 GetStockObject(WHITE_BRUSH) 的句柄 ⇒ 正文底色与窗口白底一致。
 		brush, _, _ := procGetStockObject.Call(whiteBrush)
 		return brush
@@ -259,12 +259,12 @@ func wndProc(hwnd windows.HWND, msg uint32, wp, lp uintptr) uintptr {
 				showPage(currentPage - 1)
 			}
 		case idBtnInstall:
-			// 证据 E4（spec §0.4）：安装进行中第二次点最右按钮又跑了一遍 runInstall，
+			// 证据 E4：安装进行中第二次点最右按钮又跑了一遍 runInstall，
 			// 把 PreviousScr 覆盖成"安装后的值"。安装中直接忽略安装按钮。
 			if installing {
 				return 0
 			}
-			// B17（2026-10-21 实机定因，out/setup-full.log 18:41:32）：`--uninstall` 起的是同一套
+			// `--uninstall` 起的是同一套
 			// 向导，卸载页上的"安装"按钮只是 **disabled**；程序化 BM_CLICK（探针/自动化工具）
 			// 对 disabled 按钮照样能触发 BN_CLICKED ⇒ 卸载完顺手又跑了一遍 runInstall，
 			// 把刚删掉的 System32 文件写回来（"卸载后文件仍在"的第三个来源）。
@@ -286,8 +286,8 @@ func wndProc(hwnd windows.HWND, msg uint32, wp, lp uintptr) uintptr {
 		if installing {
 			installing = false
 			showPage(pageFinish)
-			// D5（spec §1.3）：runInstall 的**全部** return（含失败分支）都发 wmAppDone
-			// （main.go:603），旧代码在这里无条件切完成页、标题写死「安装完成」⇒ 失败时也说「安装完成」。
+			// runInstall 的**全部** return（含失败分支）都发 wmAppDone
+			// （main.go:603），旧代码在这里无条件切完成页、标题写死'安装完成'⇒ 失败时也说'安装完成'。
 			// 现在按 installOK 改写标题与正文，文案只取自 finishpage.go 的纯函数。
 			if hFinishTitle != 0 {
 				setText(hFinishTitle, finishTitle(installOK))
@@ -296,9 +296,9 @@ func wndProc(hwnd windows.HWND, msg uint32, wp, lp uintptr) uintptr {
 				setText(hFinishBody, finishBody(installOK, lastFail))
 			}
 		} else if uninstalling {
-			// R13（spec §3，根因 main.go:369-372 旧 `else if !uninstalling` ⇒ 卸载跑完无任何 showPage，
-			// 页面停在 pageProgress）：卸载跑完（成功与失败都算跑完）也切完成页，并启用「完成」按钮。
-			// showPage 会重建页并把控件追加进 pageBtns（main.go:581/595），pageFinish 页只有「完成」按钮。
+			// （根因 main.go:369-372 旧 `else if !uninstalling` ⇒ 卸载跑完无任何 showPage，
+			// 页面停在 pageProgress）：卸载跑完（成功与失败都算跑完）也切完成页，并启用'完成'按钮。
+			// showPage 会重建页并把控件追加进 pageBtns（main.go:581/595），pageFinish 页只有'完成'按钮。
 			// 不调用 setButtonsEnabled（其本体禁改，且跳过 hBtnCancel 的语义与本页无关）。
 			showPage(pageFinish)
 			if hFinishTitle != 0 {
@@ -320,8 +320,7 @@ func wndProc(hwnd windows.HWND, msg uint32, wp, lp uintptr) uintptr {
 }
 
 // setButtonsEnabled 安装/卸载进行中禁用页内导航按钮（安装/上一步/下一步），"取消"保持可用。
-//
-// 证据 E4（spec §0.4）：旧实现发的是 `SendMessageW(h, 0x00C7 /*WM_ENABLE*/)` —— Win32 没有
+// 证据 E4：旧实现发的是 `SendMessageW(h, 0x00C7 /*WM_ENABLE*/)` —— Win32 没有
 // WM_ENABLE 这条消息，控件走 DefWindowProc 直接忽略 ⇒ 实机上安装进行中按钮仍可点，
 // 第二次点击又跑了一遍 runInstall，把 PreviousScr 覆盖成安装后的值。
 // 正确做法是 user32!EnableWindow（必须在窗口所属线程调用，工作线程经 wmAppButtons 转投）。
@@ -347,15 +346,12 @@ func mkWindow(class, title string, style, x, y, w, h int32, parent windows.HWND,
 }
 
 // wizardWindowSize 向导窗口尺寸：**入参是期望的客户区尺寸**，返回客户区尺寸 + 窗口尺寸 + 左上角。
-//
-// 客户区 vs 窗口尺寸（证据 E3，spec §0.3）：控件坐标是**客户区**坐标，CreateWindowExW 的 w/h 是
+// 客户区 vs 窗口尺寸：控件坐标是**客户区**坐标，CreateWindowExW 的 w/h 是
 // **窗口**尺寸，两者差一圈非客户区。旧代码把窗口高度 460 当客户区高度布局 ⇒ 按钮 y=414 起、高 34
 // ⇒ 414..448 落在客户区（460 − 标题栏 31 − 上下边框 8 = 421）之外，被裁约 27px。
-//
 // 换算用 user32.AdjustWindowRectEx（procAdjustWindowRectEx，样式取 wizardStyle，扩展样式 0，
 // 菜单 0；WS_CHILD 不需要，本窗口是 overlapped 顶层窗口）：对空矩形调用得到该样式的非客户区尺寸，
 // 窗口尺寸 = 客户区尺寸 + 非客户区尺寸。
-//
 // 工作区 = SystemParametersInfoW(SPI_GETWORKAREA=0x0030)：当前显示器去掉任务栏的可用区
 // （SM_CXWORKAREA 只反映主屏，竖屏/多屏下会算错，故换 SPI）。
 // 顺序：客户区 ⇒ 窗口 ⇒ 夹到工作区 90% ⇒ 夹最小窗口 480×420（三个 150px 按钮并排的宽度下限 +
@@ -405,7 +401,7 @@ func wizardWindowSize(wantW, wantH int32) (clientW, clientH, winW, winH, x, y in
 }
 
 // loadModuleIcon 按候选 ID 依次 LoadImageW，返回命中的 ID 与句柄（都没命中 ⇒ (0, 0)）。
-// 本函数只做 Win32 调用；「取第一个非 0 句柄」的择一逻辑在 iconres.go 的 pickIconResourceID
+// 本函数只做 Win32 调用；'取第一个非 0 句柄'的择一逻辑在 iconres.go 的 pickIconResourceID
 // （无 build tag ⇒ Linux 侧有表驱动单测）。
 func loadModuleIcon(hInst uintptr, ids []int, px int32) (int, uintptr) {
 	handles := make([]uintptr, len(ids))
@@ -419,20 +415,17 @@ func loadModuleIcon(hInst uintptr, ids []int, px int32) (int, uintptr) {
 }
 
 // wizardIcons 从**本模块的图标资源**取标题栏/任务栏图标，填 wndClassExW.hIcon / hIconSm。
-//
-// 证据 spec/publish-window-icons.md §0：注册窗口类处从未给这两个字段赋值 ⇒ 标题栏与
-// 任务栏是系统通用图标。资源 ID 首选 1（brief §2：`rsrc -ico` 嵌进 syso 的是
+// 证据 ：注册窗口类处从未给这两个字段赋值 ⇒ 标题栏与
+// 任务栏是系统通用图标。资源 ID 首选 1（设计口径：`rsrc -ico` 嵌进 syso 的是
 // RT_GROUP_ICON ID 1；实测 cmd/scr 的 syso 就是 1）；实测 cmd/setup 的 syso（图标 + manifest）
 // 把图标组排到了 ID 2，故候选序列 = iconResourceIDs（见 iconres.go 的注释与
-// out/notes-window-icons.md 的解析输出）。
-//
+// 的解析输出）。
 // 口径：
-//   - 模块句柄 = kernel32!GetModuleHandleW(nil)（spec §1 点名）；
-//   - 边长 = iconSizes()：hIcon 32 px、hIconSm = GetSystemMetrics(SM_CXSMICON) px（brief §1）；
-//   - MAKEINTRESOURCE(id) 在 Go 侧 = 把 uintptr(id) 当 *uint16 传（brief §2）；
-//   - 任何一路取不到都走 LoadIconW(0, IDI_APPLICATION) 兜底，**绝不 panic**（brief §2）；
-//   - 禁止硬编码路径读 .ico —— 发布树里 .ico 只作为构建期资源（spec §1）。
-//
+// - 模块句柄 = kernel32!GetModuleHandleW(nil)；
+// - 边长 = iconSizes：hIcon 32 px、hIconSm = GetSystemMetrics(SM_CXSMICON) px；
+// - MAKEINTRESOURCE(id) 在 Go 侧 = 把 uintptr(id) 当 *uint16 传；
+// - 任何一路取不到都走 LoadIconW(0, IDI_APPLICATION) 兜底，**绝不 panic**；
+// - 禁止硬编码路径读 .ico —— 发布树里 .ico 只作为构建期资源。
 // 纯逻辑（ID 候选择一、尺寸换算、兜底选择）在 iconres.go（无 build tag，Linux 侧有表驱动单测）。
 func wizardIcons() (windows.Handle, windows.Handle) {
 	hInst, _, _ := procGetModuleHandleW.Call(0)
@@ -455,7 +448,7 @@ func runGUI() {
 	cur, _, _ := procLoadCursorW.Call(0, 32512 /*IDC_ARROW*/)
 	wc.hCursor = windows.Handle(cur)
 	wc.hBackground = 6 // COLOR_WINDOW+6
-	// 证据 spec/publish-window-icons.md §0：这两项此前从未赋值 ⇒ 标题栏/任务栏是通用图标。
+	// 证据 ：这两项此前从未赋值 ⇒ 标题栏/任务栏是通用图标。
 	wc.hIcon, wc.hIconSm = wizardIcons()
 	wc.lpszClassName = utf16Ptr("WeatherScrSetupWnd")
 	if r, _, _ := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc))); r == 0 {
@@ -510,7 +503,7 @@ func runGUI() {
 
 // mkStatic/mkButton 建页内控件并登记（切页时统一销毁，见 showPage）。
 func mkStatic(label string, x, y, w, h int32) windows.HWND {
-	// 证据 E2（spec §0.1）：Win32 里 SS_LEFT = 0x0000、SS_CENTER = 0x0001，
+	// 证据 E2：Win32 里 SS_LEFT = 0x0000、SS_CENTER = 0x0001，
 	// 旧代码在样式里加上了 SS_CENTER 的那个位、却注释成 SS_LEFT ⇒ 实机正文是居中排列。
 	// 正解：SS_LEFT = 0x0000，样式就是 wsChild|wsVisible（不再带那个位）。
 	hwnd := mkWindow("STATIC", label, wsChild|wsVisible /*SS_LEFT = 0x0000*/, x, y, w, h, hMain, 0)
@@ -539,7 +532,7 @@ func showPage(p int32) {
 	hLog, hStatus, hBtnCancel = 0, 0, 0
 	hFinishTitle, hFinishBody = 0, 0
 	currentPage = p
-	W, H := clientW, clientH // 客户区坐标：控件坐标与窗口尺寸不是一回事（证据 E3）
+	W, H := clientW, clientH // 客户区坐标：控件坐标与窗口尺寸不是一回事
 	by := buttonTopY(H)      // 按钮行顶边 = 客户区高度 − (按钮高 34 + 底边留白 12)
 	switch p {
 	case pageWelcome:
@@ -586,7 +579,7 @@ func showPage(p int32) {
 			procEnableWindow.Call(uintptr(hInstall), 0)
 		}
 	case pageFinish:
-		// D5（spec §1.2）：标题与正文句柄化（写法照 hStatus），文案取自 finishpage.go 的纯函数；
+		// 标题与正文句柄化（写法照 hStatus），文案取自 finishpage.go 的纯函数；
 		// 建页时先按成功态落文案，wmAppDone 分支（main.go:316 起）随后按 installOK 改写。
 		hFinishTitle = mkStatic(finishTitle(true), 14, 12, W-28, 24)
 		hFinishBody = mkStatic(finishBody(true, ""), 14, 44, W-28, H-44-58)

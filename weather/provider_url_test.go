@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// 取数 URL 口径 + 带外可观测钉死（2026-10-22 实机取证：代理配置生效但服务端
+// 取数 URL 口径 + 带外可观测钉死（实机取证：代理配置生效但服务端
 // 只收到自检请求，日志里没有"这次走了哪个 URL"可指名 ⇒ 加 OnRequest 仪器）。
 
 func TestWxURLObelysBaseURL(t *testing.T) {
@@ -14,9 +14,9 @@ func TestWxURLObelysBaseURL(t *testing.T) {
 		base string
 		want string
 	}{
-		{"http://192.168.1.9:8733", "http://192.168.1.9:8733/v1/forecast"},
-		{"http://192.168.1.9:8733/", "http://192.168.1.9:8733/v1/forecast"},
-		{"http://192.168.1.9:8733//", "http://192.168.1.9:8733/v1/forecast"},
+		{"http://127.0.0.1:8733", "http://127.0.0.1:8733/v1/forecast"},
+		{"http://127.0.0.1:8733/", "http://127.0.0.1:8733/v1/forecast"},
+		{"http://127.0.0.1:8733//", "http://127.0.0.1:8733/v1/forecast"},
 		{"", WeatherURL}, // 空 = 直连官方口径
 	}
 	for _, c := range cases {
@@ -39,9 +39,9 @@ func TestOnRequestSeesFullURL(t *testing.T) {
 	defer srv.Close()
 
 	cl := &Client{HTTP: srv.Client(), BaseURL: srv.URL}
-	cl.HasCoords, cl.Lat, cl.Lon = true, 29.2772, 104.7044
+	cl.HasCoords, cl.Lat, cl.Lon = true, 30.2495, 120.1583
 	cl.OnRequest = func(u string) { hookURL = u }
-	_, _ = cl.Fetch("Ziliujing")
+	_, _ = cl.Fetch("Hangzhou")
 
 	if gotPath != "/v1/forecast" {
 		t.Errorf("服务端收到的路径 = %q，期望 /v1/forecast", gotPath)
@@ -68,11 +68,11 @@ func TestOnRequestNilSafe(t *testing.T) {
 	}))
 	defer srv.Close()
 	cl := &Client{HTTP: srv.Client(), BaseURL: srv.URL}
-	cl.HasCoords, cl.Lat, cl.Lon = true, 29.2772, 104.7044
+	cl.HasCoords, cl.Lat, cl.Lon = true, 30.2495, 120.1583
 	if cl.OnRequest != nil {
 		t.Fatalf("零值 Client 不该带 OnRequest")
 	}
-	if _, err := cl.Fetch("Ziliujing"); err != nil {
+	if _, err := cl.Fetch("Hangzhou"); err != nil {
 		t.Logf("Fetch 返回错误（解析口径允许，重点是没 panic）：%v", err)
 	}
 }

@@ -2,8 +2,7 @@ package weather
 
 import "time"
 
-// 批次 A1（spec/a1-fetch-polite.md S2/S3）：取数侧防堆积、防限流的两个纯函数。
-//
+// （S2/S3）：取数侧防堆积、防限流的两个纯函数。
 // 纯函数 = 无副作用、无随机、不读 time.Now：同一入参永远同一输出 ⇒ 单测可逐值钉死，
 // 实机日志可复现对拍。
 
@@ -16,12 +15,10 @@ var backoffLadder = []time.Duration{
 }
 
 // NextRefreshInterval 按"连续失败次数"给出下一次取数前该等多久。
-//
-//   - failCount <= 0（本轮成功 ⇒ 复位）⇒ 原样返回 base；
-//   - 否则按 1m, 2m, 5m, 10m 依次取，第 4 次及以后固定 10m 封顶；
-//   - 结果**不得小于 base**（base=5m 时不会退到 1m，把 refresh_minutes 调大是用户意图）。
-//
-// 注意：本函数只决定"下周期"，不做周期内重试 —— 用户令「请求超时就下次再请求」保持。
+// - failCount <= 0（本轮成功 ⇒ 复位）⇒ 原样返回 base；
+// - 否则按 1m, 2m, 5m, 10m 依次取，第 4 次及以后固定 10m 封顶；
+// - 结果**不得小于 base**（base=5m 时不会退到 1m，把 refresh_minutes 调大是配置意图）。
+// 注意：本函数只决定"下周期"，不做周期内重试 —— 口径：请求超时就下一周期再请求。
 func NextRefreshInterval(failCount int, base time.Duration) time.Duration {
 	if failCount <= 0 {
 		return base
@@ -36,11 +33,10 @@ func NextRefreshInterval(failCount int, base time.Duration) time.Duration {
 	return base
 }
 
-// OfficialJitterMax = 官方观测请求的错峰抖动上限（spec S3：0–30 s）。
+// OfficialJitterMax = 官方观测请求的错峰抖动上限。
 const OfficialJitterMax = 30 * time.Second
 
 // OfficialJitter 由 seed 确定性地算出 [0, OfficialJitterMax] 内的抖动。
-//
 // 算法 = splitmix64 的收尾三步（纯算术、无状态、无随机源）：
 // 同一 seed 两次调用必然相等；跨大量 seed 时均匀铺满区间 ⇒ 官方拉取不会
 // 与天气刷新钉在同一刻齐发。

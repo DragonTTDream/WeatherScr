@@ -1,23 +1,21 @@
-// Package geo 的 NMC 省名闭表（批次 b-alert-v2 第 2 步）。
-//
-// 逐字来源：`out/nmc-province-table.txt`（34 个 ISO3166-2 官方全称逐条实测，
-// spec/alert-latency-and-logic.md §15.1）。键 = `ISO3166-2-lvl4`
-// （§13.2 定案：**语言无关的行政区码**，不再靠字符串去后缀），
+// Package geo 的 NMC 省名闭表。
+// 逐字来源：34 个 ISO3166-2 官方全称逐条实测。
+// 键 = `ISO3166-2-lvl4`
+// （定案：**语言无关的行政区码**，不再靠字符串去后缀），
 // 值 = NMC `findAlarm?province=` 实测接受的**官方全称**
-// （含「自治区/壮族自治区/回族自治区/维吾尔自治区」）。
-//
-// 实测要点（§15.1，决定性）：
-//   - `province=zzzz省`（故意无效）也返回 `code=0 msg=success count=0`
-//     ⇒ **count=0 不能证明省名被接受**，京/津/沪 的 0 无法与「取值不被接受」区分
-//     ⇒ 带外日志必须记 `NOTE=count0-unknown`，不得当「该省无预警」上报。
-//   - 重庆市（直辖市）实测 count=5 ⇒ 官方全称可用；北京市 实测 count=0，
-//     本表按官方全称「北京市」发（接受性无法用 count 验证 ⇒ 已列未决）。
-//   - 台湾/香港/澳门 实测 count=0，按官方全称入表（闭表长度必须 = 34，单测钉死）。
+// （含'自治区/壮族自治区/回族自治区/维吾尔自治区'）。
+// 实测要点（决定性）：
+// - `province=zzzz省`（故意无效）也返回 `code=0 msg=success count=0`
+// ⇒ **count=0 不能证明省名被接受**，京/津/沪 的 0 无法与'取值不被接受'区分
+// ⇒ 带外日志必须记 `NOTE=count0-unknown`，不得当'该省无预警'上报。
+// - 重庆市（直辖市）实测 count=5 ⇒ 官方全称可用；北京市 实测 count=0，
+// 本表按官方全称'北京市'发（接受性无法用 count 验证 ⇒ 已列未决）。
+// - 台湾/香港/澳门 实测 count=0，按官方全称入表（闭表长度必须 = 34，单测钉死）。
 package geo
 
 import "strings"
 
-// nmcProvinces：ISO3166-2-lvl4 → NMC 官方全称（34 条，逐字抄 out/nmc-province-table.txt）。
+// nmcProvinces：ISO3166-2-lvl4 → NMC 官方全称（34 条，逐字抄）。
 var nmcProvinces = map[string]string{
 	"CN-11": "北京市",
 	"CN-12": "天津市",
@@ -63,7 +61,6 @@ func NMCProvince(code string) (string, bool) {
 }
 
 // nmcISOAlpha 中国省级 ISO 3166-2 的**字母子码** → 数字子码。
-//
 // 实测：Nominatim 的 `address["ISO3166-2-lvl4"]` 对四川给的是 `CN-SC`（字母），
 // 而闸门与 nmcdiag 走的是数字后缀（`CN-51`）⇒ 两种写法都要认。
 // 逐字取 ISO 3166-2:CN 的 34 个字母子码。

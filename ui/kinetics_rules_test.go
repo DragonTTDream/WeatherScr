@@ -1,20 +1,18 @@
 package ui
 
-// B3 三条探针判据（spec/b3-kinetics.md 闸门第 3 条），逐类 800 固定步：
-//
-//	① 逐朵最终显示宽 >= 480 px @1080（R4，evidence/p8-numbers-20261023.md:11-15）
-//	② 全部云 p.spr ∈ {0,1,3}（R3 白名单 cloud1/cloud2/cloud4，evidence/p8-numbers-20261023.md:26-33）
-//	③ 同帧进场且 |Δx| < 上一条半宽 的样本数 = 0（R1"决不能同出同进"，:24）
-//
+// B3 三条探针判据（闸门第 3 条），逐类 800 固定步：
+//	① 逐朵最终显示宽 >= 480 px @1080（11-15）
+//	② 全部云 p.spr ∈ {0,1,3}（白名单 cloud1/cloud2/cloud4，:26-33）
+//	③ 同帧进场且 |Δx| < 上一条半宽 的样本数 = 0（"决不能同出同进"，:24）
 // 口径说明（写在这里，不自行发明判据）：
-//   - 宽度与 spr 走**绘制同口径**：cloudDrawWidthPx（= 源图宽 × spriteScale，与 Draw 的 dw 逐字同式）；
-//   - 进场事件走**几何检出**：一朵云从"整只在屏外"变成"身体有像素进屏"的那一拍 = 一次进场，
-//     同一步号内的进场按检出顺序两两相邻比较（|Δx| 与上一条半宽，px 口径，与 kinetics.EntryOK 同式）；
-//     同时对照闸门自己的流水 f.entryLog（排队发射的记录），两边都判 ⇒ 探针不吃闸门自报数。
-//   - 位移系数：800 步 = 13.3 s 仿真，云速 ≈0.009 屏宽/s 时屏外进场位要 27 s 才进屏
-//     ⇒ 在 800 步窗口里进场样本恒为 0（判据空转）。这里把生产里既有的 speedScale
-//     （cmd/scr 按帧预算设置的位移系数，Field.speedScale 字段）放大到 30×，
-//     使"出屏回收 → 屏外进场 → 进屏"在窗口内真的跑起来；进场样本数逐类打印，为 0 即测试无意义。
+// - 宽度与 spr 走**绘制同口径**：cloudDrawWidthPx（= 源图宽 × spriteScale，与 Draw 的 dw 逐字同式）；
+// - 进场事件走**几何检出**：一朵云从"整只在屏外"变成"身体有像素进屏"的那一拍 = 一次进场，
+// 同一步号内的进场按检出顺序两两相邻比较（|Δx| 与上一条半宽，px 口径，与 kinetics.EntryOK 同式）；
+// 同时对照闸门自己的流水 f.entryLog（排队发射的记录），两边都判 ⇒ 探针不吃闸门自报数。
+// - 位移系数：800 步 = 13.3 s 仿真，云速 ≈0.009 屏宽/s 时屏外进场位要 27 s 才进屏
+// ⇒ 在 800 步窗口里进场样本恒为 0（判据空转）。这里把生产里既有的 speedScale
+// （cmd/scr 按帧预算设置的位移系数，Field.speedScale 字段）放大到 30×，
+// 使"出屏回收 → 屏外进场 → 进屏"在窗口内真的跑起来；进场样本数逐类打印，为 0 即测试无意义。
 
 import (
 	"testing"
@@ -32,7 +30,7 @@ type kineticsEntryEv struct {
 // TestKineticsRules 逐类 800 步跑三条判据，输出违规计数行（闸门 grep 的关键字）。
 func TestKineticsRules(t *testing.T) {
 	const steps = 800
-	const minPx = 480 // R4 @1080
+	const minPx = 480 // 屏宽 1080 下的下限
 	// speedScale=30：见文件头口径说明（只为在 800 步窗口内制造进场样本）。
 	const probeSpeedScale = 30.0
 
@@ -127,7 +125,7 @@ func TestKineticsRules(t *testing.T) {
 		sumW, sumS, sumE, sumEv)
 }
 
-// TestKineticsEntryQueueGate 进场闸门的正面判据（R1"决不能同出同进"）：
+// TestKineticsEntryQueueGate 进场闸门的正面判据（"决不能同出同进"）：
 // 把同场的两朵云同时推到"整朵完全出屏"⇒ 同一个固定步里两次回收 = 同帧进场；
 // 判据：第一朵发射进场位（x = −hw），第二朵必须**保持 parked**（x < −hw，停在进场位之外），
 // 并在后续步里单独发射（进场流水两条、步号不同）。
@@ -169,7 +167,7 @@ func TestKineticsEntryQueueGate(t *testing.T) {
 		f.Step(fixedStep, PortraitW, PortraitH)
 	}
 	if len(f.parkedCloud) != 0 {
-		t.Fatalf("800 步后 parked 仍 = %d ⇒ 闸门没有「下一帧再试」的放行通路", len(f.parkedCloud))
+		t.Fatalf("800 步后 parked 仍 = %d ⇒ 闸门没有'下一帧再试'的放行通路", len(f.parkedCloud))
 	}
 	if len(f.entryLog) != 2 {
 		t.Fatalf("进场流水 = %d 条，期望 2 条（parked 的那朵后来单独发射）", len(f.entryLog))

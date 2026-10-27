@@ -5,7 +5,6 @@ import (
 )
 
 // TestParseSaverArgs 是指定的表驱动单测。
-//
 // 用例逐条对应协议表与解析规则（大小写不敏感、`/` 或 `-`、
 // 字母后空格或冒号皆可、`/p`≡`/l`、无参数=配置、无法识别=静默退出、
 // usage 只留给 --help/-h/?。
@@ -36,7 +35,7 @@ func TestParseSaverArgs(t *testing.T) {
 		{"no-args", nil, ActionConfigure, 0, false},
 		{"empty-arg", []string{}, ActionConfigure, 0, false},
 
-		// 协议表：/p 123、/l 123、-P:123 → 预览（/p ≡ /l）
+		// 协议表：/p 123、/l 123、-P:123 → 预览（p ≡ /l）
 		{"p-space-hwnd", []string{"/p", "123"}, ActionPreview, 123, true},
 		{"l-space-hwnd", []string{"/l", "123"}, ActionPreview, 123, true},
 		{"P-colon-hwnd", []string{"-P:123"}, ActionPreview, 123, true},

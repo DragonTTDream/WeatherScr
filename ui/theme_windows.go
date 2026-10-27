@@ -13,17 +13,14 @@ import (
 
 // 深浅色跟随系统：HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize
 // 的 AppsUseLightTheme（REG_DWORD 或 REG_SZ，取决于注册表写入方）。
-//
-// 取证：spec/publish-b2-panel-theme.md §1.1。gioui v0.10.3 无 SystemTheme
+// 取证：gioui v0.10.3 无 SystemTheme
 // ⇒ 只能自己读（ui/theme.go 顶部注释）。
-//
-// 容错口径（spec §1.1：读失败 ⇒ 浅色，不得 panic、不得阻塞）：
-//   - 键打不开（Personalize 子键不存在 / 权限 / 组策略压掉）→ 浅色；
-//   - 值不存在、类型不是 REG_DWORD/REG_SZ、缓冲区不够（ERROR_MORE_DATA）、
-//     长度不合法、字符串解析不出数字 → 一律浅色；
-//   - 全程只有 RegOpenKeyEx / RegQueryValueEx / RegCloseKey 三个同步调用，
-//     不注册回调、不开 RegNotifyChangeKeyValue、不阻塞 UI 线程。
-//
+// 容错口径（读失败 ⇒ 浅色，不得 panic、不得阻塞）：
+// - 键打不开（Personalize 子键不存在 / 权限 / 组策略压掉）→ 浅色；
+// - 值不存在、类型不是 REG_DWORD/REG_SZ、缓冲区不够（ERROR_MORE_DATA）、
+// 长度不合法、字符串解析不出数字 → 一律浅色；
+// - 全程只有 RegOpenKeyEx / RegQueryValueEx / RegCloseKey 三个同步调用，
+// 不注册回调、不开 RegNotifyChangeKeyValue、不阻塞 UI 线程。
 // 语义：AppsUseLightTheme = 1 → 浅色；= 0 → 深色。
 const (
 	personalizeSubKey = `Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`

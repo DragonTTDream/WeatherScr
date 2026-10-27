@@ -8,14 +8,12 @@ import (
 	"testing"
 )
 
-// 月相数据修复（规格 D5/D7 第 2.2 条）的判据。
-//
-// 根因（证据 E-MOON-KEYS）：请求带 models=gfs_seamless,icon_seamless,ecmwf_ifs025
-// （三模型云量，规格 1.6）时，Open-Meteo 把 daily 里每个逐模型字段按模型后缀各给一条数组，
+// 月相数据修复的判据。
+// 根因：请求带 models=gfs_seamless,icon_seamless,ecmwf_ifs025
+// （三模型云量）时，Open-Meteo 把 daily 里每个逐模型字段按模型后缀各给一条数组，
 // 实测该请求的 daily 键 = [time, temperature_2m_max_gfs_seamless, …,
 // moon_phase_gfs_seamless, moon_phase_icon_seamless, moon_phase_ecmwf_ifs025, …]，
 // **没有裸 moon_phase 键** ⇒ 只解裸键的旧结构取不到 ⇒ Sample.MoonPhase = nil。
-//
 // 本文件的 fixture 逐字照该响应形态：daily 只有带后缀的三条、没有裸键。
 
 // moonFixture 造一份响应：daily 段按 keys 给月相数组（键名 → 数组）。
@@ -28,7 +26,7 @@ func moonFixture(dailyMoon string) string {
     "is_day":1,"relative_humidity_2m":77,"precipitation":0.0,"rain":0.0,
     "cloud_cover":30,"precipitation_probability":0},
   "hourly": {
-    "time": ["2026-10-20T00:00", "2026-10-20T01:00", "2026-10-20T02:00"],
+    "time": ["2024-05-20T00:00", "2024-05-20T01:00", "2024-05-20T02:00"],
     "precipitation_probability": [0, 0, 0],
     "precipitation": [0.0, 0.0, 0.0],
     "cloud_cover": [27, 30, 33],
@@ -37,7 +35,7 @@ func moonFixture(dailyMoon string) string {
     "cloud_cover_ecmwf_ifs025": [29, 32, 35]
   },
   "daily": {
-    "time": ["2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23", "2026-10-24", "2026-10-25"],
+    "time": ["2024-05-20", "2024-05-21", "2024-05-22", "2024-05-23", "2024-05-24", "2024-05-25"],
     "temperature_2m_max": [26.0, 25.0, 24.0, 23.0, 22.0, 21.0],
     "temperature_2m_min": [15.0, 14.0, 13.0, 12.0, 11.0, 10.0],
     "weathercode": [1, 1, 2, 2, 3, 3],
@@ -67,15 +65,14 @@ func fetchMoon(t *testing.T, dailyMoon string) *Sample {
 	return s
 }
 
-// TestMoonPhaseSuffixedKeys 规格 3 第 4 条：
+// TestMoonPhaseSuffixedKeys ：
 // 只有带模型后缀的键、没有裸键时，解析链必须把月相填上，且值 = 0.296。
-//
 // 三条实测断言 + 两条口径自检（全部走 Fetch 本体，不另抄解析公式）：
-//  1. 只有三条后缀键（出厂请求形态）⇒ Sample.MoonPhase != nil 且 = 0.296
-//  2. 只有裸键（不带 models= 的旧口径）⇒ 取裸键 [0]
-//  3. 裸键与后缀键都在 ⇒ 取裸键（填值顺序：裸键优先）
-//  4. 裸键值越界（1.7）⇒ 视为无效，落到第一家后缀键
-//  5. 四条键全缺 ⇒ nil（不猜、不补）
+// 1. 只有三条后缀键（出厂请求形态）⇒ Sample.MoonPhase != nil 且 = 0.296
+// 2. 只有裸键（不带 models= 的旧口径）⇒ 取裸键 [0]
+// 3. 裸键与后缀键都在 ⇒ 取裸键（填值顺序：裸键优先）
+// 4. 裸键值越界（1.7）⇒ 视为无效，落到第一家后缀键
+// 5. 四条键全缺 ⇒ nil（不猜、不补）
 func TestMoonPhaseSuffixedKeys(t *testing.T) {
 	const suffixed = `    "moon_phase_gfs_seamless": [0.296, 0.327, 0.359, 0.393, 0.427, 0.463],
     "moon_phase_icon_seamless": [0.296, 0.327, 0.359, 0.393, 0.427, 0.463],
@@ -87,7 +84,7 @@ func TestMoonPhaseSuffixedKeys(t *testing.T) {
 	t.Logf("只有后缀键：MoonPhase=%.4f（照亮度 %.3f）", *s.MoonPhase,
 		(1-math.Cos(2*math.Pi*(*s.MoonPhase)))/2)
 	if v := *s.MoonPhase; v < 0.2959 || v > 0.2961 {
-		t.Errorf("MoonPhase = %v，期望 0.296（远端同坐标 2026-10-20 的实测值）", v)
+		t.Errorf("MoonPhase = %v，期望 0.296（远端同坐标的实测值）", v)
 	}
 
 	// 2) 只有裸键（旧口径）

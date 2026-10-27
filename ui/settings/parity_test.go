@@ -1,17 +1,15 @@
 package settings
 
-// TestSettingsParity R5 卡 8 钉死件（新包，数字写死）。
-//
-// 证据 = plans/active.md:212（ui/settings = 设置页 UI（横矩形 + 新交互））。
+// TestSettingsParity 钉死件（新包，数字写死）。
+// 证据 = ui/settings = 设置页 UI（横矩形 + 新交互）。
 // 基准数字 = **迁移前旧实现**的实测打印：旧 ui/settings_ui.go 改名后的逐字副本编译在
-// 一次性取数件包 ui/zzpre8 里（本卡迁移时创建，跑完即删），2026-10-26 本机
-// 6 轮打印 ⇒ /tmp/pre6.txt；迁移后由本包 zz_post_settings_split_test.go 与
-// zz_post_settings_export_test.go 以同一支探件复跑 ⇒ /tmp/post6.txt，
+// 一次性取数件包 ui/zzpre8 里（本卡迁移时创建，跑完即删）， 本机
+// 6 轮打印 ⇒ ；迁移后由本包 zz_post_settings_split_test.go 与
+// zz_post_settings_export_test.go 以同一支探件复跑 ⇒ ，
 // 24 行数字逐字相同（唯一浮动项 = 横屏左栏自然高，pre/post 分布同为 {460,461}，
 // 系 gioui 文本测量字形缓存的 ±1 抖动，非本卡引入 —— 见下④的集合断言）。
-//
 // 口径 = ui/panel_theme_b2_test.go:21-34 的 layoutAt（Min 置 0 量**自然尺寸**、
-// 1 dp = 1 px = 1 sp、Now 固定 2026-10-26 12:00:00Z）；
+// 1 dp = 1 px = 1 sp、Now 固定 Z）；
 // 行指纹 = ui/panel_landscape_test.go:36-44 的七档采样宽度；
 // 点名表 = ui/panel_landscape_test.go:83-106 的 b5RowRefs 同名参考行指纹表。
 
@@ -148,7 +146,7 @@ func TestSettingsParity(t *testing.T) {
 		t.Errorf("候选插入位 panelLandCandAt = %d，要求 5", panelLandCandAt)
 	}
 
-	// ⑥ 横屏判定（宽>高 且 宽≥panelLandMinWpx=900；b11-setrect §1.2 阈值 1200⇒900，
+	// ⑥ 横屏判定（宽>高 且 宽≥panelLandMinWpx=900； 阈值 1200⇒900，
 	// 旧行 {1199,1080,false} 在新阈值下 ⇒ true；补横矩形档 899/900/1080×640）
 	for _, tc := range []struct {
 		w, h int

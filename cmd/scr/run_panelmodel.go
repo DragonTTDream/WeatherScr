@@ -1,8 +1,8 @@
 package main
 
-// 职责（卡9-app/scr）：设置面板模型换算：config.Config 与 ui.PanelModel 互转、面板样式装配
+// 职责（app/scr）：设置面板模型换算：config.Config 与 ui.PanelModel 互转、面板样式装配
 // 搬移来源：cmd/scr/main.go:372-414,430-468,1096-1126（逐字，含注释）
-// 规格：plans/active.md:214 —— app/scr = 屏保生命周期；本卡零行为变化。
+// 规格：—— app/scr = 屏保生命周期；本卡零行为变化。
 
 import (
 	"image/color"
@@ -96,7 +96,7 @@ func saveModel(c config.Config, m ui.PanelModel) error {
 }
 
 // panelStyle 把 config 的面板键映射成 ui.PanelStyle
-// （键名与取值口径 = 上游 default_settings.py 'weather' 块 :1523-1540）。
+// （键名与取值口径 = 上游 default_settings.py 'weather' 块）。
 func panelStyle(c config.Config) ui.PanelStyle {
 	st := ui.DefaultPanelStyle()
 	st.Set = true

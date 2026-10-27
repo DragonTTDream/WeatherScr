@@ -1,11 +1,9 @@
 //go:build !vulkan && linux
 
-// 基线快照（R5 拆分前的零行为基线 / R8 效果图交付固定口径 / R10 横屏口径）：
+// 基线快照（拆分前的零行为基线 / 效果图交付固定口径 / 横屏口径）：
 // 11 个天气场景 × 两态（铺放态 steps=0、满密度 steps=800）× 两制（竖 1080×1920、横 1920×1080）
-// = 44 张出图 + 一张数据表（表内含度量行，图与度量同批交付，见经验库 ## 36）。
-//
+// = 44 张出图 + 一张数据表（表内含度量行，图与度量同批交付，见）。
 //	WS_BASELINE_DIR=/dir go test -tags=novulkan -count=1 -run TestBaselineDump ./ui
-//
 // 目录未设 ⇒ 跳过。本文件只做取证出图，不改任何产品行为。
 
 package ui
@@ -98,10 +96,10 @@ func TestBaselineDump(t *testing.T) {
 		fr := Frame{
 			Now: now, Clock: DefaultClockSpec(), Weather: dumpSample(true),
 			Class: cs.class, IsDay: cs.isDay, Field: field,
-			Location: "Ziliujing, China", Panel: DefaultPanelStyle(), Layers: 0,
+			Location: "Hangzhou, China", Panel: DefaultPanelStyle(), Layers: 0,
 		}
 		s.Layout(gtx, fr)
-		// 每帧绘制（R8 判据 plans/active.md:92「逐类 … 每帧绘制 …」）口径 = 该步这一帧提交的
+		// 每帧绘制（判据 '逐类 … 每帧绘制 …'）口径 = 该步这一帧提交的
 		// op.Ops 序列化长度：取 ui/metrics/frames.go:38 OpsLen 的 data（gioui v0.10.3 把子 op
 		// 随块展平进同一条 data 流 ⇒ "含子 op 展平"；refs 只记块引用个数，不计入本列）。
 		// 必须在 win.Frame 之前读（gpu.Update 末尾 ops.Reset()），反射只读、不改 op.Ops 内容。
@@ -115,7 +113,7 @@ func TestBaselineDump(t *testing.T) {
 			win.Release()
 			t.Fatalf("Screenshot 失败 %s: %v", cs.name, err)
 		}
-		// 帧节拍（R8 判据 plans/active.md:92「… 帧节拍 p50-p95-max」）：截图已在这之前
+		// 帧节拍（判据 '… 帧节拍 p50-p95-max'）：截图已在这之前
 		// 取完 ⇒ 下面的连渲完全不在图像路径上（同一窗口、同一个场，30 帧；窗口须先渲完
 		// 再 Release，gioui headless 的上下文随 Release 失效）。
 		// 步进 = Field.Step 的现有机制（66 ms 模拟步长），帧间零休眠（帧间隔 0 连渲）；
@@ -143,7 +141,7 @@ func TestBaselineDump(t *testing.T) {
 	t.Logf("基线 %d 张 + 表已落 %s", len(baselineCases()), dir)
 }
 
-// cadenceFrames 帧节拍样本数（R8 判据：连续 30 帧）。
+// cadenceFrames 帧节拍样本数（判据：连续 30 帧）。
 const cadenceFrames = 30
 
 // baselineCadence 在同一个 headless 窗口上连渲 cadenceFrames 帧，返回逐帧墙钟毫秒。

@@ -2,7 +2,7 @@ package main
 
 import "testing"
 
-// T3（spec §3）：按钮底边 ≤ 客户区高度，客户区高度 = 窗口高度 − 标题栏 − 边框
+// 按钮底边 ≤ 客户区高度，客户区高度 = 窗口高度 − 标题栏 − 边框
 // （与 AdjustWindowRectEx 同一套数值：标题栏 31 + 上下边框 8 = 39，左右边框 16）。
 func TestButtonRowInsideClientArea(t *testing.T) {
 	cases := []struct {
@@ -40,7 +40,7 @@ func TestOldLayoutClipsButtons(t *testing.T) {
 		t.Errorf("客户区高度 = %d，期望 421（460 − 标题栏 31 − 上下边框 8）", ch)
 	}
 	if bottom-ch != 27 {
-		t.Errorf("被裁 %d px，期望 27（spec §0.3）", bottom-ch)
+		t.Errorf("被裁 %d px，期望 27", bottom-ch)
 	}
 }
 

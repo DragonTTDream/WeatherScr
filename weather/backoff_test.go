@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// 批次 A1 S2/S3 钉死单测（spec/a1-fetch-polite.md 钉死清单第 4、5 条）。
+// S2/S3 钉死单测（钉死清单第 4、5 条）。
 
 // NextRefreshInterval 的阶梯：1→1m、2→2m、3→5m、4→10m、5→10m（第 4 次及以后封顶）。
 func TestNextRefreshIntervalLadder(t *testing.T) {
@@ -25,7 +25,7 @@ func TestNextRefreshIntervalLadder(t *testing.T) {
 	}
 }
 
-// failCount<=0 ⇒ 复位回 base（成功一轮就回到用户设定的节奏）。
+// failCount<=0 ⇒ 复位回 base（成功一轮就回到设定的节奏）。
 func TestNextRefreshIntervalResets(t *testing.T) {
 	for _, base := range []time.Duration{
 		time.Minute, 3 * time.Minute, 20 * time.Minute,

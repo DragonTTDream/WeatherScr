@@ -1,21 +1,16 @@
 package ui
 
 // ── 文字块绘制缓存（时钟块 + 天气块）─────────────────────────
-//
-// 实测依据（分层阶梯实测，180 s 窗口、单层掩码，取证记录见 out/notes-textcache.md）：
-//
-//	sky 6.6 s  depth 7.0 s  field 126 s  clock 10.7 s  weather 14 s
-//
+// 实测依据（分层阶梯实测，180 s 窗口、单层掩码，取证记录见）：
+//	sky 6.6 s depth 7.0 s field 126 s clock 10.7 s weather 14 s
 // clock + weather 两层合计 24.7 s/180 s = 单核 13.7%，全部花在**每帧重新排版
 // 文字**上：15 fps 下每帧都重新 shape 字形、把字形轮廓写成 clip.Path 段、
 // 重排 Flex 行盒。而时钟块的数字每秒只变一次、天气块默认一分钟才刷新一次
 // （cmd/scr/main.go 的后台刷新），一帧里这些输入与上一帧逐字相同。
-//
 // 缓存做法：整块内容的绘制指令**录制**成一份宏（op.Record → op.CallOp），
 // 键不变时逐帧重放（CallOp.Add），不再走排版与路径构建。
 // 单条替换、不累积，写法照 ui/render.go:943 的 skyCached
 // （key 相等且条目非空 ⇒ 命中；否则整条替换）。条数上限 2 = 时钟 1 条 + 天气 1 条。
-//
 // 为什么缓存产物是"指令宏"而不是位图：
 // gioui v0.10.3 的文字是**矢量路径**，不是位图字形 ——
 // text/gotext.go 把字形轮廓逐段写成 clip.Path 的 Move/Line/Quad/Cube
@@ -27,8 +22,7 @@ package ui
 // 与"像素与现状一致"这条硬判据直接冲突。
 // 取指令宏：重放的是**同一串绘制指令**，落点/裁剪/变换/颜色全部原样，
 // 输出逐像素相同（ui/textcache_test.go 逐像素实测）。
-// 这条与规格字面（image.RGBA + blit）的偏差记录在 out/notes-textcache.md。
-//
+// 这条与规格字面（image.RGBA + blit）的偏差记录在 。
 // 附带收益：gioui 的 GPU 侧按 op 位置缓存已构建的路径顶点
 // （gioui.org@v0.10.3/gpu/gpu.go:913-921 的 pathCache，键 = 指令所在缓冲区+偏移+版本）。
 // 录制缓冲区不重建时这些键逐帧稳定 ⇒ 字形路径的顶点构建也命中缓存。
@@ -115,7 +109,6 @@ func (k textCacheKey) String() string {
 
 // get 返回该键对应的缓存条目；键变化时整条替换（重建）。
 // 返回 nil = 不缓存（textCacheBypass），调用方按老路径逐帧直接绘制。
-//
 // 重建 = 在专用录制缓冲区里 Reset + 重录一遍块内容。Reset 会让**上一帧**
 // 里引用它的 CallOp 失效：屏保与出图都在同一线程里"布局 → e.Frame(ops) 同步提交"，
 // 下一次布局开始时上一帧已经画完，故 Reset 不会踩到在飞的帧。

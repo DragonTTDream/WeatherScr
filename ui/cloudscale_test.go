@@ -9,25 +9,22 @@ import (
 )
 
 // TestCloudWidthMatchesBand 粒子云逐类屏宽表 + 云带同区间判据（只对压顶三档保留）。
-//
 // **口径变更（本次）**：上一批的"粒子云与云带同宽"口径（粒子云 sc 区间 [1.5,2.3]
 // ⇒ 屏宽 768–1178 px，与云带逐档相同）已被云规则的**逐类屏宽表**取代：
 //
-//	晴 clear          300–600  px
-//	多云见日 partly   300–700  px
-//	多云 cloudy      500–900  px
-//	阴 overcast      768–1178 px   ← 与云带同区间（云带 = 512×(1.5+0.8·frac)÷bandNetDiv = 768–1178 px）
+//	晴 clear 300–600 px
+//	多云见日 partly 300–700 px
+//	多云 cloudy 500–900 px
+//	阴 overcast 768–1178 px ← 与云带同区间（云带 = 512×(1.5+0.8·frac)÷bandNetDiv = 768–1178 px）
 //	雨/雷 rain/thunder 768–1178 px ← 与云带同区间（这两档没有粒子云，见下）
 //
 // 表落在 effects.go 的 cloudFormOf（sizeCloudByClass 按目标屏宽**反解** p.sc ⇒
 // 逐朵**实画屏宽**逐字落在表内，尺寸抖动 scaleMul 被反解掉）。
-//
 // 三条断言（全部实测打印）：
-//  1. 逐类**实画屏宽** ∈ 本类区间（逐类区间表，不放宽到全区间）
-//  2. 云带 dw ∈ [768, 1178]（云带口径不动）
-//  3. "粒子云名义屏宽与云带同区间"**只对 overcast 保留**；
-//     clear/partly-cloudy/cloudy 是**故意**与云带不同区间（逐类表就是为此而设）
-//
+// 1. 逐类**实画屏宽** ∈ 本类区间（逐类区间表，不放宽到全区间）
+// 2. 云带 dw ∈ [768, 1178]（云带口径不动）
+// 3. "粒子云名义屏宽与云带同区间"**只对 overcast 保留**；
+// clear/partly-cloudy/cloudy 是**故意**与云带不同区间（逐类表就是为此而设）
 // 附带数量口径：Cloudy 3 / PartlyCloudy 2 / Overcast **2**（P3 判据 B 由 5 降）/ Clear 白天 4
 // （Clear 的 4 是全场粒子数 = 1 朵云 + 3 个光晕，云按 idx%5==0 取）；
 // Clear 夜间 110 是星不是云 ⇒ 云数应为 0。
@@ -42,7 +39,7 @@ func TestCloudWidthMatchesBand(t *testing.T) {
 	)
 	// 逐类实画屏宽区间 = cloudFormOf 的表（测试与实现共用同一张表 ⇒ 断言的是口径本身）
 	drawWant := map[effect.Class][2]float64{
-		// B3/R4（evidence/p8-numbers-20261023.md:11-15）：最终显示宽度下限 480 px @1080、
+		// B3/（11-15）：最终显示宽度下限 480 px @1080、
 		// 同带 2 朵首尾相连 ⇒ 上限 (1080−21)/2 = 529 px ⇒ 四档同一区间 [480, 529]。
 		// P7 期的逐类分档（晴 420 / 多云见日 460 / 多云 340 / 阴 529）整档低于下限 ⇒ 废。
 		effect.Clear:        {480, 529},
@@ -55,18 +52,18 @@ func TestCloudWidthMatchesBand(t *testing.T) {
 		effect.Clear:        false,
 		effect.PartlyCloudy: false,
 		effect.Cloudy:       false,
-		// P7：阴档云宽上限 529 px < 云带 1000 px ⇒ "与云带同区间"这条旧口径
+		// 阴档云宽上限 529 px < 云带 1000 px ⇒ "与云带同区间"这条旧口径
 		// 与"首尾相连不相叠"算术互斥（2 朵 ×768 = 1536 px > 1080 px 必叠）⇒ 取消。
 		effect.Overcast: false,
 	}
 	counts := map[effect.Class]int{
-		effect.Cloudy:       2, // B3/R4：kinetics.BandCapacity 封顶 2 朵（原 3）
+		effect.Cloudy:       2, // kinetics.BandCapacity 封顶 2 朵（原 3）
 		effect.PartlyCloudy: 2,
 		effect.Overcast:     2, // P3 判据 B：5 → 2
-		effect.Clear:        2, // B3/R4：封顶 2 朵 ⇒ 1 云 + 1 光晕（原 4）
+		effect.Clear:        2, // 封顶 2 朵 ⇒ 1 云 + 1 光晕（原 4）
 	}
 	cloudWant := map[effect.Class]int{
-		effect.Cloudy:       2, // B3/R4：3 → 2
+		effect.Cloudy:       2, // 3 → 2
 		effect.PartlyCloudy: 2,
 		effect.Overcast:     2, // P3 判据 B：5 → 2
 		effect.Clear:        1,

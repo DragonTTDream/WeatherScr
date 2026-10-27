@@ -4,7 +4,7 @@ package ui
 
 import "testing"
 
-// TestCurrentThemeModeNonWindows 对应 spec §3 T2：非 Windows 返回浅色。
+// TestCurrentThemeModeNonWindows 对应 T2：非 Windows 返回浅色。
 // （Windows 侧的注册表实现在 ui/theme_windows.go，失败路径逐条 return themeLight。）
 func TestCurrentThemeModeNonWindows(t *testing.T) {
 	if got := currentThemeMode(); got != themeLight {

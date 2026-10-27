@@ -1,8 +1,8 @@
 package main
 
-// 职责（卡9-app/scr）：取数与天气态：天气状态与缓存、官方信号拉取、月相、帧预算速度系数、地名显示
+// 职责（app/scr）：取数与天气态：天气状态与缓存、官方信号拉取、月相、帧预算速度系数、地名显示
 // 搬移来源：cmd/scr/main.go:1128-1188,1228-1267,1311-1434,1543-1569,1632-1650（逐字，含注释）
-// 规格：plans/active.md:214 —— app/scr = 屏保生命周期；本卡零行为变化。
+// 规格：—— app/scr = 屏保生命周期；本卡零行为变化。
 // refresher（旧 main.go:1478-1541）因闸门锚点留在 main.go，见该文件说明。
 
 import (
@@ -35,7 +35,7 @@ type snapshot struct {
 }
 
 // moonPhaseOf 从 Sample 取今日月相，nil-safe（Sample 为 nil 时返回 nil ⇒
-// 月亮层不画月亮，与新月一致，规格 2.3）。需求 5。
+// 月亮层不画月亮，与新月一致）。需求 5。
 // lastMoonPhase 记住**上一次取到的有效月相**。
 // 缺陷：取不到月相时返回 nil，而月亮层旧口径对 nil 画的是 p=0.5 = **满月**
 // ⇒ 老机器上一次抓取打嗝（网络延迟/超时）就让残月当场变满月，抓到了又变回来
@@ -60,7 +60,7 @@ func moonPhaseOf(s *weather.Sample) *float64 {
 }
 
 func (st *weatherState) set(s *weather.Sample) {
-	// 分档口径 = **三模型云量的中位数**（规格 1.6）：
+	// 分档口径 = **三模型云量的中位数**：
 	// <30 晴、30–70 多云见日、>70 阴；降水类（雨/雪/雷/雾/尘）仍由天气码决定。
 	// 中位数取不到（三家都没给 / 当前小时不在 hourly 里）⇒ 退回既有口径
 	// （current.cloud_cover + 天气码），不空不崩。
@@ -68,7 +68,7 @@ func (st *weatherState) set(s *weather.Sample) {
 	if s.CloudMedian == nil {
 		cls, _ = effect.ClassifyByCloudCover(s.WeatherCode, s.CloudCover)
 	}
-	// 天气类覆盖：实测云/雨/雾这些类时，低性能 x86 小主机当时的真实天气
+	// 天气类覆盖：实测云/雨/雾这些类时，低性能 x86 实机当时的真实天气
 	// 往往就是晴天（实测杭州"Mainly clear"），
 	// 看不到云就无从判断。exe 旁放 scr.cls 写类名即强制该类。
 	// 只影响动画类，不改温度/湿度/风力等真实读数与文字。
@@ -89,17 +89,16 @@ func (st *weatherState) snapshot() snapshot {
 }
 
 // lastGood 读上次成功的天气。无缓存返回 nil。
-//
 // **必须按位置键取，取不到再按 CachedAt 取最新的一条**
 // "早上8点看到背景的天气从白天突然变成晚上，过了一会了又变回了白天"。
 // 原实现 `for _, v := range cache { return &vv }` 取的是 **Go map 迭代的第一条**，
-// 而 Go 的 map 顺序是随机的。低性能 x86 小主机缓存里存着 3 条记录：
+// 而 Go 的 map 顺序是随机的。低性能 x86 实机缓存里存着 3 条记录：
 //
 //	"Hangzhou, China" → is_day=0（旧地名、旧时刻留下的）
-//	"Hangzhou"     → is_day=1
-//	"杭州市"       → is_day=1
+//	"Hangzhou" → is_day=1
+//	"杭州市" → is_day=1
 //
-// 每次 API 503 失败（低性能 x86 小主机日志里 503 频繁）就走这条回落路径，
+// 每次 API 503 失败（低性能 x86 实机日志里 503 频繁）就走这条回落路径，
 // 于是有 1/3 概率捞到那条 is_day=0 的旧记录 ⇒ 整个场景翻成黑夜，
 // 下次刷新成功又翻回来。日志逐字对应：每个 SCR_FETCH_FAIL 后必跟 isDay=false，
 // 每个 SCR_FETCH_OK 后必跟 isDay=true。
@@ -123,11 +122,10 @@ func lastGood(key string) *weather.Sample {
 	return best
 }
 
-// ---- 官方信号层（批次 b-alert-v2 第 6/7 步）----
-//
-// 节奏：10 min 一次省级请求（spec/b-alert-v2.md 第 6 步逐字），与自算层的 1 min 刷新分开。
-// 发请求的前置（spec 第 1 步）：**仅 country_code==CN 才发**，非 CN ⇒ 跳过。
-// 省名来源（§12 铁律）：坐标反查得 `ISO3166-2-lvl4` ⇒ 闭表查官方全称，
+// ---- 官方信号层----
+// 节奏：10 min 一次省级请求（第 6 步逐字），与自算层的 1 min 刷新分开。
+// 发请求的前置：**仅 country_code==CN 才发**，非 CN ⇒ 跳过。
+// 省名来源（铁律）：坐标反查得 `ISO3166-2-lvl4` ⇒ 闭表查官方全称，
 // 绝不从地名推。运行时优先读反查缓存（设置里选点时已反查过 ⇒ 命中缓存零请求）。
 type officialState struct {
 	mu     sync.Mutex
@@ -157,20 +155,18 @@ func getOfficial() (weather.NMCPage, bool) {
 	return officialStateVar.page, officialStateVar.have
 }
 
-// officialEvery 官方信号拉取节奏（spec/b-alert-v2.md 第 6 步逐字 = 10 min）。
+// officialEvery 官方信号拉取节奏（第 6 步逐字 = 10 min）。
 const officialEvery = 10 * time.Minute
 
 // nmcRequestAllowed 报告这个国家码是否允许发官方请求。
-//
-// spec/b-alert-v2.md 目标 1 逐字：**仅 country_code==CN 才发**，非中国区不发。
+// 目标 1 逐字：**仅 country_code==CN 才发**，非中国区不发。
 // 单测钉死在 cmd/scr/nmc_test.go（闸门第 8 步的 `NMC=skipped` 同源口径）。
 func nmcRequestAllowed(countryCode string) bool {
 	return strings.EqualFold(strings.TrimSpace(countryCode), "CN")
 }
 
 // officialRefresher 官方信号的独立后台循环。
-//
-// 批次 A1 S3（spec/a1-fetch-polite.md）：节奏 = officialEvery（常量逐字不动）
+// 节奏 = officialEvery（常量逐字不动）
 // **+ OfficialJitter(seed)**，0–30 s 的**确定性**抖动（同一 seed 可复现），
 // 让官方拉取不与天气刷新钉在同一刻齐发。seed = 规范化地点名的 FNV-1a，
 // 不读时钟、不含随机源 ⇒ 同机同点每次算出同一个抖动。
@@ -186,10 +182,9 @@ func officialRefresher(cfg config.Config) {
 	}
 }
 
-// refreshOfficial 跑一次官方拉取并打带外日志（spec 第 7 步逐字格式）。
-//
+// refreshOfficial 跑一次官方拉取并打带外日志。
 // 带外日志逐字：`nmc: province=%s count=%d top=%s/%s`
-// 且 **count=0 必须打 `NOTE=count0-unknown`**（§15.1：无效省名也返回 0，
+// 且 **count=0 必须打 `NOTE=count0-unknown`**（无效省名也返回 0，
 // 不得当"该省无预警"上报）。
 func refreshOfficial(cfg config.Config) {
 	if cfg.LocationLat == 0 && cfg.LocationLon == 0 {
@@ -211,7 +206,7 @@ func refreshOfficial(cfg config.Config) {
 		r = rr
 	}
 	if !nmcRequestAllowed(r.CountryCode) {
-		// spec/b-alert-v2.md 目标 1：非中国区不发官方请求。
+		// 目标 1：非中国区不发官方请求。
 		log.Printf("nmc: skipped reason=not-cn country=%s", r.CountryCode)
 		clearOfficial()
 		return
@@ -232,11 +227,11 @@ func refreshOfficial(cfg config.Config) {
 	top, ok := weather.NMCTop(page)
 	switch {
 	case page.Count == 0:
-		// §15.1 判据缺陷：count=0 不能证明省名被接受，也不能证明该省无预警。
+		// 判据缺陷：count=0 不能证明省名被接受，也不能证明该省无预警。
 		log.Printf("nmc: province=%s count=%d top=%s/%s NOTE=%s",
 			prov, page.Count, "-", "-", weather.NMCCount0Unknown)
 	case !ok:
-		// 标题正则不匹配（§15.3 的 3 条样本）⇒ 降级，不静默丢弃：日志里点名条数。
+		// 标题正则不匹配（的 3 条样本）⇒ 降级，不静默丢弃：日志里点名条数。
 		log.Printf("nmc: province=%s count=%d top=%s/%s NOTE=title-unparsed n=%d",
 			prov, page.Count, "-", "-", len(page.Items))
 	default:
@@ -277,7 +272,6 @@ func speedFromBudget(budget time.Duration) float64 {
 }
 
 // displayLocation 返回显示用的地名。
-//
 // 铁律：**display_language 默认 "en" = 当前样式，不改**；
 // 设置里选了中文地名 **不等于** 显示语言变中文 —— 两者必须互相独立。
 // ⇒ en 取存下的英文名 location_name_en，zh 取 location_name_zh，

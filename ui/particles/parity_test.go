@@ -1,15 +1,13 @@
-// Package particles 的钉死对拍（R5 卡 3 判据 3，plans/active.md:207）。
-//
+// Package particles 的钉死对拍（判据 3）。
 // 常量来源 = 迁移**前**的 ui 旧实现跑同一固定输入打印出来的数字（逐字抄录、不改位）：
 //
 //	取数件 = ui/zz_pre_particles_test.go（临时，取数后删除），命令
 //	WS_PRE_PARTICLES=1 go test -tags=novulkan,nox11 -count=1 -run TestZZPreParticlesNumbers ./ui -v
-//	全量输出（283 行 PRE）存档 = out/pre-particles-numbers.txt
+//	全量输出（283 行 PRE）存档 =
 //
 // 判据 = 迁移后的导出函数在固定输入下与旧实现**逐位相等**（比较 %v 全精度字符串 ⇒ 末位不同也会红）。
 // 同一批数字在 ui 侧的对拍件（ui/particles_parity_test.go，读私有粒子字段）里再对一遍，
 // 两处 want 同源 ⇒ 本包只经导出面看到的口径 = 旧实现口径。
-//
 // 200 帧连跑（TestParticlesParityFrames）走消费者 ui 的导出口（NewField / Step / DebugStats）：
 // 每帧把全场粒子的 DebugStats 文本做 FNV-64a，逐帧累计 acc + 第 0/1/2/100/199 帧的 mark。
 // 逐字位移序列本身由 ui 侧对拍件钉（那里能读 x/y 的全精度值）；本包钉的是"同种子连跑 200 帧
@@ -452,7 +450,6 @@ func zzFramesDigest(f *ui.Field) uint64 {
 }
 
 // TestParticlesParityFrames 钉死"同种子连跑 200 帧 ⇒ 逐帧位移序列"（判据 3）。
-//
 // 取数（WS_PRE_PARTICLES2=1 ⇒ 只打印不比）：
 //
 //	WS_PRE_PARTICLES2=1 go test -tags=novulkan,nox11 -count=1 -run TestParticlesParityFrames ./ui/particles -v

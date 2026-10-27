@@ -1,9 +1,9 @@
 //go:build !vulkan
 
-// TestAssetsParity（R5 卡 6 钉死测试 · assets 侧）：
-// R3 白名单集合逐字对拍 + 云贴图档表逐条对拍。
-// 期望值 = 迁移前旧实现（ui/effects.go:636 白名单 + :671-684 cloudFormOf 表体）
-// 打印的基线（out/notes-assets-b6.md §0，TestParityDumpB6 旧代码复跑），数字/下标写死。
+// TestAssetsParity（钉死测试 · assets 侧）：
+// 白名单集合逐字对拍 + 云贴图档表逐条对拍。
+// 期望值 = 迁移前旧实现（ui/effects.go:636 白名单 + cloudFormOf 表体）
+// 打印的基线（TestParityDumpB6 旧代码复跑），数字/下标写死。
 package assets
 
 import (
@@ -13,7 +13,7 @@ import (
 )
 
 func TestAssetsParity(t *testing.T) {
-	// ── 白名单逐字对拍：R3 = cloud1/cloud2/cloud4 ⇒ 0 基下标 {0,1,3} ──
+	// ── 白名单逐字对拍： = cloud1/cloud2/cloud4 ⇒ 0 基下标 {0,1,3} ──
 	wantWL := []int{0, 1, 3}
 	if got := len(CloudIdxAllowed); got != len(wantWL) {
 		t.Fatalf("白名单长度 = %d，期望 %d", got, len(wantWL))

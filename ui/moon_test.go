@@ -103,17 +103,15 @@ func TestSkyCacheKeyMoon(t *testing.T) {
 func f64p(v float64) *float64 { return &v }
 
 // TestBakeMoonPhases 实测 bakeMoon 的三条口径（需求 3）：
-// - phase == nil → 不画月亮（月核区无像素，规格 2.3）。
+// - phase == nil → 不画月亮（月核区无像素）。
 // - phase != nil 且非 new → 用素材绘制（月核区有像素）。
 // - phase 落在 new 区间 → 不画月亮（月核区无像素）。
-//
 // 位置/半径口径 = 月亮独立层：心 (0.72w,0.095h)，半径 moonRcFrac=0.060 倍屏宽。
 // TestBakeMoonPhases 月亮层的月相判据（此后月亮由独立层绘制）。
-//
 // 月亮已从天空纹理摘出（半分辨率烘焙 ⇒ 边缘整像素台阶 + 云压不住月面），
 // 上线路径 = moonLayerGet(整屏分辨率) → moonBlit 画在云之前。
 // 本测试直接打这条路径，判据逐字不变：
-// - phase == nil → 不画月亮（月核区无亮像素，规格 2.3）
+// - phase == nil → 不画月亮（月核区无亮像素）
 // - phase = 0.5 → 满月（月核区有亮像素）
 // - phase = 0.0 → 新月不画月亮（月核区无亮像素）
 // - 白天不画月亮
@@ -148,7 +146,7 @@ func TestBakeMoonPhases(t *testing.T) {
 		return n
 	}
 
-	// 相位 nil 的口径（规格 2.3）：**不画月亮** ⇒ 月核区亮像素必须 = 0。
+	// 相位 nil 的口径：**不画月亮** ⇒ 月核区亮像素必须 = 0。
 	// 旧口径是"取不到就当满月"（bakeMoonAt 里 p:=0.5）⇒ 缺数据时画出一轮满月。
 	if n := bright(sky.MoonLayerGet(w, h, nil)); n != 0 {
 		t.Errorf("phase=nil 月核区亮像素 = %d ⇒ 取不到月相还在画月亮（应不画，与新月一致）", n)
@@ -165,7 +163,7 @@ func TestBakeMoonPhases(t *testing.T) {
 	}
 }
 
-// TestMoonLayerSmallWindow 低性能 x86 小主机屏保窗口是 **810x1389**（日志 SCR_FIRSTFRAME size=810x1389），
+// TestMoonLayerSmallWindow 低性能 x86 实机屏保窗口是 **810x1389**（日志 SCR_FIRSTFRAME size=810x1389），
 // 不是 1080x1920。月亮在 0.095h 时其光晕盒顶到屏幕外，
 // bakeMoonAt 的起点外扩 -1 变成 -1 ⇒ PixOffset 负索引 panic
 // （有一版一启动就崩，屏幕上根本没有新版在跑）。

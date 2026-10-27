@@ -1,8 +1,8 @@
 package main
 
-// 职责（卡9-app/scr）：调试开关读取：SCR_DEBUG / scr.log / scr.layers / scr.fps / scr.cls 与带外日志落点
+// 职责（app/scr）：调试开关读取：SCR_DEBUG / scr.log / scr.layers / scr.fps / scr.cls 与带外日志落点
 // 搬移来源：cmd/scr/main.go:69-165,283-339,1190-1226（逐字，含注释）
-// 规格：plans/active.md:214 —— app/scr = 屏保生命周期；本卡零行为变化。
+// 规格：—— app/scr = 屏保生命周期；本卡零行为变化。
 // WS_TITLE 读取点（旧 main.go:704 app.Title(os.Getenv("WS_TITLE"))）在 run() 的 w.Option 里，函数体逐字未动 ⇒ 留在 run_lifecycle.go。
 
 import (
@@ -23,7 +23,6 @@ import (
 // layerMask 读图层开关（性能定位用）。
 // 语法：逗号分隔的图层名；`none`/空/`all` = 全开（0 在 ui 侧按全开处理）。
 // 例：只画背景不画文字 = `sky,depth,field`。
-//
 // 读**exe 同目录的 `scr.layers` 文件**而不是环境变量：屏保进程的环境块
 // 继承自登录时的 Explorer（同一条实测结论），`setx` 不重启
 // Explorer 不生效 ⇒ 环境变量这条路对屏保进程不通。
@@ -121,8 +120,7 @@ var dbgLog *os.File
 var dbgOnce sync.Once
 
 // tempLogMarkerName = 临时目录标记文件名（第三个开关）。
-//
-// 为什么要有它（实机取证 2026-10-22）：exe 同目录的两个标记（scr.debug / scr.log）
+// 为什么要有它（实机取证）：exe 同目录的两个标记（scr.debug / scr.log）
 // 对装在 `C:\Program Files\WeatherScr` 与 `C:\Windows\System32` 的产物，
 // 都要跨过 ACL/完整性级别这道墙才能落 `scr_run.log`；取证路径一旦依赖系统目录写入，
 // "拿不到日志"与"写不进去"就分不开。临时目录标记把取证与安装位置解耦。
@@ -135,8 +133,8 @@ func tempLogEnabled() bool {
 }
 
 // dbgLogPath 决定日志落点（纯函数，钉死单测可测）：
-//   - 临时目录标记在 ⇒ 落临时目录（与安装位置、ACL 无关）；
-//   - 否则 exe 同目录（scr.debug / scr.log 的老口径）。
+// - 临时目录标记在 ⇒ 落临时目录（与安装位置、ACL 无关）；
+// - 否则 exe 同目录（scr.debug / scr.log 的老口径）。
 func dbgLogPath(exeDir, tempDir string, useTemp bool) string {
 	if useTemp {
 		return filepath.Join(tempDir, "WeatherScr-scr_run.log")

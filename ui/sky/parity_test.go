@@ -1,5 +1,4 @@
-// Package sky 的天空层对拍（R5 卡 2 判据 3，plans/active.md:205）。
-//
+// Package sky 的天空层对拍（判据 3）。
 // 常量来源 = 迁移**前**的 ui 旧实现跑同一固定输入打印出来的数字（逐字抄录、不改位）：
 //
 //	取数件 = ui/zz_pre_sky_test.go（临时，取数后删除），命令
@@ -8,15 +7,13 @@
 //
 // 判据 = 迁移后的每个函数在固定输入下与旧实现**逐位相等**（比较 %v 字符串，
 // float64 的 %v 是最短往返表示 ⇒ 末位不同也会红）。
-//
 // 本文件只覆盖**不触贴图**的那一半（公式与常量、CPU 混合小工具、纯程序化烘焙）。
 // 走贴图口的烘焙（天空底图覆盖 / 月亮贴图 / 太阳泛光与光线剖面）在 ui 侧对拍：
 // 贴图目录归 ui，消费者 ui 注入 assets 查询口后才有线上口径 ⇒ 见 ui/sky_parity_baked_test.go
 // 的 TestSkyParityBaked（同一份取数件、同一批常量）。
-//
 // 没有数字对拍的迁移件 = 只在 gioui 操作流里绘制的函数（SkyGradient / SkyDepth / GradAlpha /
 // SkyBlit / MoonBlit / DrawMoon / Disc / DiscColor）：它们没有可脱离 GPU 的返回值，
-// 判据 = 44 张基线出图逐像素 diff=0（out/gate-landscape.sh 第 5 步口径）。
+// 判据 = 44 张基线出图逐像素 diff=0（第 5 步口径）。
 package sky
 
 import (

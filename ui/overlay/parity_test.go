@@ -1,22 +1,19 @@
-// Package overlay 的钉死对拍（R5 卡 4 判据 3，plans/active.md:208）。
-//
+// Package overlay 的钉死对拍（判据 3）。
 // 常量来源 = 迁移**前**的 ui 旧实现跑同一固定输入打印出来的数字（逐字抄录、不改位）：
 //
 //	取数件 = ui/zz_pre_overlay_test.go（临时，取数后删除），命令
 //	WS_PRE_OVERLAY=1 go test -tags=novulkan,nox11 -count=1 -run TestZZPreOverlayNumbers ./ui -v
-//	全量输出（287 行 PRE）存档 = out/pre-overlay-numbers.txt；本文件 overlayWant 逐字抄录
+//	全量输出（287 行 PRE）存档 = ；本文件 overlayWant 逐字抄录
 //
 // 判据 = 迁移后的导出函数在固定输入下与旧实现**逐位相等**（比较 %v 全精度字符串 ⇒ 末位不同也会红）。
 // 同一批数字在 ui 侧的对拍件（ui/overlay_parity_test.go，读私有粒子字段 + 别名常量）里再对一遍，
 // 两处 want 同源 ⇒ 本包只经导出面看到的口径 = 旧实现口径。
-//
 // 本文件只覆盖**不触贴图**的那一半（雾的 sc/浓度/封顶/变体、提亮掩膜、闪电矩形、高斯核、生成函数）。
 // 走贴图口的烘焙（闪电形状掩膜 BoltGlowMask）在 ui 侧对拍（贴图目录归 ui，
 // 消费者 ui 注入查询口后才有线上口径）⇒ 见 ui/overlay_parity_test.go 的 glow/* 键；
 // 建场态与 200 帧连跑（field/*、frames/*）同样在 ui 侧钉（那里读得到粒子私有字段）。
-//
 // 没有数字对拍的迁移件 = 只在 gioui 操作流里绘制的函数（DrawFlash / DrawBolt / DrawHaze）：
-// 它们没有可脱离 GPU 的返回值，判据 = 44 张基线出图逐像素 diff=0（out/gate-landscape.sh 第 5 步口径）。
+// 它们没有可脱离 GPU 的返回值，判据 = 44 张基线出图逐像素 diff=0（第 5 步口径）。
 package overlay_test
 
 import (

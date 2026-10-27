@@ -1,21 +1,16 @@
 package ui
 
-// P3 判据 3 的钉死单测（spec/p3-cap.md 判据 3 逐条）。
-//
+// P3 判据 3 的钉死单测（判据 3 逐条）。
 // 口径来源（不在这里发明新几何）：
-//   - 带数 = Field.bandCount（ui/effects.go）；粒子数 = counts（ui/effects.go）
-//   - 漂移重叠 = Field.DriftOverlapIncl / Field.DriftOverlapBandOnly（P6 设计第 6 条两口径，
-//     按当前真实落位，与探针共用 bandSpan）
-//   - 云影 = Field.cloudShadowPlaces（与 GPU 绘制同一份数据）
-//   - 层数/双层 = OverlapRow（ui/overlap_probe.go，avgLayers = Σ层屏宽 ÷ bandSpan）
-//
-// 基线数字来自 out/overlap-20261023.tsv（P1 探针）与 out/notes-p2-budget.md 的预算线。
-//
-// P6 判据（spec/p6-noverlap.md 判据第 2 条，逐字）：预算线按新判据收紧——
-//
+// - 带数 = Field.bandCount（ui/effects.go）；粒子数 = counts（ui/effects.go）
+// - 漂移重叠 = Field.DriftOverlapIncl / Field.DriftOverlapBandOnly（P6 设计第 6 条两口径，
+// 按当前真实落位，与探针共用 bandSpan）
+// - 云影 = Field.cloudShadowPlaces（与 GPU 绘制同一份数据）
+// - 层数/双层 = OverlapRow（ui/overlap_probe.go，avgLayers = Σ层屏宽 ÷ bandSpan）
+// 基线数字来自落位探针的实测行与预算线。
+// P6 判据（判据第 2 条，逐字）：预算线按新判据收紧——
 //	带-only 真落位双层占比 ≤5%（budgetDualBandOnlyLine）
 //	含粒子云/雾团 ≤10%（budgetDualLine：60 → 10，**只许收紧不许放宽**）
-//
 // 400 与 800 固定步都测（P6 判据第 2 条逐字）。
 
 import (
@@ -77,13 +72,13 @@ func TestBudgetFogCap(t *testing.T) {
 	}
 	f := NewField(effect.Fog, true, budgetSeed)
 	if n := f.bandCount(); n != 2 {
-		t.Errorf("bandCount(Fog) = %d，期望 2（P3 判据 3 逐字 + 预算表「雾的带 4→2」）", n)
+		t.Errorf("bandCount(Fog) = %d，期望 2（P3 判据 3 逐字 + 预算表'雾的带 4→2'）", n)
 	}
 	if f.TotalCount() != 2 {
 		t.Fatalf("Fog 全场粒子数 = %d，期望 2", f.TotalCount())
 	}
 	// 2 个粒子 = 1 团雾幕 + 1 朵粒子云（换种不换数：判据 4 的覆盖率口径只认云带+粒子云，
-	// 2 条带 + 2 团雾实测 35.42% < 下限 35.7%，见 out/notes-p3.md）
+	// 2 条带 + 2 团雾实测 35.42% < 下限 35.7%，见）
 	fog, cloud := 0, 0
 	for i := range f.parts {
 		switch f.parts[i].kind {
@@ -115,9 +110,8 @@ func TestBudgetSnowFogCurtain3(t *testing.T) {
 }
 
 // 判据 3 之四：Clear 白天 / Snow / Dust 的云影表里**云带影 = 0**（只含粒子云影）。
-//
-// 判据 C 的落点：cloudShadowPlaces 的带影段加了 hasCloudBands() 守卫。
-// 云带影的辨认口径 = 影的 dw 等于「该带 bandPlace 给的 dw × cloudShadowSizeMul」
+// 判据 C 的落点：cloudShadowPlaces 的带影段加了 hasCloudBands 守卫。
+// 云带影的辨认口径 = 影的 dw 等于'该带 bandPlace 给的 dw × cloudShadowSizeMul'
 // （cloudShadowPlaces 的带影段：sc = bp.dw/sz.X × cloudShadowSizeMul ⇒ dw = bp.dw × cloudShadowSizeMul）；
 // 粒子云影的 dw = 云本体 dw × cloudShadowSizeMul，云本体 dw 由 sizeCloudByClass 反解到本类区间，
 // 与云带区间（768–1178 px）逐档可分（Clear 白天 300–600、PartlyCloudy 300–700、Cloudy 500–900）。
@@ -164,7 +158,7 @@ func TestBudgetEmptyCloudShadowGone(t *testing.T) {
 	cl := NewField(effect.Cloudy, true, budgetSeed)
 	cl.Step(time.Second, PortraitW, PortraitH)
 	if n := bandShadowShadows(cl, PortraitW, PortraitH, cl.t); n != cl.bandCount() {
-		t.Errorf("Cloudy 云带影 = %d，期望 %d（守卫只砍「本体没带」的档）", n, cl.bandCount())
+		t.Errorf("Cloudy 云带影 = %d，期望 %d（守卫只砍'本体没带'的档）", n, cl.bandCount())
 	}
 }
 
@@ -215,8 +209,8 @@ func TestBudgetAllProbeClassesWithinLines(t *testing.T) {
 		}
 		// Snow 灰幕 = P3 钉死件（3 团 × 1500–1900 px，Σ宽 ≥ 4710 px > span 3080 ⇒
 		// 同带粒子对重叠的几何下界 (4710−3080)/3080 = 52.9%），"≤10%"对 Snow 不可达
-		// （逐式在 out/notes-p6.md）⇒ Snow 单独收 60 → 55 线（只收紧），其余云/雾档吃 P6 线 10%。
-		// P7：雾团封顶后 Snow 3 张灰幕 = 3×346 px（Σ1038 ≤ 1080）⇒ 与其余云/雾档同吃 10% 线。
+		// （逐式在）⇒ Snow 单独收 60 → 55 线（只收紧），其余云/雾档吃 P6 线 10%。
+		// 雾团封顶后 Snow 3 张灰幕 = 3×346 px（Σ1038 ≤ 1080）⇒ 与其余云/雾档同吃 10% 线。
 		line := budgetDualLine
 		if r.DualPct > line {
 			t.Errorf("%s dualPct 含粒子=%.2f > %.0f%%（P6 判据）", c.cls, r.DualPct, line)
@@ -228,14 +222,13 @@ func TestBudgetAllProbeClassesWithinLines(t *testing.T) {
 }
 
 // 判据 4 的线进单测。
-//
-// P7 口径变更（用户判据原话"屏幕上的云或雾最多的时候也只能首尾相连，不能重叠"）：
+// P7 口径变更（判据"屏幕上的云或雾最多的时候也只能首尾相连，不能重叠"）：
 // 旧基线覆盖率（Overcast 54.79 / Fog 39.7 / Cloudy 46.15）是**层与层相叠**换来的
 // ——相叠把 3 条带/2 团挤在同一段 ⇒ 覆盖率虚高。"永不相叠"之下满密度覆盖率的上界
 // = Σ层宽 ÷ 屏宽（首尾相连铺满一屏 = 100%），铺放态快照只有一两条在屏内
 // ⇒ 实测 Overcast 34.48%、Fog 26.87%、Cloudy 42.92%（seed=20261023 探针表）。
 // 旧"≥基线 90%"与"永不相叠"算术互斥 ⇒ 下限按 P7 实测重钉（出处
-// evidence/p6b-placement-arithmetic-20261023.md + 本轮探针表）。
+// + 本轮探针表）。
 func TestBudgetCoverageFloors(t *testing.T) {
 	floors := map[effect.Class]float64{
 		effect.Overcast: 32.0,

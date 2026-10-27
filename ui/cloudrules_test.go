@@ -1,16 +1,14 @@
 package ui
 
-// 云规则 + 太阳盘 的五条判据（规格 2 第 2 条）。
-//
+// 云规则 + 太阳盘 的五条判据。
 // 共同纪律：**判据必须真的测量**——测量盒子/取样窗口是固定口径，
 // 不随天气类缩放（旧写法把盒子按类缩成 0 的写法等于空转，这里禁止），
 // 每条判据都把实测数字打出来。
-//
-//	TestNoOvertake        固定种子 2000 步，逐带记录云序 ⇒ 交换次数 = 0
-//	TestSpeedByThickness  薄档/厚档 vx 区间 ⇒ 薄档最小值 ≥ 厚档最大值
-//	TestSnowFlakeSize     雪花屏上 dw 分布 ⇒ ≥ 12 px
-//	TestSunDiscEdge       固定太阳盒逐档同像素数 ⇒ 晴/多云见日盘内亮占比 ≥60%、阴/雨 = 0
-//	TestClassPlacement    逐类云中心 y 与屏宽 ⇒ 雨/雷 y 中位数 < 晴档 y 中位数
+//	TestNoOvertake 固定种子 2000 步，逐带记录云序 ⇒ 交换次数 = 0
+//	TestSpeedByThickness 薄档/厚档 vx 区间 ⇒ 薄档最小值 ≥ 厚档最大值
+//	TestSnowFlakeSize 雪花屏上 dw 分布 ⇒ ≥ 12 px
+//	TestSunDiscEdge 固定太阳盒逐档同像素数 ⇒ 晴/多云见日盘内亮占比 ≥60%、阴/雨 = 0
+//	TestClassPlacement 逐类云中心 y 与屏宽 ⇒ 雨/雷 y 中位数 < 晴档 y 中位数
 
 import (
 	"image"
@@ -41,7 +39,6 @@ func medianF(v []float64) float64 {
 }
 
 // TestNoOvertake 同道不超车：固定种子跑 2000 步，逐带记录云序，断言无交换。
-//
 // 带 = 中心 y 相差 airBandN(=0.12 屏高) 之内（与 spreadAir 的同带判据同一口径）。
 // 云序 = 带内按 x 升序的粒子索引序列。交换 = 同一对云在相邻两次采样里的相对次序翻转。
 // 只统计"两次采样都在场、且两次都在同一带内"的云对（跨带不约束，规格逐字）。
@@ -52,7 +49,7 @@ func TestNoOvertake(t *testing.T) {
 	// 云速 0.003–0.014 屏宽/秒 ⇒ 两次快照之间最多走 0.0047 屏宽 = 5 px，
 	// 超车必然落在某次快照对上（超车是连续事件，翻转后不会翻回来：同带内 y 恒定、vx 恒定）。
 	for _, cls := range []effect.Class{effect.Clear, effect.PartlyCloudy, effect.Cloudy, effect.Overcast, effect.Rain, effect.Thunder} {
-		pairSeenClass, tested := 0, false // P3：同带采样的"样本足否"判据从**每 seed** 改成**逐类合计**（理由见下面 Fatalf 的注释）
+		pairSeenClass, tested := 0, false // 同带采样的"样本足否"判据从**每 seed** 改成**逐类合计**（理由见下面 Fatalf 的注释）
 		for _, seed := range []int64{20261015, 23, 11} {
 			f := NewField(cls, true, seed)
 			nCloud := 0
@@ -128,7 +125,7 @@ func TestNoOvertake(t *testing.T) {
 								continue
 							}
 							if math.Abs(cur.y[i]-cur.y[j]) > airBandN {
-								continue // 跨带不约束（规格逐字）
+								continue // 跨带不约束
 							}
 							pairSeen++
 							dPrev, dCur := prev.x[i]-prev.x[j], cur.x[i]-cur.x[j]
@@ -159,7 +156,6 @@ func TestNoOvertake(t *testing.T) {
 }
 
 // TestSpeedByThickness 云速按薄厚：打印薄档/厚档 vx 区间，断言薄档最小值 ≥ 厚档最大值。
-//
 // 薄档 = 晴（300–600 px）+ 多云见日（300–700 px）的粒子云；
 // 厚档 = 阴（768–1178 px）的粒子云（雨/雷档没有粒子云，只有云带，见 TestClassPlacement）。
 // 取 vxBase = 生成时按屏宽定下的基准速度（coupleClouds 的间距修正会在它附近调，
@@ -217,16 +213,16 @@ func TestSpeedByThickness(t *testing.T) {
 	t.Logf("公式端点：cloudVxByThickness(300px)=%.5f (600px)=%.5f (768px)=%.5f (1178px)=%.5f",
 		cloudVxByThickness(300/float64(PortraitW)), cloudVxByThickness(600/float64(PortraitW)),
 		cloudVxByThickness(768/float64(PortraitW)), cloudVxByThickness(1178/float64(PortraitW)))
-	// B3/R4 后的判据口径（改测 R1 本身，记 out/notes-b3-kinetics.md）：
-	// R4 把四档云宽整档抬进同一条带 [480, 529] ⇒ "薄档 vs 厚档"的跨档宽度差被抹平，
+	// B3/ 后的判据口径（改测 本身，记）：
+	// 把四档云宽整档抬进同一条带 [480, 529] ⇒ "薄档 vs 厚档"的跨档宽度差被抹平，
 	// 旧断言"薄档最小 vx ≥ 厚档最大 vx"在算术上不再成立（两档同宽 ⇒ 同分布）。
-	// 现钉 R1 的两条本体（evidence/p8-numbers-20261023.md:17-23）：
+	// 现钉 的两条本体（17-23）：
 	//	① 最快的云不能比现在更快 ⇒ 全部 vxBase ≤ 0.0140（现云速上界，逐字）；
 	//	② 速度按屏宽单调不增（薄快厚慢的式子本身），且档内必须有分布（判据不空转）。
-	const vxHardCap = 0.0140 // R1 冻结上限 = kinetics.VxMax = cloudVxThin
+	const vxHardCap = 0.0140 // 冻结上限 = kinetics.VxMax = cloudVxThin
 	for i, v := range append(append([]float64{}, thin.vxBase...), thick.vxBase...) {
 		if v > vxHardCap {
-			t.Errorf("第 %d 朵 vxBase=%.5f > 冻结上限 %.4f ⇒ R1「最快的云不能比现在更快」被破", i, v, vxHardCap)
+			t.Errorf("第 %d 朵 vxBase=%.5f > 冻结上限 %.4f ⇒ 冻结口径'最快的云不能比现在更快'被破", i, v, vxHardCap)
 		}
 	}
 	type dwv struct {
@@ -255,7 +251,6 @@ func TestSpeedByThickness(t *testing.T) {
 }
 
 // TestSnowFlakeSize 雪花屏上尺寸：打印 dw 分布，断言 ≥ 12 px。
-//
 // dw = 源图宽 × spriteScale(p)，与 Draw 的绘制式逐字同口径（spriteScale 的
 // 非云非雾分支 = sc·(0.55+0.45·depth)·scaleMul ÷ spriteNetDiv）。
 func TestSnowFlakeSize(t *testing.T) {
@@ -304,8 +299,7 @@ func TestSnowFlakeSize(t *testing.T) {
 	}
 }
 
-// sunBox 固定太阳盒（规格 2 第 2 条第 4 项）：中心 (0.72w, 0.095h)，半边长 3×0.045w。
-//
+// sunBox 固定太阳盒：中心 (0.72w, 0.095h)，半边长 3×0.045w。
 // **固定口径**：盒子只由烘焙宽 w 决定，不随天气类缩放
 // （旧写法把测量盒子按类缩成 0 的写法 = 空转，这里逐档必须量到同一个盒子）。
 type sunBox struct {
@@ -338,7 +332,6 @@ func maxInt(a, b int) int {
 }
 
 // TestSunDiscEdge 固定太阳盒逐档测量（云量口径）。
-//
 // 逐档的云量是测试给定的输入（Clear=0、PartlyCloudy=45、Overcast=100、Rain=90），
 // 打印的全是实测数字。
 //
@@ -346,10 +339,10 @@ func maxInt(a, b int) int {
 //	2 晴 / 多云见日：盘内（r ≤ rc）亮像素占比 ≥ 60%（亮 = 比同位置天空基色亮 ≥24 级）
 //	3 白天任何档：盘心净抬升 > 0（太阳常驻，灰蒙档也留亮斑）
 //	4 满亮盘（云量 0）：盘内近均匀（r ≤ 0.88rc 极差 ≤ 8 级）+ 羽化带宽 ≤ 半径 12%；
-//	  云量调出来的盘（0.20<dim<1）：中心比边缘亮 ≥20 级、极差 ≤ 80 级（变淡变软）
+//	 云量调出来的盘（0.20<dim<1）：中心比边缘亮 ≥20 级、极差 ≤ 80 级（变淡变软）
 //	5 环带峰值亮度 < 盘体亮度（环带 [1.1rc, 3.2rc] 的最大亮度 < 盘内最小亮度）
 //	6 灰蒙档（云量 ≥85）：盘缘处不许出现 >30 级的跌落（硬圆盘的签名），
-//	  跌落点必须落在 1.5×rc 之外
+//	 跌落点必须落在 1.5×rc 之外
 //	7 打印水平剖面 r = 0, 24, 48, 72, 96
 //
 // 第 6 条的口径变更（写明理由，不是放宽）：旧断言是"阴 / 雨 盘内亮像素 == 0"，
@@ -548,10 +541,9 @@ func TestSunDiscEdge(t *testing.T) {
 		}
 	}
 	// ---- 盘周提亮曲线与"无辐条"的实测数字（Clear 档）----
-	//
 	// 提亮是烘焙逐像素调用的函数本身（sunSkyLift），打印的是画进天空纹理的
 	// 那条曲线，不是另抄一份公式。
-	// 辐条判据（规格 3 第 8 条：TestSunDiscEdge 因删射线改判为"盘内亮像素 ≥60%
+	// 辐条判据（TestSunDiscEdge 因删射线改判为"盘内亮像素 ≥60%
 	// 且无辐条"）：r=2rc 圆周上 360 个采样点的净抬升，峰谷差与比值都要打印，
 	// 比值口径与 TestNoSunRays 一致（≤1.25）。
 	rc := box.rc
@@ -599,8 +591,7 @@ func TestSunDiscEdge(t *testing.T) {
 	}
 }
 
-// TestNoSunRays 绕盘心 16 个角度采样亮度，最大/最小比 ≤1.25（规格 3 第 1 条）。
-//
+// TestNoSunRays 绕盘心 16 个角度采样亮度，最大/最小比 ≤1.25。
 // 口径：
 //
 //	1 采样半径 = 2×盘半径（辐条的长度区间是 2.2–3.0 倍半径，峰谷就出现在这一圈）；
@@ -648,7 +639,6 @@ func TestNoSunRays(t *testing.T) {
 }
 
 // TestClassPlacement 逐类云中心 y 与屏宽：打印区间，断言雨/雷档 y 中位数 < 晴档 y 中位数。
-//
 // 云 = 粒子云 + 云带两层的并集（雨/雷档没有粒子云，只有云带；晴档只有粒子云、没有云带，
 // 两层都是"屏幕上真正画出来的云"，共用 bandPlace / cloudDrawWidthPx 的绘制口径）。
 func TestClassPlacement(t *testing.T) {

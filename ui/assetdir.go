@@ -1,22 +1,19 @@
 package ui
 
 // 素材覆盖目录（预览工装）。
-//
 // 目标：让同一套生产渲染路径能从**外部目录**读素材，出候选素材在不同天气下的效果图。出图工具 cmd/fxshot 用 FX_ASSET_DIR 透传，ui 包只认 WS_ASSET_DIR。
-//
 // 出厂中性（硬口径）：
-//   - WS_ASSET_DIR 未设置 ⇒ 本文件所有查询都返回没有覆盖文件，
-//     渲染路径走的还是改动前那一条（embedFS + 程序化烘焙），画面逐字节不变。
-//   - 出厂二进制 cmd/scr 不读这个环境变量（闸门 grep 证明）。
-//
+// - WS_ASSET_DIR 未设置 ⇒ 本文件所有查询都返回没有覆盖文件，
+// 渲染路径走的还是改动前那一条（embedFS + 程序化烘焙），画面逐字节不变。
+// - 出厂二进制 cmd/scr 不读这个环境变量（闸门 grep 证明）。
 // 语义（逐条对应素材预览工装取证 1.1 节 + 素材落地取证 1 节）：
-//   - 目录非空且存在同名文件 ⇒ readPNG 改从该目录读；
-//   - 目录里没有的名字 ⇒ 照旧走 embedFS；
-//   - 反预乘处理保留（覆盖文件与内嵌文件走完全相同的
-//     png.Decode → toNRGBA → unpremultiply 链路，见 readPNG / assetDecode）；
-//   - 负缓存语义保留（查过的名字——含不存在——进缓存，逐帧路径不再重复 stat）；
-//   - **内嵌素材存在即走贴图分支**（assetAvailable / assetImageAny）：
-//     月亮、雨丝、云/雾的内嵌素材是默认路径，覆盖目录仍可覆盖它。
+// - 目录非空且存在同名文件 ⇒ readPNG 改从该目录读；
+// - 目录里没有的名字 ⇒ 照旧走 embedFS；
+// - 反预乘处理保留（覆盖文件与内嵌文件走完全相同的
+// png.Decode → toNRGBA → unpremultiply 链路，见 readPNG / assetDecode）；
+// - 负缓存语义保留（查过的名字——含不存在——进缓存，逐帧路径不再重复 stat）；
+// - **内嵌素材存在即走贴图分支**（assetAvailable / assetImageAny）：
+// 月亮、雨丝、云/雾的内嵌素材是默认路径，覆盖目录仍可覆盖它。
 
 import (
 	"bytes"
@@ -60,10 +57,8 @@ var assetPathCache = struct {
 }{m: map[string]assetPathEntry{}}
 
 // assetLookupPath 查 name 在覆盖目录里的同名普通文件。
-//
 // 找法：<dir>/<name>，找不到再试 <dir>/<basename(name)>
 // （readPNG 传进来的名字带 embed/ 前缀，覆盖目录里按裸文件名放，两个写法都收）。
-//
 // 命中与未命中都进缓存 ⇒ 每帧路径里每个名字最多一次 stat（第一帧付，之后纯查表）。
 // 未启用覆盖目录时连缓存都不进，直接返回 false。
 func assetLookupPath(name string) (string, bool) {
@@ -105,7 +100,6 @@ var assetImageCache = struct {
 }{m: map[string]assetImageEntry{}}
 
 // assetImage 读覆盖目录里的一张 PNG，返回反预乘后的像素 + ImageOp + 尺寸。
-//
 // 解码口径与 readPNG 逐字相同（png.Decode → toNRGBA → unpremultiply）。
 // 未启用 / 文件不存在 / 解码失败 ⇒ ok=false（解码失败不回落 embedFS：
 // 覆盖文件存在即取代该名字的嵌入素材，坏了就当这张素材没有）。
@@ -147,11 +141,9 @@ func assetImage(name string) (*image.NRGBA, paint.ImageOp, image.Point, bool) {
 }
 
 // assetAvailable 素材在不在：**覆盖目录里的同名文件优先，其次内嵌素材**。
-//
 // B 版素材落地后，内嵌素材就是默认路径（月亮 / 雨丝 / 云 / 雾都在 ui/embed 里），
 // 覆盖目录（WS_ASSET_DIR）仍可覆盖它 —— 工装语义不变：
 // 目录里有同名文件 ⇒ 用目录里的；目录里没有 ⇒ 用内嵌的；内嵌也没有 ⇒ 程序化画法。
-//
 // 天空底图（sky_day/sky_night/sky_sunset）不在内嵌素材里（天空贴图落选，
 // 画面保持自绘渐变），本函数对这三个名字返回的仍是"目录里有没有"。
 func assetAvailable(name string) bool {
@@ -168,7 +160,7 @@ func assetAvailable(name string) bool {
 //
 //	覆盖目录里的同名文件 → "<dir>|<name>"
 //	内嵌素材 embed/<name> → "embed|<name>"
-//	都没有               → ""
+//	都没有 → ""
 //
 // 为什么缓存键必须带来源：月亮层/天空层的缓存键里那一项原本只记文件名，
 // 内嵌素材存在即走贴图之后，**同一个文件名对应两个来源**
@@ -199,7 +191,6 @@ func assetDecode(b []byte) *image.NRGBA {
 }
 
 // assetImageAny 取一张贴图：覆盖目录优先，其次内嵌素材。
-//
 // 与 assetImage 的区别 = 少了"未启用覆盖目录就返回 false"这一条；
 // 解码口径、缓存结构、"解码失败视为该素材不存在"的语义全部一致。
 // 缓存键含目录（内嵌路径的键 = 空目录），切换覆盖目录后不会串味。

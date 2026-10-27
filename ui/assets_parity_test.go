@@ -1,10 +1,10 @@
 //go:build !vulkan
 
-// TestAssetsParity（R5 卡 6 钉死测试 · ui 侧）：
+// TestAssetsParity（钉死测试 · ui 侧）：
 // cloudFormOf 组装结果逐条对拍（含宽度 wLo/wHi 与白名单下标，数字/下标写死）。
-// 期望值 = 迁移前旧实现打印的基线（out/notes-assets-b6.md §0，
+// 期望值 = 迁移前旧实现打印的基线（
 // TestParityDumpB6 在旧代码上跑出的 9 行 TIER + 1 行 WHITELIST）。
-// 宽度口径 = kinetics.WidthFor（规则侧，留 ui/effects.go，见卡 6 边界说明）。
+// 宽度口径 = kinetics.WidthFor（规则侧，留 ui/effects.go，见 边界说明）。
 package ui
 
 import (

@@ -1,15 +1,13 @@
 //go:build !vulkan
 
-// B4/R10 横屏版式钉死单测（spec/b4-landscape.md:26-33「硬判据 1」，四条逐字）：
-// 对 1920×1080（取证照片 troubleshooting/横屏适配缺陷.md:5 的 flipSCR.png 口径）
-//
+// B4/ 横屏版式钉死单测（26-33'硬判据 1'，四条逐字）：
+// 对 1920×1080（取证照片 flipSCR.png 口径）
 //	① 面板顶沿 y ≥ 云带下沿（云带下沿从 Field 的带区间接口 BandRegionPx 取实际值）
 //	② 数据行左右边距 = round(0.0194×1920) = 37 px ±1
 //	③ 时钟宽 ≤ 0.30×1920 = 576 px
-//	④ 云宽区间 lo ≥ 853、hi ≤ 932（kinetics 屏宽分制，evidence/p8-numbers-20261023.md:11-15）
-//
+//	④ 云宽区间 lo ≥ 853、hi ≤ 932（kinetics 屏宽分制，:11-15）
 // 竖屏口径的回归由既有版式测试钉死：TestLayout / TestLayoutPx / TestCloudWidthMatchesBand
-// （480/529/21 px @1080 逐字不许变，spec/b4-landscape-brief.md:38）。
+// （480/529/21 px @1080 逐字不许变，:38）。
 
 package ui
 
@@ -69,7 +67,7 @@ func TestLandscapeLayoutPanelBelowCloudBand(t *testing.T) {
 	// 非压顶档（云带从 0.02 铺到 0.26 屏高 ⇒ 横屏 1080 高下带下沿贴近屏底）：
 	// "顶沿 = 云带下沿 + 间隙"与"面板整块在屏内"在 1080 高下互斥，
 	// 实现取"面板完整优先"（贴屏底、保持 landscapePanelMinH）。
-	// 冲突逐条打印交主会话判读，已记 out/notes-b4-landscape.md。TODO(未取证)：横屏下非压顶档的带纵向口径。
+	// 冲突逐条打印交主会话判读，已记 。TODO(未取证)：横屏下非压顶档的带纵向口径。
 	for _, cls := range []effect.Class{effect.Cloudy, effect.PartlyCloudy, effect.Fog} {
 		f := landField(cls, true, 800)
 		bandTop, bandBottom := f.BandRegionPx(landW, landH)

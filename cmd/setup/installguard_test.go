@@ -2,7 +2,7 @@ package main
 
 import "testing"
 
-// R16-A 判据（spec r16-wizard §2.1）：重入必须被拒；release 后可再取。
+// 判据：重入必须被拒；release 后可再取。
 // 纯原子断言，无窗口依赖（Linux 侧 go test 跑得到）。
 
 func TestInstallGuardReentry(t *testing.T) {

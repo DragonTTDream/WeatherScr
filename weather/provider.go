@@ -26,7 +26,6 @@ const (
 	// 本项目的"背景随天气变"是产品需求，口径 = **按逐小时云量分档**
 	// （WMO 码在低云量区判"主要晴"，与国内天气应用同刻的"多云"观感落差大：
 	// 杭州实测 code=1 而云量 26%。
-	//
 	// + **precipitation_probability**（需求 1，2026-10-16
 	// "保持当前时刻"：上游 open_meteo_provider.py:366-368 的注释说 current 块里
 	// 没有这个字段、只能取 hourly 第一个值；**本次实测推翻该注释**
@@ -38,15 +37,15 @@ const (
 	// （open_meteo_provider.py:331），实测 `hourly=precipitation_probability,precipitation`
 	// 接受，units `%` 与 `mm`（需求 1）。
 	hourlyFields = "precipitation_probability,precipitation,cloud_cover"
-	// minutely15Fields = 15 分钟层（批次 b-alert-v1 第 3 步）。
-	// 实测（本机直连，2026-10-21，坐标 29.2772,104.7044，forecast_days=6）：
+	// minutely15Fields = 15 分钟层。
+	// 实测（本机直连，，坐标 30.2495,120.1583，forecast_days=6）：
 	// `minutely_15=precipitation,precipitation_probability` 被接受，
 	// 条数 = 逐小时条数 × 4（144 条 hourly ⇒ 576 条 minutely_15），
-	// 跨度与 hourly 对齐（2026-10-21T00:00 → 2026-10-26T23:45）。
+	// 跨度与 hourly 对齐（T00:00 → T23:45）。
 	// 带 `models=` 时同样只给逐模型后缀键（precipitation_<model> /
 	// precipitation_probability_<model>），⇒ 与 hourly 共用同一套中位数函数。
 	minutely15Fields = "precipitation,precipitation_probability"
-	// cloud_cover 是规格 1.6 加的第三项：三模型云量仲裁的原料。
+	// cloud_cover 是加的第三项：三模型云量仲裁的原料。
 	// 实测：与 `models=gfs_seamless,icon_seamless,ecmwf_ifs025` 同时给出时，hourly 里
 	// 出现逐模型键 cloud_cover_gfs_seamless / cloud_cover_icon_seamless /
 	// cloud_cover_ecmwf_ifs025（各自一条数组，与 time 对齐）；
@@ -65,8 +64,8 @@ const (
 	// 实测 forecast_days=1 → 24 条、=2 → 48 条（2026-10-16T00:00 … 2026-10-17T23:00），
 	// 跨午夜窗口有覆盖（需求 1）。现值 6 已满足 ≥2。
 	forecastDays = "6"
-	// b-alert-v1 第 1 步：删 forecast_hours。
-	// 证据 E-P1/P2（spec/alert-latency-and-logic.md §2）：`forecast_hours=1` 把
+	// 删 forecast_hours。
+	// 证据 E-P1/P2：`forecast_hours=1` 把
 	// hourly 截成 **1 条** ⇒ 预警结构性拿不到数据。去掉后同一请求 48 条
 	// （forecast_days=6 ⇒ 实测 144 条）。
 )
@@ -78,11 +77,11 @@ func RequestParams(lat, lon float64) url.Values {
 	v.Set("longitude", strconv.FormatFloat(lon, 'f', -1, 64))
 	v.Set("current", currentFields)
 	v.Set("hourly", hourlyFields)
-	// 三模型云量（规格 1.6）：models= 逐字三家，与 hourly= 里的 cloud_cover 配对。
+	// 三模型云量：models= 逐字三家，与 hourly= 里的 cloud_cover 配对。
 	v.Set("models", ModelsParam)
 	v.Set("daily", dailyFields)
 	v.Set("forecast_days", forecastDays)
-	// b-alert-v1 第 1 步：不再塞 forecast_hours（证据 E-P1：它把 hourly 截成 1 条）。
+	// 不再塞 forecast_hours（证据 E-P1：它把 hourly 截成 1 条）。
 	// 第 3 步：加 15 分钟层（证据 E-P4：minutely_15 被接受，条数 = 逐小时条数 × 4）。
 	v.Set("minutely_15", minutely15Fields)
 	v.Set("timezone", "auto")
@@ -100,7 +99,7 @@ func GeocodeParams(city string) url.Values {
 }
 
 type geoResponse struct {
-	// 批次 A1 S1（spec/a1-fetch-polite.md）：上游把过载/限流用 **HTTP 200 + body**
+	// 上游把过载/限流用 **HTTP 200 + body**
 	// 送回来，body 形如 {"error":true,"reason":"..."}。geocoding 侧同 forecast 侧口径。
 	Error  bool   `json:"error"`
 	Reason string `json:"reason"`
@@ -114,7 +113,7 @@ type geoResponse struct {
 }
 
 type forecastResponse struct {
-	// 批次 A1 S1：实测抓到的 body 层错误（**HTTP 200** + {"error":true,"reason":"The service is overloaded"}）。
+	// 实测抓到的 body 层错误（**HTTP 200** + {"error":true,"reason":"The service is overloaded"}）。
 	// 没有这两字段时该响应被当正常数据解析：weather_code 缺键 ⇒ 0 ⇒ Clear ⇒ 判成"晴"。
 	Error  bool   `json:"error"`
 	Reason string `json:"reason"`
@@ -139,7 +138,7 @@ type forecastResponse struct {
 		// precipitation 单位 mm。平行数组，原样存进 Sample 供 WindowProb 用。
 		Time          []string  `json:"time"`
 		Precipitation []float64 `json:"precipitation"`
-		// 逐模型云量（规格 1.6，%）：请求带 models= 时 Open-Meteo 才给的三条数组，
+		// 逐模型云量：请求带 models= 时 Open-Meteo 才给的三条数组，
 		// 与 Time 对齐。键名逐字照抄响应（CloudKeyGFS 等三个常量）。
 		// 请求没带 models=、或该模型不覆盖本地 ⇒ 键不存在 ⇒ 解成 nil ⇒ 中位数按缺失算。
 		CloudCover      []int `json:"cloud_cover"`
@@ -147,27 +146,26 @@ type forecastResponse struct {
 		CloudCoverIcon  []int `json:"cloud_cover_icon_seamless"`
 		CloudCoverECMWF []int `json:"cloud_cover_ecmwf_ifs025"`
 
-		// ---- b-alert-v1 第 2 步：逐模型 prob/mm ----
+		// ---- 逐模型 prob/mm ----
 		// 证据 E-P1/P2：请求带 `models=` 时 hourly 里**不存在无后缀的
 		// precipitation_probability / precipitation**，只有逐模型后缀键 ⇒
 		// 旧的无后缀解析解成空数组 ⇒ HourlyProb/HourlyMM 全空 ⇒ 预警结构性不显示。
 		// 指针数组 = 区分"该模型这一格没有值(null)"与"值为 0"：null 解成 nil ⇒
 		// 中位数按缺失跳过（实测 icon_seamless 的 probability 整条 144 格全 null）。
-		//
-		// 键名两套并存（实测差异，已记 out/notes-alert-v1.md「未决/对不上」）：
-		//   规格钉死（spec/b-alert-v1-brief.md §2，取证 P1）：p_probability_<model>
-		//   本机 2026-10-21 直连实测：precipitation_probability_<model>
-		//   且 `hourly=p_probability` 被 API 拒绝（HTTP 400，
-		//   "Cannot initialize ... from invalid String value p_probability"）
+		// 键名两套并存（实测差异，已记 '未决/对不上'）：
+		// 钉死（取证 P1）：p_probability_<model>
+		// 本机 直连实测：precipitation_probability_<model>
+		// 且 `hourly=p_probability` 被 API 拒绝（HTTP 400，
+		// "Cannot initialize ... from invalid String value p_probability"）
 		// ⇒ 两套键名都解，取先拿到非空的那套；钉死单测钉规格那套。
 		ProbBare []*float64 `json:"precipitation_probability"`
 		ProbGFS  []*float64 `json:"p_probability_gfs_seamless"`
 		ProbIcon []*float64 `json:"p_probability_icon_seamless"`
 		ProbECM  []*float64 `json:"p_probability_ecmwf_ifs025"`
 
-		// 本机 2026-10-21 直连实测的那套键名 = 同一家的**另一种拼法**，不是第四家：
+		// 本机 直连实测的那套键名 = 同一家的**另一种拼法**，不是第四家：
 		// precipitation_probability_<model>（`hourly=p_probability` 被 API 拒 400）。
-		// 两套都解 ⇒ 规格钉死的键名与实测键名谁在响应里就用谁；
+		// 两套都解 ⇒ 钉死的键名与实测键名谁在响应里就用谁；
 		// 中位数函数按"家"去重（见 perSlotMedian 注释），不会把一家算成两家。
 		ProbGFSApi  []*float64 `json:"precipitation_probability_gfs_seamless"`
 		ProbIconApi []*float64 `json:"precipitation_probability_icon_seamless"`
@@ -177,7 +175,7 @@ type forecastResponse struct {
 		MMIcon []*float64 `json:"precipitation_icon_seamless"`
 		MMECM  []*float64 `json:"precipitation_ecmwf_ifs025"`
 	} `json:"hourly"`
-	// Minutely15 = 15 分钟层（b-alert-v1 第 3 步）。
+	// Minutely15 = 15 分钟层。
 	// 实测键形态与 hourly 同规则：带 models= 只给逐模型后缀键，
 	// 不带 models= 给无后缀键 ⇒ 两套都解，同一套中位数函数。
 	Minutely15 struct {
@@ -188,9 +186,9 @@ type forecastResponse struct {
 		ProbIcon []*float64 `json:"p_probability_icon_seamless"`
 		ProbECM  []*float64 `json:"p_probability_ecmwf_ifs025"`
 
-		// 本机 2026-10-21 直连实测的那套键名 = 同一家的**另一种拼法**，不是第四家：
+		// 本机 直连实测的那套键名 = 同一家的**另一种拼法**，不是第四家：
 		// precipitation_probability_<model>（`hourly=p_probability` 被 API 拒 400）。
-		// 两套都解 ⇒ 规格钉死的键名与实测键名谁在响应里就用谁；
+		// 两套都解 ⇒ 钉死的键名与实测键名谁在响应里就用谁；
 		// 中位数函数按"家"去重（见 perSlotMedian 注释），不会把一家算成两家。
 		ProbGFSApi  []*float64 `json:"precipitation_probability_gfs_seamless"`
 		ProbIconApi []*float64 `json:"precipitation_probability_icon_seamless"`
@@ -209,14 +207,13 @@ type forecastResponse struct {
 		PrecipitationProbabilityMax []float64 `json:"precipitation_probability_max"`
 		PrecipitationSum            []float64 `json:"precipitation_sum"`
 		// 今日月相（fraction，0–1），实测
-		//
-		// 请求带 models=（三模型云量，规格 1.6）时，Open-Meteo 把 daily 里
+		// 请求带 models=（三模型云量）时，Open-Meteo 把 daily 里
 		// **每个逐模型字段都按模型后缀各给一条数组**，实测该请求的 daily 键 =
 		// [time, temperature_2m_max_gfs_seamless, …, moon_phase_gfs_seamless,
-		//  moon_phase_icon_seamless, moon_phase_ecmwf_ifs025, …]，
+		// moon_phase_icon_seamless, moon_phase_ecmwf_ifs025, …]，
 		// **没有裸 moon_phase 键**（证据 E-MOON-KEYS：weather/moonprobe2_test.go
 		// 打印 DAILY_KEYS 与 DAILY_MOON=<nil>）。
-		// 只解裸键 ⇒ 数组空 ⇒ Sample.MoonPhase = nil（证据 E-MOON-NIL）。
+		// 只解裸键 ⇒ 数组空 ⇒ Sample.MoonPhase = nil。
 		// 三条后缀键 = 本批补的解析口径；裸键保留 = 请求不带 models= 时的旧口径。
 		MoonPhase []float64 `json:"moon_phase"`
 		// 带模型后缀的三条月相数组（键名逐字照抄响应，与 CloudCoverGFS 同一族）。
@@ -230,21 +227,20 @@ type forecastResponse struct {
 }
 
 // Client 是 Open-Meteo 客户端。零值可用（用 10 秒超时，对齐上游 timeout=10）。
-//
-// BaseURL 非空时改走自建代理（低性能 x86 小主机无 DNS/无外网，只能走 IP 字面量
+// BaseURL 非空时改走自建代理（低性能 x86 实机无 DNS/无外网，只能走 IP 字面量
 // 的本机代理。代理镜像 Open-Meteo 的路径：/v1/search 与 /v1/forecast。
 type Client struct {
 	HTTP    *http.Client
 	BaseURL string
 
 	// OnRequest 非空时，每次发起 HTTP 请求前把**完整 URL** 交出去。
-	// 用途：带外可观测（R-14）——实机取证要能指名"这次取数走没走代理"；
-	// 没有这一行日志就只能靠服务端计数反推（2026-10-22 W13 正是卡在这）。
+	// 用途：带外可观测——实机取证要能指名"这次取数走没走代理"；
+	// 没有这一行日志就只能靠服务端计数反推（W13 正是卡在这）。
 	OnRequest func(url string)
 
 	// coordsMu/coords = 城市 → (lat, lon) 缓存。
 	// 对齐上游 weather/open_meteo_provider.py:112
-	// `self._cached_coords: Dict[str, Tuple[float, float]]  # City → (lat, lon)`。
+	// `self._cached_coords: Dict[str, Tuple[float, float]] # City → (lat, lon)`。
 	// 原先没有 ⇒ 每次刷新 2 个 HTTPS 请求（地理编码 + 预报），上游只有 1 个。
 	coordsMu sync.Mutex
 	coords   map[string]geoCoord
@@ -261,10 +257,9 @@ type Client struct {
 
 type geoCoord struct{ lat, lon float64 }
 
-// ProviderError = 上游**非 200** 响应的可判类型（批次 A1 S2）。
-//
-// 429（RFC 9110 §15.5.13）与 503（§15.5.17）都算"上游拒绝"；RetryAfter 来自
-// Retry-After 头（§8.4）。调用方用 errors.As(err, *ProviderError) 取它决定退避。
+// ProviderError = 上游**非 200** 响应的可判类型。
+// 429（RFC 9110）与 503都算"上游拒绝"；RetryAfter 来自
+// Retry-After 头。调用方用 errors.As(err, *ProviderError) 取它决定退避。
 type ProviderError struct {
 	Status     int
 	RetryAfter time.Duration
@@ -280,7 +275,7 @@ func (e *ProviderError) Error() string {
 	return fmt.Sprintf("open-meteo: 上游拒绝 status=%d body=%q", e.Status, body)
 }
 
-// retryAfterDuration = RFC 9110 §8.4 的 Retry-After。
+// retryAfterDuration = RFC 9110 的 Retry-After。
 // 本项目**只需支持秒数形式**：非纯数字（HTTP-date 形式、空值、负数）⇒ 0，不阻塞。
 func retryAfterDuration(v string) time.Duration {
 	v = strings.TrimSpace(v)
@@ -358,7 +353,7 @@ func (c *Client) Geocode(city string) (lat, lon float64, err error) {
 	if err := json.Unmarshal(body, &g); err != nil {
 		return 0, 0, fmt.Errorf("解析 geocoding 响应失败: %w", err)
 	}
-	// 批次 A1 S1：与 forecast 侧同语义 —— body 层错误 ⇒ 不当正常数据用。
+	// 与 forecast 侧同语义 —— body 层错误 ⇒ 不当正常数据用。
 	if g.Error {
 		return 0, 0, fmt.Errorf("上游 geocoding body 层错误 reason=%q", g.Reason)
 	}
@@ -376,7 +371,6 @@ func (c *Client) Geocode(city string) (lat, lon float64, err error) {
 }
 
 // Fetch 取一次当前天气，产出落盘 schema 的 Sample（十字段）。
-//
 // 降水概率口径（需求 2、3：保持当前时刻）：
 // - 上游 open_meteo_provider.py:366-371 取的是 **hourly 第一个值**（当天 00:00 那一格），
 // 其注释称"precipitation_probability 只存在于 hourly，current 块里没有该字段"。
@@ -406,7 +400,7 @@ func (c *Client) Fetch(city string) (*Sample, error) {
 	if err := json.Unmarshal(body, &f); err != nil {
 		return nil, fmt.Errorf("解析 forecast 响应失败: %w", err)
 	}
-	// 批次 A1 S1：body 层错误 ⇒ 直接判失败，**此时绝不返回 Sample**
+	// body 层错误 ⇒ 直接判失败，**此时绝不返回 Sample**
 	// （调用方拿到 nil sample + 非 nil err ⇒ 不进判类、不进缓存）。
 	if f.Error {
 		return nil, fmt.Errorf("上游 body 层错误 reason=%q", f.Reason)
@@ -431,13 +425,13 @@ func (c *Client) Fetch(city string) (*Sample, error) {
 		v := *f.Current.PrecipitationProbability
 		s.PrecipitationProbability = &v
 	} else if len(f.Hourly.ProbBare) > 0 && f.Hourly.ProbBare[0] != nil {
-		// b-alert-v1 第 2 步：无后缀键改由 ProbBare 承载（同一 JSON 键位只留一个字段，
+		// 无后缀键改由 ProbBare 承载（同一 JSON 键位只留一个字段，
 		// 重复 tag 会让 encoding/json 只认第一个 ⇒ 逐模型解析拿不到裸键）。
 		v := *f.Hourly.ProbBare[0]
 		s.PrecipitationProbability = &v
 	}
 	// 逐小时平行数组：
-	// b-alert-v1 第 2 步 —— prob/mm 改读**逐模型后缀键**并逐格取三家中位数
+	// —— prob/mm 改读**逐模型后缀键**并逐格取三家中位数
 	// （证据 E-P1/P2：带 models= 时无后缀键根本不存在）。
 	// 三模型全缺的那一格 ⇒ prob=0、mm=0，并计入缺数据计数（第 2 步口径）。
 	// 计数进 Sample.ProbN/MMN ⇒ 第 4 步的数据闸门与 alertdiag 自检用它。
@@ -451,7 +445,7 @@ func (c *Client) Fetch(city string) (*Sample, error) {
 	s.HourlyMM = mmArr
 	s.ProbN = probN
 	s.MMN = mmN
-	// b-alert-v1 第 3 步：15 分钟层（同一套中位数函数）。
+	// 15 分钟层（同一套中位数函数）。
 	m15 := f.Minutely15
 	m15Prob, _ := perSlotMedian(len(m15.Time), m15.ProbBare, m15.ProbGFS, m15.ProbIcon, m15.ProbECM,
 		m15.ProbGFSApi, m15.ProbIconApi, m15.ProbECMApi)
@@ -479,14 +473,14 @@ func (c *Client) Fetch(city string) (*Sample, error) {
 	// 今日月相（daily 下标 0 = 今天）。
 	// 填值顺序 = 裸键 → 三家后缀键里第一个非空数组的 [0]（证据 E-MOON-KEYS：
 	// 带 models= 的响应里只有后缀键、没有裸键）；值域外（<0 或 >1）视为无效。
-	// 取不到 ⇒ 保持 nil ⇒ 绘制端不画月亮（规格 D5/D7 第 2.3 条）。
+	// 取不到 ⇒ 保持 nil ⇒ 绘制端不画月亮。
 	if v, ok := pickMoonPhase(f.Daily.MoonPhase, f.Daily.MoonPhaseGFS,
 		f.Daily.MoonPhaseIcon, f.Daily.MoonPhaseECMWF); ok {
 		val := v
 		s.MoonPhase = &val
 		fmt.Printf("MOONPHASE=%.4f\n", val)
 	}
-	// 三模型云量的中位数（规格 1.6）：当前时刻那一条上三家各取一个值。
+	// 三模型云量的中位数：当前时刻那一条上三家各取一个值。
 	// 下标取不到（hourly.time 里没有当前小时）/ 三家全缺 ⇒ nil ⇒
 	// 档位退回 current.cloud_cover 与天气码的既有判定，不空不崩。
 	idx := CurrentHourIndex(f.Hourly.Time, f.UTCOffsetSeconds, time.Now())
@@ -520,9 +514,8 @@ func (c *Client) Fetch(city string) (*Sample, error) {
 }
 
 // pickMoonPhase 按填值顺序取今日月相：裸键 → 三家后缀键里第一个非空数组的 [0]。
-//
 // 值域外（<0 或 >1）视为无效，继续往下一家找；全都没有 ⇒ false（调用方保持 nil）。
-// 顺序逐字照规格 2.2：裸键优先（请求不带 models= 时的旧口径），
+// 顺序逐字照：裸键优先（请求不带 models= 时的旧口径），
 // 后缀键按 gfs_seamless → icon_seamless → ecmwf_ifs025（与请求里 models= 的次序一致）。
 func pickMoonPhase(bare, gfs, icon, ecmwf []float64) (float64, bool) {
 	for _, arr := range [][]float64{bare, gfs, icon, ecmwf} {

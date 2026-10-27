@@ -1,20 +1,18 @@
-// Package ui 侧的粒子对拍（R5 卡 3 判据 3 的"同种子连跑 200 帧位移逐帧对拍"）。
-//
+// Package ui 侧的粒子对拍（判据 3 的"同种子连跑 200 帧位移逐帧对拍"）。
 // 常量来源 = 迁移**前**的 ui 旧实现跑同一固定输入打印出来的数字（逐字抄录、不改位）：
 //
 //	取数件 = ui/zz_pre_particles_test.go（临时，取数后删除），命令
 //	WS_PRE_PARTICLES=1 go test -tags=novulkan,nox11 -count=1 -run TestZZPreParticlesNumbers ./ui -v
-//	全量输出（283 行 PRE）存档 = out/pre-particles-numbers.txt；本文件 particlesWant 逐字抄录。
+//	全量输出（283 行 PRE）存档 = ；本文件 particlesWant 逐字抄录。
 //
 // 判据 = 迁移后（ui/effects.go 走 ui/particles 的导出函数）在同一固定输入下与旧实现
 // **逐位相等**（比较 %v 全精度字符串 ⇒ 末位不同也会红）。
-//
 // 覆盖三层：
 //
 //	① 函数与常量（尺寸档 / 景深因子 / 变体档 / 生成函数 / 雪花尺寸反解 / 越界判据）
 //	② 建场态（newField 全链 = 生成顺序 + 随机数取用序列 + 实例抖动 + 尺寸反解）
 //	③ 200 帧连跑（4 类 × 两制 × 2 种子 = 16 组；每帧全场粒子 20 个字段的 %v 全精度串做
-//	   FNV-64a，逐帧累计 acc + 第 0/1/2/100/199 帧的 mark ⇒ 位移序列逐帧钉死）
+//	 FNV-64a，逐帧累计 acc + 第 0/1/2/100/199 帧的 mark ⇒ 位移序列逐帧钉死）
 package ui
 
 import (

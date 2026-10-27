@@ -1,13 +1,12 @@
 package geometry
 
-// TestGeometryParity —— R5 卡 5 的钉死对拍（spec/plans/active.md:209 卡 5 判据 3）。
-//
+// TestGeometryParity —— 钉死对拍（active.md:209 判据 3）。
 // 期望数字 = **迁移前旧实现**对同一批固定输入的打印值（取数件 ui/zz_pre_geometry_test.go，
-// 迁移前实跑，存档 /tmp/geometry.pre.txt，2026-10-26）：
-//   · 屏向常量对   旧 ui/layout.go:47-48（B2 薄壳 :53-54）
-//   · 屏向判定     旧 ui/layout.go:67
-//   · px↔归一换算  旧 ui/layout.go:26-31（Rect.Px）、ui/effects.go:2333、:3380-3381、:3774、:3884、:3982-3983、:4235、:1408
-//   · 带宽分母     旧 ui/effects.go:2214-2227（bandWidthPx，P6"等宽"）
+// 迁移前实跑，存档）：
+// · 屏向常量对 旧 ui/layout.go:47-48（B2 薄壳）
+// · 屏向判定 旧 ui/layout.go:67
+// · px↔归一换算 旧 ui/layout.go:26-31（Rect.Px）、ui/effects.go:2333、:3380-3381、:3774、:3884、:3982-3983、:4235、:1408
+// · 带宽分母 旧 ui/effects.go:2214-2227（bandWidthPx，P6"等宽"）
 // 浮点一律按 `%v` 字符串逐字比较（末位差一比特也判红）。两制边界 = 1080×1920 与 1920×1080。
 
 import (

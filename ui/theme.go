@@ -8,15 +8,14 @@ import (
 	"github.com/DragonTTDream/WeatherScr/ui/settings"
 )
 
-// R5 卡 7（ui/panel 拆包）：面板主题的**本体**整体迁到 ui/panel/theme.go
+// （ui/panel 拆包）：面板主题的**本体**整体迁到 ui/panel/theme.go
 // （字号/行距/配色/选档/构主题，逐字不动）。本文件只留兼容转发：
 // 名字、签名与取值逐字不变 ⇒ 调用点 ui/settings_ui.go、cmd/scr/main.go、
 // cmd/setshot/main.go 与 ui/*_test.go 一字不改。
-// 证据：plans/active.md:211（ui/panel = 面板/文本/图标布局，含横竖两制）。
-//
+// 证据（ui/panel = 面板/文本/图标布局，含横竖两制）。
 // 深浅色的**读取**留在 ui：currentThemeMode 按 //go:build 分档实现在
 // ui/theme_windows.go（注册表）与 ui/theme_other.go（非 Windows = 浅色），
-// 卡 7 不点名那两文件 ⇒ themeMode 与它的两个取值继续住在 ui。
+// 不点名那两文件 ⇒ themeMode 与它的两个取值继续住在 ui。
 
 // themeMode 是系统深浅色模式。
 type themeMode int
@@ -82,8 +81,7 @@ func NewPanelTheme(landscape ...bool) *material.Theme {
 	return panel.NewTheme(currentThemeMode().dark(), landscape...)
 }
 
-// R5 卡 8（ui/settings 拆包）：深浅色读取的**注入点**。
-//
+// （ui/settings 拆包）：深浅色读取的**注入点**。
 // 本体 currentThemeMode 按 //go:build 分档住在 ui/theme_windows.go / ui/theme_other.go，
 // 而 ui/settings 不得 import ui（ui 已 import ui/settings ⇒ 成环）⇒ 把读取以函数指针
 // 注入过去：公式与取值仍是单一真相源（上面 NewPanelTheme 与本注入走同一条 currentThemeMode）。

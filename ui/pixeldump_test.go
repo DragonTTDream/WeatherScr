@@ -3,10 +3,8 @@
 package ui
 
 // 固定帧出图（逐像素对拍用）。
-//
 // 用法：WS_DUMP_DIR=/path go test -tags=novulkan -run TestDumpFramesForPixelDiff ./ui
 // 目录未设置时跳过 ⇒ 常规 make gate 不受影响。
-//
 // 用途：改动前后各出一次同一组帧，逐像素比对，证明画面口径没动。
 // 所有输入都是常量（时间、种子、步数、图层掩码），不含时间相关的量。
 // 只走公开 API（Screen.Layout + Frame），因此改动前的代码树也能编过同一个文件。
@@ -94,7 +92,7 @@ func TestDumpFramesForPixelDiff(t *testing.T) {
 		}
 		var alert *Alert
 		if sc.alert {
-			// b-alert-v1 第 9 步：显隐由 State 决定（旧 Pct 触发线口径作废）⇒ 夹具给灾害态
+			// 显隐由 State 决定（旧 Pct 触发线口径作废）⇒ 夹具给灾害态
 			alert = &Alert{State: AlertDisaster, TierVal: 3, MM: 1.2, DisasterHours: 3, Pulse: 0.25, Lang: "zh"}
 		}
 		wp := WeatherRect.Px(PortraitW, PortraitH)

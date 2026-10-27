@@ -1,17 +1,16 @@
 package ui
 
-// P6 云带不重叠（spec/p6-noverlap.md 判据第 1 条）的钉死单测。
-//
+// P6 云带不重叠（判据第 1 条）的钉死单测。
 // 口径（全部走 bandPlace 真落位，不另抄公式；与绘制共用同一套几何）：
-//   - w=1080, h=1920；逐类 Overcast/Cloudy/Rain/Thunder/Fog；
-//   - t ∈ {400, 800} 固定步（fixedStep 口径，与 ui/fixedstep_test.go 同一模板）；
-//   - 每条带取 ±span 镜像三次参与配对（周期折回，配对取跨周期最坏值）；
-//   - 断言：任取两带中心距离 ≥ (dw_i + dw_j)/2 + 20 px ⇒ 带-only 重叠 = 0%；
-//   - 断言：BandWidthsPx 逐条 ≤1000、均值 ≤1000（P6 设计第 2 条等宽 + 硬上限）；
+// - w=1080, h=1920；逐类 Overcast/Cloudy/Rain/Thunder/Fog；
+// - t ∈ {400, 800} 固定步（fixedStep 口径，与 ui/fixedstep_test.go 同一模板）；
+// - 每条带取 ±span 镜像三次参与配对（周期折回，配对取跨周期最坏值）；
+// - 断言：任取两带中心距离 ≥ (dw_i + dw_j)/2 + 20 px ⇒ 带-only 重叠 = 0%；
+// - 断言：BandWidthsPx 逐条 ≤1000、均值 ≤1000（P6 设计第 2 条等宽 + 硬上限）；
 //   - 断言：bandCount() 逐类 = 3/3/3/3/2（P6 设计第 1 条）；
-//   - 断言：覆盖率 N·T/span ≥ 0.90（P6 设计第 5 条，用现成 AvgLayersOf 口径；
-//     N=3 档 = 3000/3080 = 97.4%；Fog 是保持档（N=2），覆盖率线按 N=3 档口径逐字只约束
-//     Overcast/Cloudy/Rain/Thunder，Fog 只钉带数与带宽）。
+// - 断言：覆盖率 N·T/span ≥ 0.90（P6 设计第 5 条，用现成 AvgLayersOf 口径；
+// N=3 档 = 3000/3080 = 97.4%；Fog 是保持档（N=2），覆盖率线按 N=3 档口径逐字只约束
+// Overcast/Cloudy/Rain/Thunder，Fog 只钉带数与带宽）。
 //   - 断言：DriftOverlapBandOnly().dualPct ≤ 5%（P6 设计第 6 条带-only 判据线）。
 
 import (

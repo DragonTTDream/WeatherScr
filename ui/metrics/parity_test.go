@@ -1,13 +1,10 @@
 package metrics
 
-// TestMetricsParity 钉死 R5 迁移的对拍（plans/active.md:213 ui/metrics 卡判据 3）。
-//
+// TestMetricsParity 钉死 迁移的对拍（ui/metrics 卡判据 3）。
 // 常量来源 = 迁移**前**的 ui 旧实现跑同一固定输入打印出来的数字（逐字抄录，不改位）：
-//
 //	取数件 = ui/zz_pre_metrics_test.go（临时，取数后删除），命令
 //	ZZ_PRE_METRICS=1 go test -tags=novulkan,nox11 -count=1 -run TestZZPreMetricsNumbers ./ui -v
 //	数字 = 该命令 stdout 的 PRE 行（%v 全精度打印），本文件逐字抄录
-//
 // 判据：迁移后的每个导出函数在固定输入下与旧实现的数字**逐位相等**（不是近似）。
 // 浮点对拍用精确相等：公式逐字搬移 ⇒ 逐位相同；一旦有最后一位不同，就是公式被动过。
 

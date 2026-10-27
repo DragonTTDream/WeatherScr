@@ -1,11 +1,10 @@
 package ui
 
 // 落点印记（水花）删除后的自检：状态层 + 雨丝本身。
-//
 // 判据两条：
-//  1. 承载落点印记的状态必须整体不存在 —— Field / particle 都不得再有相关字段
-//     （删除前 Field 有 splashes、particle 有 splashed，本判据在删除前必红）。
-//  2. 雨丝本身不许被一起删掉：近层雨滴越过下边缘后照常回收、照常铺回屏内。
+// 1. 承载落点印记的状态必须整体不存在 —— Field / particle 都不得再有相关字段
+// （删除前 Field 有 splashes、particle 有 splashed，本判据在删除前必红）。
+// 2. 雨丝本身不许被一起删掉：近层雨滴越过下边缘后照常回收、照常铺回屏内。
 
 import (
 	"reflect"

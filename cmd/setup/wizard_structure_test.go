@@ -1,6 +1,6 @@
 package main
 
-// R5 拆分卡 10（plans/active.md:217，证据 evidence/p8-split-wizard-settings-20261023.md）钉死测试：
+// 安装器拆分：钉死测试：
 // app/wizard 模块职责分解的**结构**断言 —— 纯重组、零行为变化，这里把"拆到哪、文案逐字"钉在测试里。
 // 无 build tag（读文件断言，Linux 侧可跑；被测文件本体是 windows 构建，与 finishpage_test 同一先例）。
 
@@ -11,12 +11,13 @@ import (
 )
 
 // TestWizardStructure 模块切分结构钉死：
-//  1. 四个职责文件存在：pageflow.go / installops.go / registryops.go / selfexit.go；
+// 1. 四个职责文件存在：pageflow.go / installops.go / registryops.go / selfexit.go；
 //  2. main.go 只留 main()+参数派发+日志初始化 ⇒ 行数上限 ≤250；
-//  3. 完成页文案三串（"安装完成"/"卸载完成"/"完成"）在 pageflow.go 出现次数逐字钉死
-//     （2/0/14，拆分时实测计数；文案字符串逐字不动）；
-//  4. 完成页文案构造行与完成按钮/退出行逐字在 pageflow.go；
-//     安装/卸载完成态 setStatus/logf 文案行逐字在 installops.go。
+//
+// 3. 完成页文案三串（"安装完成"/"卸载完成"/"完成"）在 pageflow.go 出现次数逐字钉死
+// （2/0/14，拆分时实测计数；文案字符串逐字不动）；
+// 4. 完成页文案构造行与完成按钮/退出行逐字在 pageflow.go；
+// 安装/卸载完成态 setStatus/logf 文案行逐字在 installops.go。
 func TestWizardStructure(t *testing.T) {
 	for _, f := range []string{"pageflow.go", "installops.go", "registryops.go", "selfexit.go"} {
 		if _, err := os.Stat(f); err != nil {
@@ -106,7 +107,7 @@ func TestWizardStructure(t *testing.T) {
 			t.Errorf("registryops.go 缺逐字行 %q", line)
 		}
 	}
-	// 「不改 ScreenSaveTimeOut」语义钉死：读取调用逐字不变（调用点随 runInstall 在 installops.go，
+	// '不改 ScreenSaveTimeOut'语义钉死：读取调用逐字不变（调用点随 runInstall 在 installops.go，
 	// 读值助手 readCPInt 在 registryops.go —— 两处均逐字搬移）。
 	if !strings.Contains(io, `readCPInt(desktopKey, "ScreenSaveTimeOut")`) {
 		t.Errorf(`installops.go 缺逐字行 readCPInt(desktopKey, "ScreenSaveTimeOut")（不改 ScreenSaveTimeOut 口径）`)

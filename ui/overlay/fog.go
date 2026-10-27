@@ -8,7 +8,6 @@ import (
 )
 
 // ---- 雾的 sc 区间与浓度倍率（逐字迁自 ui/effects.go:546-553）----
-//
 // 原注释（同块里的云口径与检索依据留在 ui/effects.go，与云常量同处一块）：
 // 雾 sc 上限 2.8（此前 3.2 时"很夸张 很糊"）；历史口径 雾 sc = 1.6 + 2.6·U → 上限 4.2。
 
@@ -26,7 +25,7 @@ const (
 )
 
 // ---- 雾团生成（逐字迁自 ui/effects.go 的 spawn 分支：Fog 的 pkFog 档 :1165-1172、
-// Snow 的灰幕档 :1201-1213）----
+// Snow 的灰幕档）----
 
 // PlaceY 是雾团的 y 落位口：旧实现里那一句 = bandFreeY(r, bandPadJitN(pkFog, f.sh))，
 // 带宽与带避让口径归 ui/kinetics 的调用方（ui 侧），**本包不复制那条口径**，
@@ -64,8 +63,7 @@ const (
 // y 初始分布避开中央信息带，按半径外扩（同云）。
 // 雾 sc 上限 4.2 × 256 px = 1075 px，半高 537 px = 0.28 屏高（1920 px 屏）。
 // 雾浓度 = 贴图原样 alpha × 运行时倍率（FogAlphaMul 注释写明为什么不烘贴图）
-//
-// depth 是调用方在分支之前已经抽好的景深（旧实现：p.depth = r.Float64() 在 switch 之前）；
+// depth 是调用方在分支之前已经抽好的景深（旧实现：p.depth = r.Float64 在 switch 之前）；
 // 随机数取用顺序 = x → y（落位口）→ sc → alpha → vx → vy → depth，逐字与旧分支同序。
 func SpawnFog(r *rand.Rand, depth float64, placeY PlaceY) FogSpawn {
 	var q FogSpawn
@@ -79,8 +77,7 @@ func SpawnFog(r *rand.Rand, depth float64, placeY PlaceY) FogSpawn {
 }
 
 // SpawnSnowCurtain 造一张雪天灰幕（Snow 的 pkFog 档，ui/effects.go:1201-1213 逐字）。
-//
-// 雪天 = **均匀灰幕（雾精灵）+ 可见雪花**（规格 2 表 + 规格 3）⇒ 满屏均匀、不堆团。
+// 雪天 = **均匀灰幕（雾精灵）+ 可见雪花**⇒ 满屏均匀、不堆团。
 // **3 团的 x = 逐团等分的确定落位**（k = (idx−85)/86 ∈ {0,1,2} ⇒ x = (k+0.5)/3
 // = 0.167 / 0.500 / 0.833）：20 团时随机 x 的大数定律把团摊开，降到 3 团后小样本会成片
 // （实测 seed=20261023：随机落位 0.218/0.241 两团并排 ⇒ 漂移重叠 dualPct = 61.02% > 判据线 60%）。
@@ -112,12 +109,10 @@ func FogSpriteIndex(idx, nFog, nCloud int) int {
 // ---- 雾团屏上倍率（逐字迁自 ui/effects.go:4148-4153 = spriteScale 的雾分支）----
 
 // FogScale 雾团屏上倍率。
-//
 // 效果图口径：雾团尺寸 = sc·(0.55+0.45·depth)·scaleMul × fogNetScale(=1.0)，
 // 1024 px 源图 ⇒ 屏上 732–2867 px，与效果图（2048 源 × 同式 ÷2）逐档相同。
 // 上一版把雾收成常量 fogNetScale 0.143（净宽 128 px = 旧 Kenney 净宽），
 // 雾从"整片体积雾"缩成"小团"，与选定效果图不符 ⇒ 恢复逐粒子口径。
-//
 // netScale = 净倍率常量本体归 ui 的贴图口径（ui/assets.go:377 的 fogNetScale，
 // 与云带/雪片的分母同处一张表）⇒ 以参数注入，本包不复制常量，避免双份真值。
 func FogScale(sc, depth, scaleMul, netScale float64) float64 {
@@ -126,12 +121,11 @@ func FogScale(sc, depth, scaleMul, netScale float64) float64 {
 
 // ---- 雾团屏宽封顶（逐字迁自 ui/effects.go:4944-4964）----
 
-// ClampFogWidthPx 雾团屏宽按类封顶（P7 用户判据"最多的时候也只能首尾相连，不能重叠"）：
+// ClampFogWidthPx 雾团屏宽按类封顶（P7 判据"最多的时候也只能首尾相连，不能重叠"）：
 // 同带 Σ全宽 + 间隙 ≤ 1 屏宽 ⇒ Snow 3 张灰幕 ⇒ 每张 ≤ (1080−42)/3 = 346 px；
 // Fog 1 团（配 1 朵 ≤500 px 的云）⇒ ≤ 540 px。缩的是 sc（绘制倍率本体），
 // 逐字不动 alpha / vx / 团数 / 落位口径。实测封顶前：Snow 单张 1135 px、Fog 884 px。
-//
-// 贴图表与退路尺寸以入参注入（旧实现里 = f.sp.fogSz 与 spriteSize(spritesOnce(), pkFog)，
+// 贴图表与退路尺寸以入参注入（旧实现里 = f.sp.fogSz 与 spriteSize(spritesOnce, pkFog)，
 // 都归 ui 的贴图装配口径）；netScale = FogScale 的净倍率常量，同上。
 // 返回封顶后的 sc（旧实现就是就地改 p.sc，其余字段一个不写）。
 func ClampFogWidthPx(sc, depth, scaleMul, netScale, capPx float64, spr int, fogSz []image.Point, fallback image.Point) float64 {

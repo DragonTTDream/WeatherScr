@@ -38,7 +38,7 @@ func New() *Screen {
 var (
 	ink     = color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
 	inkSoft = color.NRGBA{R: 0xe8, G: 0xee, B: 0xf6, A: 0xd8}
-	// inkSep 转发色：本体 = panel.InkSep（R5 卡 7 迁到 ui/panel/style.go，叠加口径注释随本体迁出）。
+	// inkSep 转发色：本体 = panel.InkSep（迁到 ui/panel/style.go，叠加口径注释随本体迁出）。
 	inkSep = panel.InkSep
 )
 
@@ -54,7 +54,7 @@ var shadowInk = panel.ShadowInk
 // shadowOffsetPx 转发常量（本体 = panel.ShadowOffsetPx，上游 shadowOffsetY 的下限语义随本体迁出）。
 const shadowOffsetPx = panel.ShadowOffsetPx
 
-// shadowOffsetForPx 转发到 panel.ShadowOffsetForPx（R5 卡 7 纯迁移：本体见 ui/panel/style.go，
+// shadowOffsetForPx 转发到 panel.ShadowOffsetForPx（纯迁移：本体见 ui/panel/style.go，
 // 公式 max(2, round(字号px × 0.03)) 与字号 px 口径逐字不变）。
 func shadowOffsetForPx(px int) int { return panel.ShadowOffsetForPx(px) }
 
@@ -64,7 +64,7 @@ const panelRadiusMaxPx = panel.PanelRadiusMaxPx
 // panelRadiusPx 转发到 panel.PanelRadiusPx（= min(18, 面板高/6)，逐字同式）。
 func panelRadiusPx(panelH int) int { return panel.PanelRadiusPx(panelH) }
 
-// PanelStyle = panel.Style 的兼容别名（R5 卡 7：面板底样式本体迁 ui/panel/style.go，键名键序逐字不变）。
+// PanelStyle = panel.Style 的兼容别名（面板底样式本体迁 ui/panel/style.go，键名键序逐字不变）。
 // ⇒ 调用点 ui/settings_ui.go、cmd/scr/main.go 一字不改。
 type PanelStyle = panel.Style
 
@@ -91,11 +91,11 @@ type Frame struct {
 	// Alert 降雨提醒；nil 或概率低于阈值 = 不画。
 	Alert *Alert
 	// MoonPhase 今日月相（来自 Sample.MoonPhase）。
-	// nil = 取不到 ⇒ **不画月亮**（与新月一致，规格 2.3）。
+	// nil = 取不到 ⇒ **不画月亮**（与新月一致）。
 	// 非 nil ⇒ 按 8 等分相位表选月相素材烘进天空纹理（new moon 不画月亮）。
 	MoonPhase *float64
 	// Layers 图层掩码（性能定位用）：0 = 全开。
-	// 低性能 x86 小主机稳态 CPU 15–17%（预算 ≤5%），`DBG=frame layout=0–1ms frame=8–12ms`
+	// 低性能 x86 实机稳态 CPU 15–17%（预算 ≤5%），`DBG=frame layout=0–1ms frame=8–12ms`
 	// ⇒ 瓶颈在 GPU 填充不在 op 构建，必须能逐层量出各层占比。
 	Layers LayerMask
 }
@@ -125,7 +125,6 @@ func (m LayerMask) on(l LayerMask) bool {
 }
 
 // frameCloudPct 从帧输入里取云量（0–100）。
-//
 // 数据源 = Sample.CloudCoverPct（weather 包逐时插值好的那个量，内部数据、
 // 不进设置页）。Sample 为 nil ⇒ 0：按晴算 = 白天满亮太阳，
 // 与"取不到天气时画面照常出"的既有口径一致。
@@ -168,8 +167,7 @@ func (s *Screen) Layout(gtx layout.Context, f Frame) layout.Dimensions {
 	}
 	// 类别切换期间先画旧场（淡出中），再画新场（淡入中）
 	// ⇒ 云不会在切换那一帧整片凭空出现/消失。
-	//
-	// z 序口径（缺陷 L1，spec/b4-landscape.md:19「先云带后信息层」）：
+	// z 序口径（缺陷 L1，:19'先云带后信息层'）：
 	// 云带/粒子场（Field.Draw）恒在时钟、天气文字**之前**提交 ⇒ gioui 立即模式下
 	// 文字层永远画在云之上，云不得盖住日期/描述行。本批只确认次序，不改带数学。
 	if f.PrevField != nil && f.Layers.on(LayerField) {
@@ -196,7 +194,7 @@ func (s *Screen) Layout(gtx layout.Context, f Frame) layout.Dimensions {
 	// 走 flex 行盒时实测 chip 中心 766 vs 屏幕中心 540，右偏 226 px。
 	if f.Layers.on(LayerAlert) {
 		// TODO(未取证)：提醒行仍走竖屏 rect 口径 —— B4 spec 只点名面板/数据行/时钟
-		// （spec/b4-landscape.md 映射表 L1–L5），横屏下的提醒行版式未取证 ⇒ 本批不动。
+		// （映射表 L1–L5），横屏下的提醒行版式未取证 ⇒ 本批不动。
 		wpx := shiftY(WeatherRect.Px(size.X, size.Y), f.WeatherYOff)
 		DrawAlertPanelRow(gtx, size, f.Alert, s, panelRect(wpx, f.Panel.Margin).Max.Y)
 	}
@@ -213,7 +211,7 @@ func fillPanel(gtx layout.Context, r image.Rectangle, st PanelStyle, bgOpacity f
 }
 
 // shadowed 转发到 panel.Shadowed（阴影副本 + 主字的两遍绘制逐字不变）。
-// 图层掩码是 ui 帧调度侧的量（LayerMask 留在本文件）⇒ 这里把「要不要阴影」算成布尔传给 panel，
+// 图层掩码是 ui 帧调度侧的量（LayerMask 留在本文件）⇒ 这里把'要不要阴影'算成布尔传给 panel，
 // 旧实现的判据 st.Shadow && layers.on(LayerShadow) 逐字保持。
 func (s *Screen) shadowed(st PanelStyle, sp unit.Sp, row rowFn, layers LayerMask) layout.Widget {
 	return panel.Shadowed(st, sp, row, layers.on(LayerShadow))
@@ -263,7 +261,7 @@ func panelRect(px PxRect, margin int) image.Rectangle {
 	return image.Rect(px.X-margin, px.Y-margin, px.X+px.W+margin, px.Y+px.H+margin)
 }
 
-// rowFn = panel.RowFn 的兼容别名（「按给定颜色画一行文字」工厂）。
+// rowFn = panel.RowFn 的兼容别名（'按给定颜色画一行文字'工厂）。
 type rowFn = panel.RowFn
 
 // rowText 转发到 panel.RowText（单行文字 + 字形修饰，逐字不变）。
@@ -271,8 +269,8 @@ func (s *Screen) rowText(txt string, sp unit.Sp, mod func(*material.LabelStyle))
 	return panel.RowText(s.Theme, txt, sp, mod)
 }
 
-// rowCondition 转发到 panel.RowCondition（温度 0.81× +「 - 」+ 条件，逐字不变）。
-// 条件行字号 = ui 侧的 WeatherFontSize 档（layout.go 的上游实况常量，卡 7 不点名 ⇒ 留在这里传参）。
+// rowCondition 转发到 panel.RowCondition（温度 0.81× +' - '+ 条件，逐字不变）。
+// 条件行字号 = ui 侧的 WeatherFontSize 档（layout.go 的上游实况常量， 不点名 ⇒ 留在这里传参）。
 func (s *Screen) rowCondition(temp, cond string) rowFn {
 	return panel.RowCondition(s.Theme, temp, cond, unit.Sp(WeatherFontSize))
 }
@@ -281,10 +279,10 @@ func (s *Screen) rowCondition(temp, cond string) rowFn {
 func bold(l *material.LabelStyle)   { panel.Bold(l) }
 func italic(l *material.LabelStyle) { panel.Italic(l) }
 
-// 时钟行宽/字号档的本体在 ui/panel/clocklayout.go（R5 卡 7 纯迁移）：
+// 时钟行宽/字号档的本体在 ui/panel/clocklayout.go（纯迁移）：
 // 单条记忆 clockLineWidthCache、量宽与横屏 0.30W 封顶的公式都在那边，逐字不变。
 // 这里只留薄壳：量宽口径 measureText 与横屏封顶函数 landscapeClockFontCapPx 住在
-// ui/alert.go、ui/layout.go（卡 7 不点名 ⇒ 以参数注入，不复制公式）。
+// ui/alert.go、ui/layout.go（不点名 ⇒ 以参数注入，不复制公式）。
 
 // measureClockLineWidth 用现口径字号实测一行文字的实画宽（px）。
 func (s *Screen) measureClockLineWidth(gtx layout.Context, txt string, sp int) int {
@@ -301,12 +299,11 @@ func (s *Screen) clockBlock(gtx layout.Context, size image.Point, f Frame) {
 	dateStr := f.Clock.DateLine(f.Now)
 
 	px := shiftY(ClockRect.Px(size.X, size.Y), f.ClockYOff)
-	// 横屏时钟字号封顶（缺陷 L5，spec/b4-landscape.md:20）：竖屏逐字 = 现口径 174/40。
+	// 横屏时钟字号封顶（缺陷 L5，:20）：竖屏逐字 = 现口径 174/40。
 	timeSp, dateSp := s.clockLineSp(gtx, size, timeStr, dateStr)
 	// 面板底画在文字之前、块定位之后。
 	// 时钟块用 clock_bg_opacity（默认 0.45，强于天气）—— 偏离上游
 	// 'clock' 块 show_background: False，理由见 PanelStyle.ClockBGOpacity
-	//
 	fillPanel(gtx, panelRect(px, f.Panel.Margin), f.Panel, f.Panel.ClockBGOpacity)
 
 	content := func(gtx layout.Context) layout.Dimensions {
@@ -354,16 +351,15 @@ func (s *Screen) weatherTextColumn(f Frame, temp string) layout.Widget {
 
 // weatherBlock 逐行对齐原版 WeatherPresentation.qml 的 readyColumn：
 //
-//	locationText   粗体，fontSize            （原版有地名）
-//	conditionText  "<temp> - <condition>"，温度以 0.81× 条件字号内联
+//	locationText 粗体，fontSize （原版有地名）
+//	conditionText "<temp> - <condition>"，温度以 0.81× 条件字号内联
 //	detailsSeparator 1px 分隔线
-//	detailsRow     图标化三项 rain/humidity/wind
+//	detailsRow 图标化三项 rain/humidity/wind
 //	forecastSeparator 1px 分隔线
-//	forecastText   斜体，detailFontSize，居中
+//	forecastText 斜体，detailFontSize，居中
 //
 // 字号口径来自 rendering/quick/widgets/weather.py:758-772
 // （temperatureFontSize = conditionFontSize * 0.81）。
-//
 // 状况图标：上游配置是 icon_size 192、show_condition_icon True、
 // icon_alignment 'RIGHT'（上游 settings_v2.json），块内布局 =
 // [文字列][12 px][192×192 图标]（上游 WeatherPresentation.qml:328-338：
@@ -375,7 +371,6 @@ func (s *Screen) weatherTextColumn(f Frame, temp string) layout.Widget {
 // 落点/度量/字色/阴影。天气数据默认一分钟刷新一次 ⇒ 稳态下每帧都是重放。
 // 面板底 fillPanel 仍在块外逐帧画，不在缓存范围。
 // weatherPxRect 天气面板矩形（双朝向口径，缺陷 L2/L3）。
-//
 // 竖屏（w ≤ h）：逐字 = WeatherRect.Px + 布局偏移（现有竖屏版式测试钉死 29/1019/1021/558 @1080×1920）。
 // 横屏（w > h）：landscapePanelPx —— 顶沿 = 云带下沿 + 间隙（云带下沿从 Field 的带区间
 // 接口 BandRegionPx 取实际值），左右边距 = 0.0194W（= 37 px @1920），
@@ -443,7 +438,6 @@ type detailItem struct {
 //
 // 上游取不到值时是 nil（schema.go 的指针字段口径） ⇒ text 留空 ⇒ 该格整格不画，
 // 但 3 等分几何不变（需求 3）。
-//
 // **降水项口径 = 当前时刻**（2026-10-16 逐字决定
 // "伞图标口径：保持当前时刻"：
 // 上游详情行取的是 current 的 precipitation_probability
@@ -475,18 +469,16 @@ func detailItems(w *weather.Sample) []detailItem {
 
 // rowDetails 上游 details row 的图标化版本
 // 取代原 detailsLine 的中文标签串。
-//
 // 上游布局原文（WeatherPresentation.qml:378-425）：
 //
 //	行 width = parent.width；height = max(68.0, detailIconSize+38.0, detailFontSize*3.2)
 //	三项各占 detailsRow.width / 3.0
 //	格内内容 width = metricIcon.width + 1.0 + metricText.implicitWidth
-//	              height = Math.max(icon.height, text.implicitHeight)
+//	 height = Math.max(icon.height, text.implicitHeight)
 //	格内水平垂直居中（anchors.centerIn: parent）
 //
-// 低性能 x86 小主机数字（低性能 x86 小主机 settings_v2.json：font_size 40、detail_icon_size 16）
+// 低性能 x86 实机数字（低性能 x86 实机 settings_v2.json：font_size 40、detail_icon_size 16）
 // ⇒ 图标 30 px、文字 20 px、行高 max(68, 68, 64) = 68 px。
-//
 // 文字走现有 shadowed 的阴影口径（上游 ShadowedText：shadowColor "#96000000"、
 // shadowOffsetY 2.0、无模糊；图标是位图，上游不给它阴影。
 func (s *Screen) rowDetails(f Frame) layout.Widget {
@@ -564,11 +556,10 @@ func formatNum(v float64) string {
 	return strconv.FormatFloat(v, 'f', 1, 64)
 }
 
-// ── R5 卡 2（ui/sky 拆包）留在这条链路上的三件小东西 ──────────────
-//
+// ── （ui/sky 拆包）留在这条链路上的三件小东西 ──────────────
 // 1) blendPix 的 ui 侧副本：函数本体迁进 ui/sky（烘焙层是它的主消费者），
-//    ui/assetdir.go 的 blitCoverOver 还在用它 ⇒ 这里留一份逐字副本，
-//    ui/assetdir.go 一个字没动（卡 2 不点名该文件）。
+// ui/assetdir.go 的 blitCoverOver 还在用它 ⇒ 这里留一份逐字副本，
+// ui/assetdir.go 一个字没动（不点名该文件）。
 // 2) skyAssets：把 ui 的贴图目录/解码缓存接成 sky.Assets 查询口（逐字委托）。
 // 3) SkyCacheGet：cmd/scr 的 SCR_SKYCACHE 日志出口签名不变，内部改道 ui/sky。
 

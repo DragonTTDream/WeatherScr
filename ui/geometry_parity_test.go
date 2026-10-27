@@ -1,13 +1,12 @@
 package ui
 
-// TestGeometryMigrationParity —— R5 卡 5（屏向与几何基准迁进 ui/geometry）的 ui 侧对拍。
-//
+// TestGeometryMigrationParity —— （屏向与几何基准迁进 ui/geometry）的 ui 侧对拍。
 // 两条口径同批量：
-//  1. 旧式原件逐字抄在本文件里（old* 函数 = 迁移前的 ui/layout.go、ui/effects.go 函数体），
-//     与 ui/geometry 的新函数同输入比 `%v` 字符串（末位差一比特即红）。
-//  2. 线上通路（Field 的带几何与云落位）的取数：期望数字 = 迁移前探针
-//     ui/zz_pre_geometry_test.go 的打印值（存档 /tmp/geometry.pre.txt，2026-10-26 实跑），
-//     数字写死在本文件里 ⇒ 迁移后复跑必须逐字一致。
+// 1. 旧式原件逐字抄在本文件里（old* 函数 = 迁移前的 ui/layout.go、ui/effects.go 函数体），
+// 与 ui/geometry 的新函数同输入比 `%v` 字符串（末位差一比特即红）。
+// 2. 线上通路（Field 的带几何与云落位）的取数：期望数字 = 迁移前探针
+// ui/zz_pre_geometry_test.go 的打印值（存档 ， 实跑），
+// 数字写死在本文件里 ⇒ 迁移后复跑必须逐字一致。
 
 import (
 	"fmt"

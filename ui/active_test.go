@@ -1,8 +1,7 @@
 package ui
 
-// 批次 A2 / C2（密度变化改斜坡 + 滞回）与 C3（启动期 ActiveCount 口径）的钉死单测。
-//
-// 判据来源：spec/a2-cloud-stutter.md 的 C2 四条 + "钉死单测"清单。
+// / C2（密度变化改斜坡 + 滞回）与 C3（启动期 ActiveCount 口径）的钉死单测。
+// 判据来源： 的 C2 四条 + "钉死单测"清单。
 // 全部断言为精确值：无 t.Skip、无放宽。
 
 import (
@@ -13,7 +12,6 @@ import (
 )
 
 // TestNextActiveLimiter 钉死单轮限幅：cur=177, total=320, fps=6.7 ⇒ 差 ≤16 且 ≥4。
-//
 // 旧口径一次砍 43%（177×6.7/12 = 98 ⇒ 单轮差 79）就是"一卡卡的"的机制。
 func TestNextActiveLimiter(t *testing.T) {
 	got := NextActive(177, 320, 6.7)

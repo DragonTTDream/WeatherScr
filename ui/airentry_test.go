@@ -38,7 +38,6 @@ func TestAirEntryPlacement(t *testing.T) {
 
 // TestAirEntryRecycleIsOffscreen 强制走回收路径（fresh=false）：
 // 把云推到出界后回收，断言新粒子在屏幕外。
-//
 // 出界口径 = **整朵完全出屏**（回收判据 x − hw > 1.0，见 Step 的 pkCloud 分支）：
 // 粒子云改大后 hw = 0.267–0.681 屏宽，旧口径的"推到 x=1.3"（中心出界 1.25）
 // 根本还没出屏（左沿在 1.3−hw = 0.62…1.03，压着屏幕右沿）⇒ 不该被回收。
@@ -59,7 +58,7 @@ func TestAirEntryRecycleIsOffscreen(t *testing.T) {
 	if n == 0 {
 		t.Skip("本场无云粒子")
 	}
-	// 批次 A2 / C1：推进**一个固定步长**（不是整帧）。
+	// / C1：推进**一个固定步长**（不是整帧）。
 	// 回收判据在步内、位移之后，回收后 `continue` ⇒ 这一步里新粒子不再被推；
 	// 一帧最多补 3 步，多跑几步会把进场位 x=−hw 推走（3×vx×fixedStep ≈ 0.7 px），
 	// 判据要的是"回收那一刻的进场位"，故钉在单步上，断言逐字不变。

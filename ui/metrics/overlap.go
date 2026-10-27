@@ -1,17 +1,15 @@
 package metrics
 
-// R5 迁移（逐字搬移，plans/active.md:213 ui/metrics 卡）——来源与处置：
-//
-//	SpriteSizeOr      ← ui/overlap_probe.go:84-93（spriteSizeOr）
+// 迁移（逐字搬移，ui/metrics 卡）——来源与处置：
+//	SpriteSizeOr ← ui/overlap_probe.go:84-93（spriteSizeOr）
 //	BandWidthsNominal ← ui/overlap_probe.go:136-155（BandWidthsNominal；分母 bandNetDiv 由调用方注入 netDiv）
-//	SpanOf            ← ui/overlap_probe.go:157-167
-//	AvgLayersOf       ← ui/overlap_probe.go:169-179
+//	SpanOf ← ui/overlap_probe.go:157-167
+//	AvgLayersOf ← ui/overlap_probe.go:169-179
 //	layerSpanInterval ← ui/overlap_probe.go:181-185
-//	spanIntervals     ← ui/overlap_probe.go:187-205
-//	covers            ← ui/overlap_probe.go:207-216
-//	DualPctOf         ← ui/overlap_probe.go:218-276
-//	MeanCoveragePct   ← ui/overlap_probe.go:319-326（OverlapRow 里的覆盖率均值**行内式**，公式逐字提取）
-//
+//	spanIntervals ← ui/overlap_probe.go:187-205
+//	covers ← ui/overlap_probe.go:207-216
+//	DualPctOf ← ui/overlap_probe.go:218-276
+//	MeanCoveragePct ← ui/overlap_probe.go:319-326（OverlapRow 里的覆盖率均值**行内式**，公式逐字提取）
 // 算式、常量、分支一字未改。唯一的签名变化 = BandWidthsNominal 多收一个 netDiv
 // （ui 侧私有常量 bandNetDiv=1.00 不在本包复制，由调用点注入；注释里的 bandNetDiv 字样按原文保留）。
 
@@ -34,7 +32,6 @@ func SpriteSizeOr(sizes []image.Point, spr int) image.Point {
 
 // BandWidthsNominal 主对话基线口径的名义云带宽（px）：
 // dw = srcW × (1.5 + 0.8·frac) ÷ bandNetDiv，frac = i/(n−1)（n=1 时 frac=0）。
-//
 // P6 起真实带几何改等宽（dw = T，逐带相同），本名义式只作 P1 基线算术保留
 // （TestProbeBandFormulaMatchesBrief 用它对照"逐带 768–1178 的平均"与"等宽 T"
 // 的 avgLayers 相对偏差 ≤2%——两者求和后同为 ~3T 量级，偏差来自精灵长宽比）。
@@ -115,7 +112,6 @@ func (iv layerSpanInterval) covers(x, span float64) bool {
 }
 
 // DualPctOf 一个 span 周期内被 **≥2 层**覆盖的长度占比（%）。
-//
 // 布局按规格指定：**等相位** ⇒ 第 i 层中心 = span·i/n（bandPlace 的相位等分口径，
 // ui/effects.go:2089 的 span·i/n），中心间距 = span/n；
 // 区间按 span 折回周期内做重数统计（并集 + 重数 ≥2 的段长求和）。
@@ -175,8 +171,7 @@ func DualPctOf(widths []float64, span float64) float64 {
 }
 
 // MeanCoveragePct 覆盖率剖面（CoverageProfile 的逐列占比 0..1）的均值，出数口径 %。
-//
-// R5 迁移：这段原本是 ui/overlap_probe.go 的 OverlapRow 里的**行内式**（319-326 行），
+// 迁移：这段原本是 ui/overlap_probe.go 的 OverlapRow 里的**行内式**（319-326 行），
 // 逐字提出来放这里，公式与分支一字未改；OverlapRow 改为调用本函数。
 func MeanCoveragePct(prof []float64) float64 {
 	cover := 0.0

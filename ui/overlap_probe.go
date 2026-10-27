@@ -1,15 +1,13 @@
 package ui
 
 // P1 探针（云/雾重叠与每帧绘制次数）——**只测量，不改行为**。
-//
 // 口径来源（逐条对得上现场代码，不在这里发明新几何）：
-//   - 云带屏宽：ui/effects.go bandPlace（P6 等宽口径 sc = T/sz.X，T = bandWidthPx(w)
-//     = round(w×1000/1080) 且 T ≤ 0.95w ⇒ dw = T 逐带相同）
-//   - 横向周期：ui/effects.go bandSpan（P6 常量式 span = w + 2·T）
-//   - 粒子云屏宽：ui/effects.go:3727 cloudDrawWidthPx（源宽 × spriteScale）
-//   - 雾团屏宽：fogSz × spriteScale（spriteScale 的 pkFog 分支，ui/effects.go:3808-3812）
-//   - 覆盖率：ui/effects.go:4144 CoverageProfile（逐列 40 行采样，不重新发明）
-//
+// - 云带屏宽：ui/effects.go bandPlace（P6 等宽口径 sc = T/sz.X，T = bandWidthPx(w)
+// = round(w×1000/1080) 且 T ≤ 0.95w ⇒ dw = T 逐带相同）
+// - 横向周期：ui/effects.go bandSpan（P6 常量式 span = w + 2·T）
+// - 粒子云屏宽：ui/effects.go:3727 cloudDrawWidthPx（源宽 × spriteScale）
+// - 雾团屏宽：fogSz × spriteScale（spriteScale 的 pkFog 分支，ui/effects.go:3808-3812）
+// - 覆盖率：ui/effects.go:4144 CoverageProfile（逐列 40 行采样，不重新发明）
 // 绘制计数：只读 Field.probeCount（探针构造路径 NewFieldProbeCounted 才置位），
 // 普通 NewField / NewFieldEntering 路径该字段恒为 false ⇒ 分支恒假，零行为变化。
 
@@ -39,8 +37,7 @@ func (f *Field) Draws() int { return f.draws }
 // ResetDraws 清零计数。
 func (f *Field) ResetDraws() { f.draws = 0 }
 
-// ---- P5b 测量件（spec/p5b-dbg.md 第 1 条）--------------------------------
-//
+// ---- P5b 测量件（第 1 条）--------------------------------
 // 复用 P1 已有的 probeCount/draws 通路，**不新建第二条计数通路**。
 // 生产构造路径（NewField / NewFieldEntering）是否置位 probeCount，完全由
 // 环境变量 WS_DBG_FRAMES 决定（接线点：ui/effects.go 的 newField）：
@@ -48,7 +45,7 @@ func (f *Field) ResetDraws() { f.draws = 0 }
 // 分支恒假 ⇒ 零计数开销、零额外日志（P5b 判据 4"默认行为一字不变"）。
 
 // WSDbgFrames 环境变量 WS_DBG_FRAMES=1 ⇒ 开启全帧测量（P5b 测量件的唯一开关）。
-// R5 迁移：算式本体逐字迁出到 ui/metrics/frames.go（原定义 = ui/overlap_probe.go:57-60）。
+// 迁移：算式本体逐字迁出到 ui/metrics/frames.go（原定义 = ui/overlap_probe.go:57-60）。
 // 这里留一个**兼容出口**：cmd/scr/main.go:695 的调用点（ui.WSDbgFrames()）一字不改。
 func WSDbgFrames() bool { return metrics.WSDbgFrames() }
 
@@ -139,7 +136,7 @@ func (f *Field) OverlapRow(w, h, cols int) OverlapRow {
 		f.ResetDraws()
 	}
 	// P3 判据 2 的口径升级：dualPct 取**真实落位**（DriftOverlap），等相位假设值一并输出。
-	// 理由（out/notes-p2-budget.md 风险第 2 条）：粒子云/雾团是 spawn+spreadAir 随机落位，
+	// 理由（风险第 2 条）：粒子云/雾团是 spawn+spreadAir 随机落位，
 	// 等相位值不是屏幕上真存在的东西 ⇒ 判据线要能量在实测值上。
 	// P6 设计第 6 条：两口径分开出数 —— 带-only（DriftOverlapBandOnly）与含粒子（DriftOverlapIncl）。
 	driftLayersAll, driftDual := f.DriftOverlapIncl()

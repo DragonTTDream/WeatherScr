@@ -1,12 +1,10 @@
 package ui
 
-// P5b 测量件的钉死单测（spec/p5b-dbg.md 判据 3，共 5 条）。
-//
+// P5b 测量件的钉死单测（判据 3，共 5 条）。
 // 开关：环境变量 WS_DBG_FRAMES=1 ⇒ 生产构造路径（NewField / NewFieldEntering）
 // 也置位 probeCount（接线点 ui/effects.go 的 newField，计数通路 = P1 已有的
 // probeCount/draws，见 ui/overlap_probe.go）。
 // 未设 ⇒ probeCount 恒 false ⇒ 计数与日志一概不产生。
-//
 // 手法复用 ui/overlap_probe_test.go:188 的 TestProbeCounterDoesNotChangeOps
 // （图元序列用 OpsLen 的 data/refs 长度对比，gioui v0.10.3 的 op.Ops 不导出长度）。
 
@@ -28,8 +26,8 @@ const dbgSeed int64 = 20261023
 // dbgStep 开/关对比里每帧的推进量：同一常数 ⇒ 两条路径的输入序列逐字相同。
 const dbgStep = 16 * time.Millisecond
 
-// dbgRainDrawsPerFrame 对照表数字：out/overlap-after-p3.tsv 的 Rain 行
-// （w=1080 h=1920 seed=20261023，drawsPerFrame=228，P3 之后未动 Rain）。
+// dbgRainDrawsPerFrame 对照表数字：落位对照表的 Rain 行
+// （w=1080 h=1920 seed=20261023，drawsPerFrame=228，之后未动 Rain）。
 const dbgRainDrawsPerFrame = 228
 
 // enableDbgFrames 打开开关（t.Setenv ⇒ 测试结束自动还原，不污染同包其它测试）。
@@ -191,7 +189,7 @@ func TestDbgFramesToggleKeepsOpsIdentical(t *testing.T) {
 }
 
 // 判据 3 第 4 条：Rain 类开启计数后一帧的 DrawCount() 与探针表 drawsPerFrame
-// 同量级（±15%，对照 out/overlap-after-p3.tsv 的 Rain 行 = 228）。
+// 同量级（±15%，对照落位对照表的 Rain 行 = 228）。
 func TestDbgFramesRainMatchesProbeTable(t *testing.T) {
 	enableDbgFrames(t)
 	f := NewField(effect.Rain, true, dbgSeed)

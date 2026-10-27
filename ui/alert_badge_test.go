@@ -6,9 +6,9 @@ import (
 	"unicode"
 )
 
-// 态④ 左下角小信号的钉死单测（plan b-alert-v2e，2026-10-22 用户拍板：
-// 「这既然不是预警，你给我信息也没有异议，最多在屏幕左下角用一个简易的标识提醒，
-//  类似游戏中网络异常，ping值高等的那种小信号」）。
+// 态④ 左下角小信号的钉死单测（定案：
+// 数据不可用不是预警，只在屏幕左下角放一个简易标识提醒，
+// 类似游戏中"网络异常 / ping 值高"的那种小信号）。
 
 func TestAlertBadgeUsesPanelRow(t *testing.T) {
 	for _, st := range []AlertState{AlertDaily, AlertDisaster, AlertOfficial} {

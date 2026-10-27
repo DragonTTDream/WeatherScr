@@ -8,7 +8,7 @@ import (
 	"github.com/DragonTTDream/WeatherScr/ui/sky"
 )
 
-// TestSunProfile 量烘焙太阳的径向亮度剖面（低性能 x86 小主机反馈"像个圆盘"）。
+// TestSunProfile 量烘焙太阳的径向亮度剖面（低性能 x86 实机反馈"像个圆盘"）。
 // 判据：真太阳是**核心亮 + 大范围柔和衰减**（无边界）；
 // 圆盘是**内部平、外缘陡**（有边界）。
 func TestSunProfile(t *testing.T) {

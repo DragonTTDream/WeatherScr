@@ -1,11 +1,9 @@
 package metrics
 
-// R5 迁移（逐字搬移，plans/active.md:213 ui/metrics 卡）——来源：
-//
+// 迁移（逐字搬移，ui/metrics 卡）——来源：
 //	WSDbgFrames ← ui/overlap_probe.go:57-60（WS_DBG_FRAMES 开关，P5b 测量件）
-//	ProbeGTX    ← ui/overlap_probe.go:73-80（probeGTX，探针用的空 layout.Context）
-//	OpsLen      ← ui/overlap_probe.go:359-381（gioui v0.10.3 op.Ops 内部切片长度，判据 5）
-//
+//	ProbeGTX ← ui/overlap_probe.go:73-80（probeGTX，探针用的空 layout.Context）
+//	OpsLen ← ui/overlap_probe.go:359-381（gioui v0.10.3 op.Ops 内部切片长度，判据 5）
 // 帧耗时本体（SCR_FRAME / SCR_FRAME_MS 的计时行）在 cmd/scr 主循环里，本卡不动。
 
 import (

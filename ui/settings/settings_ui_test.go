@@ -33,8 +33,8 @@ func TestSettingsPanelUndoLock(t *testing.T) {
 	changed := m
 	changed.Margin = 12
 	changed.Units = "i"
-	// R12：数据结构换成 stack.Stack[Model] 后，这里的压栈口径与生产入栈点
-	// 一致（证据 R12 / settings_ui.go 的 p.history.Push(before)）。
+	// 数据结构换成 stack.Stack[Model] 后，这里的压栈口径与生产入栈点
+	// 一致（settings_ui.go 的 p.history.Push(before)）。
 	p.history.Push(m)
 	p.setModel(changed)
 	if p.Model().Margin != 12 {
@@ -68,7 +68,7 @@ func TestSettingsPanelUndoLock(t *testing.T) {
 // 目的：把 gioui v0.10.3 的控件 API 调用在 CI 里真跑一遍
 // 照实测 API 写，不得凭记忆。零 Source 不投递事件（gioui 文档）。
 func TestSettingsPanelLayoutNoEvents(t *testing.T) {
-	// 迁移注（R5 卡 8）：旧写法 th := New().Theme（ui.Screen 的主题 = material.NewTheme()
+	// 迁移注：旧写法 th := New.Theme（ui.Screen 的主题 = material.NewTheme
 	// + WeatherFontSize 40sp 覆写，本体住在 ui/render.go:32-36 与 ui/layout.go）。
 	// ui/settings 不得 import ui ⇒ 这里取 material.NewTheme() 基线；本判据读的
 	// 是"面板占尺寸 / 无事件 / 无热键 / 无点击"，与字号覆写无关（实测逐字同结果）。
@@ -94,7 +94,7 @@ func TestSettingsPanelLayoutNoEvents(t *testing.T) {
 	}
 }
 
-// TestSettingsPanelAlertMinMM 对应批次 b-alert-v1 第 10 步的「最小雨量(mm/15min)」行：
+// TestSettingsPanelAlertMinMM 对应的'最小雨量(mm/15min)'行：
 // 文本编辑器往返稳定；解析失败保留旧值（与其它数值行同口径）。
 func TestSettingsPanelAlertMinMM(t *testing.T) {
 	m := sampleModel()
@@ -118,16 +118,14 @@ func TestSettingsPanelAlertMinMM(t *testing.T) {
 }
 
 // TestPanelStyleDefaults 面板底缺省值。
-//
 // 旧版判据是"逐字对上上游 core/settings/default_settings.py:1523-1540
 // 的 'weather' 块"。
-//
 // 按三次视觉读图**有意偏离**上游，
 // 改了三个默认值（键名与键语义不变）：
 //
-//	bg_opacity      0.3  → 0.22
+//	bg_opacity 0.3 → 0.22
 //	clock_bg_opacity 0.45 → 0.26
-//	border_opacity  1.0  → 0.0（默认不描边；启用时 alpha = opacity × 0.35）
+//	border_opacity 1.0 → 0.0（默认不描边；启用时 alpha = opacity × 0.35）
 //
 // 故本自检的期望值随之更新；上游口径的键名/键序仍逐字不变。
 //
@@ -195,7 +193,6 @@ func TestPanelStyleDefaults(t *testing.T) {
 
 // TestSeparatorInnerLength 分隔线内缩
 // 量化修正 bin/fxmetrics.py。
-//
 // 旧版的 0x2A / 0.62 被客观指标推翻：实测分隔线处**落差 68/255**，
 // 直接量像素得线色 (98,105,114)、背景 (28,37,51) ⇒ 有效 alpha ≈ 0.37，
 // 远大于声明的 0x165。根因：gioui layout.Flex 对子控件先测量后绘制，
@@ -215,7 +212,7 @@ func TestSeparatorInnerLength(t *testing.T) {
 		Ops:         &ops,
 		Constraints: layout.Exact(image.Point{X: 1021, Y: 40}),
 	}
-	d := separator()(gtx) // 迁移注（R5 卡 8）：旧写法 s.separator()（ui.Screen 方法，本体 = panel.Separator，逐字同一条）
+	d := separator()(gtx) // 迁移注：旧写法 s.separator（ui.Screen 方法，本体 = panel.Separator，逐字同一条）
 	if d.Size.X != 1021 {
 		t.Errorf("分隔线行宽应占满内容宽（布局不变），got %d", d.Size.X)
 	}
@@ -246,14 +243,14 @@ func TestPanelRadiusAdaptive(t *testing.T) {
 
 // TestShadowOffsetScalesWithFont 阴影偏移随字号走：max(2, round(字号px × 0.03))
 // 下限 2 = 上游 ShadowedText.qml shadowOffsetY 2.0。
-// 144 pt 时钟 → 4 px、174 pt（低性能 x86 小主机 font_size 144→174）→ 5 px、
+// 144 pt 时钟 → 4 px、174 pt（低性能 x86 实机 font_size 144→174）→ 5 px、
 // 25 pt（上游天气字号）→ 取下限 2、本复刻天气 40 pt → 取下限 2。
 func TestShadowOffsetScalesWithFont(t *testing.T) {
 	for _, tc := range []struct {
 		px, want int
 	}{
 		{144, 4}, // ClockFontSize 声明值
-		{174, 5}, // ClockFontSizeShown 低性能 x86 小主机值
+		{174, 5}, // ClockFontSizeShown 低性能 x86 实机值
 		{40, 2},  // WeatherFontSize（本复刻）
 		{25, 2},  // 上游 weather font_size 25 → 0.75 → 下限 2（与上游一致）
 		{2, 2},   // 下限

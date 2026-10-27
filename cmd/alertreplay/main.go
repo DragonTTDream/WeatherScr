@@ -12,21 +12,19 @@ import (
 	"github.com/DragonTTDream/WeatherScr/weather"
 )
 
-// alertreplay = 回放标定工具（批次 b-alert-v1 第 11 步）。
-//
-// 输入：out/alert-fixture-7d.json（Open-Meteo 形态：hourly 240 格 +
+// alertreplay = 回放标定工具。
+// 输入（Open-Meteo 形态：hourly 240 格 +
 // minutely_15 960 格，2026-10-14T00:00 → 10-23T23:00，utc_offset_seconds=28800）。
-//
-// 口径（写死在本文件，规格「判据（对拍）」一节逐字）：
+// 口径（写死在本文件，规格'判据（对拍）'一节逐字）：
 //
 //	以 fixture 的 15 分钟格为时间轴，逐格模拟"现在 = 该格起点"，
 //	按第 5 步（灾害层官方配对）+ 第 6 步（日常层锚定）判据 + 第 7 步滞回算亮灭
 //	（回放里一个采样周期 = 一格）。
 //	ON_RATIO = 亮格数 / 总格数（只算未来 12 h 视野内的格）
 //	COVERAGE = 在实际发生降水（该格 mm ≥ 0.05）的格中，当时处于亮态的比例
-//	LEAD     = 每个降水段起点 − 该段第一次亮起的时刻（分钟，打印中位/最小/最大）
+//	LEAD = 每个降水段起点 − 该段第一次亮起的时刻（分钟，打印中位/最小/最大）
 //
-// 三个数一起看，单看任何一个都能被"常亮"作弊（spec/alert-latency-and-logic.md §9.1）。
+// 三个数一起看，单看任何一个都能被"常亮"作弊。
 func main() {
 	// -horizon 只决定回放的"视野内格"分母口径（ON_RATIO/COVERAGE 的统计窗）；
 	// 判据侧的视野已是常量 2（weather.umbrellaViewHours），默认值与之对齐。
@@ -155,7 +153,7 @@ func main() {
 		leads = append(leads, times[start].Sub(times[j]).Minutes())
 	}
 
-	// 判据侧视野 = 常量 2 h（weather.umbrellaViewHours，b-alert-v1b 第 1 步：旋钮已拆）
+	// 判据侧视野 = 常量 2 h（weather.umbrellaViewHours，旋钮已拆）
 	fmt.Printf("UMBRELLA_VIEW=2\n")
 	fmt.Printf("CELLS=%d VIEW_CELLS=%d ON_CELLS=%d WET_CELLS=%d WET_ON=%d SEGMENTS=%d MISSED=%d\n",
 		n, viewN, onN, wetN, wetOnN, segments, missed)

@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// 批次 A1 S1/S2 的钉死单测（spec/a1-fetch-polite.md 的钉死清单，逐条可指名）。
+// S1/S2 的钉死单测（的钉死清单，逐条可指名）。
 // 全部走 httptest 本地端点（Client.BaseURL = 代理口径）⇒ 零外网依赖。
 
 // newGuardClient 起一个只回固定状态码/头/body 的本地端点，返回指向它的 Client。
@@ -48,7 +48,7 @@ func TestFetchBodyLayerErrorIsNotWeatherData(t *testing.T) {
 }
 
 // 钉死 2：HTTP 429 + 头 Retry-After: 120 ⇒ *ProviderError，
-// Status==429、RetryAfter==120*time.Second（RFC 9110 §8.4 秒数形式、§15.5.13）。
+// Status==429、RetryAfter==120*time.Second（RFC 9110 秒数形式、）。
 func TestFetch429YieldsProviderErrorWithRetryAfter(t *testing.T) {
 	c, close_ := newGuardClient(http.StatusTooManyRequests, "Retry-After", "120",
 		`{"error":true,"reason":"Too many requests"}`)
@@ -77,7 +77,7 @@ func TestFetch429YieldsProviderErrorWithRetryAfter(t *testing.T) {
 }
 
 // 钉死 3：HTTP 503 且**无** Retry-After 头 ⇒ *ProviderError，
-// Status==503、RetryAfter==0（§15.5.17；无头即 0，不阻塞）。
+// Status==503、RetryAfter==0（；无头即 0，不阻塞）。
 func TestFetch503YieldsProviderErrorWithoutRetryAfter(t *testing.T) {
 	c, close_ := newGuardClient(http.StatusServiceUnavailable, "", "",
 		`{"error":true,"reason":"The service is overloaded"}`)
@@ -120,7 +120,7 @@ func TestGeocodeBodyLayerError(t *testing.T) {
 }
 
 // Retry-After 只支持秒数形式：HTTP-date 形式（"Wed, 21 Oct 2015 07:28:00 GMT"）
-// 解析失败 ⇒ 0（spec S2：按 0 处理，不阻塞）。
+// 解析失败 ⇒ 0。
 func TestRetryAfterSecondsOnly(t *testing.T) {
 	cases := []struct {
 		in   string

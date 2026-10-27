@@ -1,7 +1,7 @@
 # Changelog
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
@@ -73,7 +73,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Six self-checks in `ui/sunedge_test.go`: sun profile has no edge, flash shape is the
   bolt, per-frame cloud speed change, cloud screen-motion smoothness, per-band wrap
   fully offscreen, and the particle-cloud recycle regression. All six print measured
-  numbers; the measured values are listed in `out/notes-sunedge.md`.
+  numbers; the measured values are listed in the release notes.
 
 ### Changed
 
@@ -94,7 +94,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Windows builds of `cmd/scr` and `cmd/setup` link with `-ldflags="-s -w -H=windowsgui"`,
   so the PE Subsystem is 2 (GUI) instead of 3 (console): starting the screensaver no
   longer opens a console window. Measured on the two products built by the check
-  command: `/tmp/b1_scr.exe` Subsystem = 2, `/tmp/b1_setup.exe` Subsystem = 2
+  command: the built screensaver binary Subsystem = 2, the built installer Subsystem = 2
   (the shipped pair measured 3 / 3 before). Logging path is unchanged
   (exe-dir `scr_run.log`), it never needed a console.
 - The settings dialog is a topmost window now: `normalizeDialog` sets `WS_EX_TOPMOST`

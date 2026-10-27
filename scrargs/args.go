@@ -1,5 +1,4 @@
 // .scr 参数协议解析。
-//
 // 规范原文（wischik《How to write a 32bit screen saver》）：
 // - 字母**大小写不敏感**；
 // - 前缀 `/` 或 `-`；
@@ -7,7 +6,6 @@
 // - `/p` 与 `/l` 等价；
 // - 无参数 = 配置对话框（父窗口 NULL）；
 // - 无法识别 → **立即退出，不弹窗不打印**。
-//
 // 本文件是纯逻辑（不 import gioui / windows），因此可在 Linux 侧编译与自检。
 package scrargs
 
@@ -23,9 +21,9 @@ const (
 	// ActionConfigure 配置对话框。父窗口：HasHWND 为真时用 HWND，否则
 	// 无参数 → NULL，`/c` 无数字 → GetForegroundWindow()（见 main.go）。
 	ActionConfigure SaverAction = iota
-	// ActionRun 全屏运行（/s / S / -s）。
+	// ActionRun 全屏运行（s / S / -s）。
 	ActionRun
-	// ActionPreview 预览（/p|/l <hwnd>），在给定 HWND 下建子窗口渲染。
+	// ActionPreview 预览（p|/l <hwnd>），在给定 HWND 下建子窗口渲染。
 	ActionPreview
 	// ActionPassword /a <hwnd>：95/Plus! 的改密码框；NT 系由系统管理
 	// → 直接退出，不做任何事（协议表）。
@@ -57,7 +55,7 @@ func (a SaverAction) String() string {
 // SaverArgs 是解析结果。
 type SaverArgs struct {
 	Action SaverAction
-	// HWND 是宿主给的窗口句柄（/c <hwnd>、/p <hwnd>、/a <hwnd>）。
+	// HWND 是宿主给的窗口句柄（c <hwnd>、/p <hwnd>、/a <hwnd>）。
 	HWND uintptr
 	// HasHWND = 参数里给出了且解析成功的非零句柄。
 	HasHWND bool
@@ -66,11 +64,10 @@ type SaverArgs struct {
 }
 
 // Parse 按协议表解析 os.Args[1:]。
-//
 // argv 已由操作系统按空格切分，所以：
 //
-//	"/p" "123"   → 字母后的值在下一个 argv（空格形态）
-//	"-P:123"     → 字母后的值在同一 token 的冒号后（冒号形态）
+//	"/p" "123" → 字母后的值在下一个 argv（空格形态）
+//	"-P:123" → 字母后的值在同一 token 的冒号后（冒号形态）
 //
 // 两种形态都要认。
 func Parse(args []string) SaverArgs {

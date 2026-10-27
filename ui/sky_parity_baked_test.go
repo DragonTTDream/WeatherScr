@@ -1,5 +1,4 @@
-// 天空烘焙层的**贴图口半区**对拍（R5 卡 2 判据 3，plans/active.md:205）。
-//
+// 天空烘焙层的**贴图口半区**对拍（判据 3）。
 // 与 ui/sky/parity_test.go 的 TestSkyParity 同一份取数件、同一批常量：
 //
 //	取数件 = ui/zz_pre_sky_test.go（临时，取数后删除），命令
@@ -10,7 +9,6 @@
 // ui/sky 只持一个由 ui 注入的只读查询口 sky.Assets ⇒ 只有 ui 侧才是线上口径。
 // sky 包内的默认实现 = "一切贴图都不存在"（= ui 侧"内嵌也没有"那一档既有语义），
 // 在 sky 侧量出来的数字不是线上数字 ⇒ 判据必须在注入后的 ui 侧量。
-//
 // 判据 = 逐位相等（比较 %v 字符串；float64 的 %v 是最短往返表示 ⇒ 末位不同也会红）。
 // 缓存计数器（SkyCacheStats / MoonLayerStats）先复位再按固定顺序跑，与取数件同序。
 package ui

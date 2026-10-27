@@ -2,7 +2,7 @@ package kinetics
 
 import "testing"
 
-// TestKineticsConstants 钉死 R1 速度档与 R4 口径值（spec/b3-kinetics.md §2 逐字）。
+// TestKineticsConstants 钉死 速度档与 口径值。
 func TestKineticsConstants(t *testing.T) {
 	if VxMax != 0.0140 {
 		t.Fatalf("VxMax = %v，期望逐字 0.0140（R1 最快的云不能比现在更快）", VxMax)
@@ -67,7 +67,7 @@ func TestKineticsWidthFor(t *testing.T) {
 	}
 }
 
-// TestKineticsEntryOK 钉死进场排队判据的两条用例（spec/b3-kinetics.md §2 逐字）。
+// TestKineticsEntryOK 钉死进场排队判据的两条用例。
 func TestKineticsEntryOK(t *testing.T) {
 	if EntryOK(100, 50, 120, 50, 1080) {
 		t.Fatalf("EntryOK(100,50,120,50,1080) = true，期望 false（|Δx|=20 < 上一条半宽 50 ⇒ 同出同进）")

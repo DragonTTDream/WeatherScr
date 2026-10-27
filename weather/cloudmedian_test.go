@@ -10,16 +10,15 @@ import (
 // iv 便捷构造 *int。
 func iv(v int) *int { return &v }
 
-// TestCloudMedianClass 三模型云量仲裁的档位判据（规格 1.6 / 规格 3 第 7 条）。
-//
+// TestCloudMedianClass 三模型云量仲裁的档位判据。
 // 逐条打印实测的中位数与档位，判据不放宽：
 //
 //	(100, 62, 56) ⇒ 中位数 62 ⇒ PartlyCloudy（默认单源 best_match 云量 100 会判成阴）
 //	(100,100, 94) ⇒ 中位数 100 ⇒ Overcast
 //	( 20, 18, 10) ⇒ 中位数 18 ⇒ Clear
-//	缺一个模型   ⇒ 用剩下两家（中位数随样本数变，不是拿两家最大值顶）
-//	降水类       ⇒ 云量不得覆盖（61 号码 100% 云量仍在下雨）
-//	三家全缺     ⇒ 退回天气码判定
+//	缺一个模型 ⇒ 用剩下两家（中位数随样本数变，不是拿两家最大值顶）
+//	降水类 ⇒ 云量不得覆盖（61 号码 100% 云量仍在下雨）
+//	三家全缺 ⇒ 退回天气码判定
 func TestCloudMedianClass(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -95,8 +94,8 @@ func TestMedianFromModelsIndex(t *testing.T) {
 
 // TestCurrentHourIndex 当前小时在 hourly.time 里的下标（当地墙钟 + utc_offset_seconds）。
 func TestCurrentHourIndex(t *testing.T) {
-	times := []string{"2026-10-20T10:00", "2026-10-20T11:00", "2026-10-20T12:00"}
-	now := time.Date(2026, 10, 20, 4, 30, 0, 0, time.UTC) // UTC 04:30 + 8h = 当地 12:30
+	times := []string{"2024-05-20T10:00", "2024-05-20T11:00", "2024-05-20T12:00"}
+	now := time.Date(2024, 5, 20, 4, 30, 0, 0, time.UTC) // UTC 04:30 + 8h = 当地 12:30
 	if got := CurrentHourIndex(times, 8*3600, now); got != 2 {
 		t.Errorf("下标 = %d，期望 2（当地 12:00 那一条）", got)
 	}

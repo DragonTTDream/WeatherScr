@@ -7,12 +7,10 @@ import (
 	"unicode"
 )
 
-// 批次 b-alert-v1 第 9 步的三态文案（规格逐字样例，spec/b-alert-v1.md:33-38）：
-//
-//	日常 zh `22:15 起 有雨 · 有机会 45% · 0.6 mm/h`  en `Rain from 22:15 · 45% likely · 0.6 mm/h`
-//	灾害 zh `暴雨风险 蓝 · 12h 内 62 mm`            en `Rainstorm risk Blue · 62 mm within 12 h`
-//	不可用 zh `预警数据不可用 · 截至 21:11`          en `Alert data unavailable · as of 21:11`
-//
+// 的三态文案：
+//	日常 zh `22:15 起 有雨 · 有机会 45% · 0.6 mm/h` en `Rain from 22:15 · 45% likely · 0.6 mm/h`
+//	灾害 zh `暴雨风险 蓝 · 12h 内 62 mm` en `Rainstorm risk Blue · 62 mm within 12 h`
+//	不可用 zh `预警数据不可用 · 截至 21:11` en `Alert data unavailable · as of 21:11`
 // 语言口径不变：**只有恰好 "zh" 走中文，其余（含空串）一律英文**。
 
 func at(h, m int) time.Time { return time.Date(2026, 10, 21, h, m, 0, 0, time.UTC) }
@@ -73,15 +71,15 @@ func TestAlertTierFromDisasterLayer(t *testing.T) {
 			t.Errorf("灾害 zh 文案应含档位名 %q，实得 %q", names[0], a.Text("zh"))
 		}
 	}
-	// 日常层 = §11 态③ 的蓝色小色块
+	// 日常层 = 态③ 的蓝色小色块
 	d := &Alert{State: AlertDaily, Pct: 95, MMPerH: 0.6, Start: at(22, 15)}
 	if d.Tier() != 1 {
 		t.Errorf("日常层档位 = %d，期望 1（蓝，恒定不闪）", d.Tier())
 	}
 }
 
-// 官方降水概率分级词逐字（spec/weather-scr.md:1663-1665）；
-// 官方未定义的 20–30 与 50–60 两档本批自定为「可能性很小」/「可能性中等」。
+// 官方降水概率分级词逐字（1663-1665）；
+// 官方未定义的 20–30 与 50–60 两档本批自定为'可能性很小'/'可能性中等'。
 func TestProbWordOfficialBands(t *testing.T) {
 	cases := []struct {
 		pct  int
@@ -104,7 +102,7 @@ func TestProbWordOfficialBands(t *testing.T) {
 	// 分级词逐字进日常层文案
 	a := &Alert{State: AlertDaily, Pct: 45, MMPerH: 0.6, Start: at(22, 15)}
 	if !strings.Contains(a.Text("zh"), "有机会 45%") {
-		t.Errorf("日常 zh 文案应含「有机会 45%%」，实得 %q", a.Text("zh"))
+		t.Errorf("日常 zh 文案应含'有机会 45%%'，实得 %q", a.Text("zh"))
 	}
 }
 
@@ -129,7 +127,7 @@ func TestAlertVisibilityByState(t *testing.T) {
 	}
 }
 
-// 不可用态配色 = 灰（§11 态④「灰，恒定」）。
+// 不可用态配色 = 灰（态④'灰，恒定'）。
 func TestAlertUnavailableColor(t *testing.T) {
 	c := (&Alert{State: AlertUnavailable, AsOf: at(21, 11)}).TierColor()
 	if !(c.R == 128 && c.G == 128 && c.B == 132) {
@@ -141,11 +139,11 @@ func TestAlertUnavailableColor(t *testing.T) {
 	}
 }
 
-// 态①（中国区官方信号）文案逐字钉死（spec/b-alert-v2.md 第 6 步）：
+// 态①（中国区官方信号）文案逐字钉死（第 6 步）：
 //
-//	zh `暴雨 黄色预警 · 22:44 发布`   en `Rainstorm Yellow · issued 22:44`
+//	zh `暴雨 黄色预警 · 22:44 发布` en `Rainstorm Yellow · issued 22:44`
 //
-// 起因（2026-10-22 用户问）：「当前语言选的不是英文吗？为什么预警信息给的是中文」
+// 起因：界面选的是英文、预警却出中文 ⇒ 预警文案必须跟随所选界面语言。
 // —— 四态里只有态① 此前**没有任何单测**，语言口径全靠代码注释兜。
 func TestAlertTextOfficialVerbatim(t *testing.T) {
 	a := &Alert{State: AlertOfficial, OfficialTypeZh: "暴雨", OfficialTypeEn: "Rainstorm",
@@ -180,7 +178,7 @@ func TestAlertTextOfficialVerbatim(t *testing.T) {
 }
 
 // 语言口径总闸：**任何态在 lang=en / 空串 / 大小写变体 / zh-CN 下都不得出现汉字**。
-// 口径逐字（alert.go:129-130 与 :261）：只有恰好 "zh" 走中文，其余一律英文。
+// 口径逐字（alert.go:129-130）：只有恰好 "zh" 走中文，其余一律英文。
 func TestAlertTextEnHasNoHan(t *testing.T) {
 	states := []*Alert{
 		{State: AlertDaily, Pct: 45, MMPerH: 0.6, Start: at(22, 15)},

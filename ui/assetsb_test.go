@@ -1,13 +1,12 @@
 package ui
 
 // 素材落地 + 云量分档 + 太阳盘 + 云运动 的自检（五个新判据）。
-//
 // 判据逐条对应取证 34.16.1 / 34.16.2 / 34.16.3 批 2/3/5：
-//   TestSunDiscPerClass        太阳盘只在 Clear / PartlyCloudy 出现，其余档为 0
-//   TestSunProfileNoHardEdge   盘内近均匀 + 盘缘羽化 ≤ 半径 12% + 羽化外逐像素 ≤6 级
-//   TestCloudDensitySplit      PartlyCloudy 云数 ≤ Overcast 云数，Overcast > 现 Cloudy 的一半
-//   TestCloudSpeedHalved       云 vx 生成上界 ≤0.014、钳位常量 ×0.5、云带速度 ×0.5
-//   TestRecycleFullyOffscreen  回收判据 = 整朵完全出屏
+// TestSunDiscPerClass 太阳盘只在 Clear / PartlyCloudy 出现，其余档为 0
+// TestSunProfileNoHardEdge 盘内近均匀 + 盘缘羽化 ≤ 半径 12% + 羽化外逐像素 ≤6 级
+// TestCloudDensitySplit PartlyCloudy 云数 ≤ Overcast 云数，Overcast > 现 Cloudy 的一半
+// TestCloudSpeedHalved 云 vx 生成上界 ≤0.014、钳位常量 ×0.5、云带速度 ×0.5
+// TestRecycleFullyOffscreen 回收判据 = 整朵完全出屏
 
 import (
 	"image"
@@ -53,7 +52,6 @@ func sunDiscPixels(cls effect.Class, cloudPct int) (int, float64, int, float64) 
 	y0 := int(math.Max(0, float64(cy-half)))
 	y1 := int(math.Min(float64(h), float64(cy+half+1)))
 	// 核的判据口径（本批改写，理由如下）：
-	//
 	//	旧口径 = "比同位置天空基色亮 ≥24 级"。全天空抬升项（L_sky=0.9w、A_sky=90×dim）
 	//	落地后，这条掩膜在**任何云量**下都铺满整个太阳盒（实测云量 0 与 100 都是
 	//	9801/9801 px）⇒ "云量 100 的核必须小于云量 0"这条判据测不到东西。
@@ -95,7 +93,6 @@ func sunDiscPixels(cls effect.Class, cloudPct int) (int, float64, int, float64) 
 }
 
 // TestSunDiscPerClass 九档烘焙后逐档量盘的几何签名（盘可见度分级口径）。
-//
 // 口径变更（写明理由，不是放宽）：旧断言 = "云量 100 的盘内核必须小于云量 0 那一档"，
 // 前提是"云量 0 = 九档都画硬圆盘"。盘可见度分级落地后这条前提没了：
 //
@@ -105,7 +102,6 @@ func sunDiscPixels(cls effect.Class, cloudPct int) (int, float64, int, float64) 
 //
 // 于是"盘内核"（与盘心同高的连通核）在两帧里量的是同一条宽光缓坡，比出大小不说明任何事
 // （实测 rain 云量 100 的盘内核 9801 = 云量 0 的 9801，overcast 云量 100 的 9079 > 云量 0 的 8814）。
-//
 // 新口径 = 直接量盘的几何签名：盘区（r ≤ rc）里净抬升 ≥ 同帧 3rc 环带峰 + 20 级的像素
 // （与 TestSunDiscEdge 的"盘心 vs 盘外 3rc"口径同源），逐档与 sunDiscVisibility 对齐。
 // 取样云量取 40 与 100（不取 0/20，理由）：云量越低 dim 越大，盘区与 3rc 环带一起被 alpha
@@ -141,22 +137,19 @@ func TestSunDiscPerClass(t *testing.T) {
 }
 
 // TestSunProfileNoHardEdge 沿太阳中心行取逐像素剖面。
-//
 // 旧口径（云规则收尾）：盘内近均匀亮 + 盘缘羽化 ≤ 半径 12% + 羽化之外无第二条硬边，
 // 羽化带宽是**从复合剖面上量**的（平台终点 → 跌到盘心 −30 级的位移）。
-//
 // 口径变更（写明理由，不是放宽）：铺光定板 = Lorentz L = 0.18 倍烘焙宽（原 0.08）。
 // 复合剖面 = 盘体 + 光斑 + 泛光之和，光斑变宽后"跌到盘心 −30 级"这一点必然外移
 // （实测跌落点从 r=24 px 移到 r=40 px），量出来的不再是盘体羽化宽度。
 // 故把羽化带宽的判据换成**直接量盘体剖面函数 sunDiscProfile**（烘焙逐像素调用的就是它）：
 // 从 1 落到 0 的宽度 = 半径 12%。复合剖面的平台/跌落/过渡宽照旧打印。
 // "盘缘之外无第二条硬边"（相邻差 ≤6 级、不升）逐字保留。
-//
 // 三条断言（全部实测）：
-//  1. 盘内平台：r ≤ 0.8rc 内每一像素都 ≥ 盘心 −2 级（近均匀）
-//  2. 盘体剖面函数：sunDiscProfile 在 r ≤ 0.88rc 取 1、在 r ≥ rc 取 0，
-//     过渡宽度 = 0.12rc ±2 px
-//  3. 盘缘之外（r ≥ rc 起）逐像素相邻差 ≤6 级、不升
+// 1. 盘内平台：r ≤ 0.8rc 内每一像素都 ≥ 盘心 −2 级（近均匀）
+// 2. 盘体剖面函数：sunDiscProfile 在 r ≤ 0.88rc 取 1、在 r ≥ rc 取 0，
+// 过渡宽度 = 0.12rc ±2 px
+// 3. 盘缘之外（r ≥ rc 起）逐像素相邻差 ≤6 级、不升
 func TestSunProfileNoHardEdge(t *testing.T) {
 	for _, cls := range []effect.Class{effect.Clear, effect.PartlyCloudy} {
 		img := sky.RenderSkyCPU(sunProbeW, sunProbeH, cls, true, nil, 0)
@@ -386,7 +379,7 @@ func TestCloudSpeedHalved(t *testing.T) {
 // TestRecycleFullyOffscreen 回收判据 = 整朵完全出屏：
 //
 //	中心刚出屏（|x−1| 在半宽 dw 内）⇒ **未被回收**
-//	整朵出屏（|x−1| > dw）        ⇒ **被回收**
+//	整朵出屏（|x−1| > dw） ⇒ **被回收**
 func TestRecycleFullyOffscreen(t *testing.T) {
 	for _, cls := range []effect.Class{effect.Cloudy, effect.PartlyCloudy, effect.Overcast} {
 		f := NewField(cls, true, 20261015)

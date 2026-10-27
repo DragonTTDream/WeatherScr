@@ -1,7 +1,6 @@
 // S2 实取验证：真打 Open-Meteo，证明参数集被服务器接受，
 // 且产出与 golden fixture 同形状（10 字段）。
-//
-// 用法：wfetch [城市]   （默认 "Hangzhou, China"，与 golden 同城）
+// 用法：wfetch [城市] （默认 "Hangzhou, China"，与 golden 同城）
 package main
 
 import (

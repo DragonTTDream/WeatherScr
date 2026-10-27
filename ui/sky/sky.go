@@ -17,13 +17,11 @@ import (
 )
 
 // ── 贴图口注入 ──────────────────────────────────────────
-//
 // 烘焙层需要查贴图（天空底图 / 太阳泛光 / 月亮 / 光线），但贴图目录与解码缓存
-// 归 ui（ui/assetdir.go、ui/assets.go，R5 卡 2 不点名 ⇒ 原地不动）。
+// 归 ui（ui/assetdir.go、ui/assets.go， 不点名 ⇒ 原地不动）。
 // 处置 = 本包只声明一个只读查询口，由消费者 ui 在 init 注入实现（实现体逐字委托
 // ui 现有的 assetAvailable / assetImageAny / assetSourceTag / spriteImg /
 // sampleBilinear / blitCoverReplace / blitCoverOver）。出厂路径上注入前后行为逐字相同。
-//
 // 未注入时的默认实现 = "一切贴图都不存在"，即 ui 侧"内嵌也没有 ⇒ 程序化画法"
 // 那一档既有语义（assetAvailable 返回 false 的同一条路），不新增行为。
 
@@ -61,9 +59,8 @@ func (assetsAbsent) BlitCoverReplace(dst, src *image.NRGBA)                 {}
 func (assetsAbsent) BlitCoverOver(dst, src *image.NRGBA, r image.Rectangle) {}
 
 // ── 与 ui 共用的逐字小工具（两份同体副本，公式一字未改）────────
-//
 // clamp8 / smoothstep 在 ui 侧还有别的消费者（ui/assetdir.go、ui/effects.go 粒子），
-// R5 卡 2 不点名那些文件 ⇒ 本包带一份**逐字副本**，不搬走原件、不改公式。
+// 不点名那些文件 ⇒ 本包带一份**逐字副本**，不搬走原件、不改公式。
 
 // clamp8 副本（逐字同 ui/render.go:543-552 原件，公式未改）
 // clamp8 把任意浮点亮度收进 [0,255]。
@@ -167,17 +164,14 @@ func SkyGradient(gtx layout.Context, size image.Point, cls effect.Class, isDay b
 }
 
 // skyDepth 天空纵深（两次读图判读"单调扁平"）：
-//
 // 1. 地平线辉光带：位于天空底部 22% 高度处（y ∈ [0.78h, h]），
 // 颜色 = 当前基色提亮 base×1.25+14，alpha 沿高度 0 → 30 → 0
 // 峰在带中点 0.89h；
 // 2. 四角暗角 vignette：上下各一条高度 16% 的渐变（黑色 alpha 38 → 0 顶部向内、
 // 0 → 38 底部向内，左右同理宽度 12%。
-//
 // 全部**同 RGB 只变 alpha**（铁律：gioui 的渐变按端点色插值，
 // 两端 RGB 不同会把整屏插到白，实测过一次。颜色从 skyGradient 的基色派生，
 // 不新增硬编码颜色表。
-//
 // 每段渐变都**独立裁剪**：gioui 的渐变在端点之外按端点色外插
 // （gpu.go:1361 gradientSpaceTransform），不裁剪的三段渐变会把峰后的 alpha
 // 平推成 30 铺满下半屏。
@@ -200,7 +194,6 @@ func SkyDepth(gtx layout.Context, size image.Point, cls effect.Class, isDay bool
 	GradAlpha(gtx, image.Rect(0, ym, size.X, y1), glow, 30, 0, true)
 
 	// 2 四角暗角：上下 16% 高度、左右 12% 宽度。
-	//
 	// 客观指标（bin/fxmetrics.py banding，斜率突变版）实测：
 	// 单段线性 38→0 在暗角**边界处斜率从 -4.5/行 直接跳到 0**
 	// ⇒ band_rows = 4–5、max_jump 3.2–4.2（肉眼是边界上的"肩部"）。
@@ -246,7 +239,6 @@ func GradAlpha(gtx layout.Context, r image.Rectangle, c color.NRGBA, a1, a2 uint
 }
 
 // ── 日照渐变的预览工装系数（逐字迁自 ui/sunpreview.go:19-26）──────────
-//
 // dev-only：出厂二进制里 env 未设 ⇒ 取默认值，画面与迁移前逐字相同。
 // 消费者只有本包的烘焙函数（SunSkyLift / bakeSunAnalytic / bakeSunGlow）。
 
